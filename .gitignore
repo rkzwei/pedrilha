@@ -1,0 +1,51 @@
+# Build outputs
+target/
+**/target/
+*.wasm
+*.wasm.dwarf
+
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Database files (local dev)
+*.db
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+logs/
+
+# Release artifacts
+release/
+dist/
+
+# Temporary files
+*.tmp
+temp/
+tmp/
+
+# Scraped documentation (not project source)
+turso_docs.html
+
+# Environment files (secrets)
+SECRETS.env

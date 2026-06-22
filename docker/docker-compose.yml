@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - TURSO_DATABASE_URL=${TURSO_DATABASE_URL:-file:gem_finder.db}
+      - TURSO_AUTH_TOKEN=${TURSO_AUTH_TOKEN:-}
+      - RUST_LOG=${RUST_LOG:-info}
+      - TMDB_API_KEY=${TMDB_API_KEY:-}
+    volumes:
+      - gem_finder_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  gem_finder_data:

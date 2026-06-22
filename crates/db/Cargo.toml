@@ -1,0 +1,11 @@
+[package]
+name = "gem-finder-db"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+gem-finder-shared = { path = "../shared" }
+turso = { version = "0.7.0-pre.10", features = ["sync"] }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"

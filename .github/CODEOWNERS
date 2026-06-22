@@ -1,0 +1,17 @@
+# Code ownership rules for Gem Finder
+# Syntax: <path> <owner>
+
+# Default owners for everything
+* @rkzwei
+
+# Per-crate ownership
+crates/shared/ @rkzwei
+crates/db/ @rkzwei
+crates/api/ @rkzwei
+crates/frontend/ @rkzwei
+
+# Infrastructure
+docker/ @rkzwei
+.github/ @rkzwei
+ARCHITECTURE.md @rkzwei
+Cargo.toml @rkzwei

@@ -1,0 +1,21 @@
+[package]
+name = "gem-finder-api"
+version.workspace = true
+edition.workspace = true
+default-run = "gem-finder-api"
+
+[dependencies]
+gem-finder-shared = { path = "../shared" }
+gem-finder-db = { path = "../db" }
+turso = "0.7.0-pre.10"
+axum = { version = "0.8", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "registry"] }
+tracing-appender = "0.2"
+reqwest = { version = "0.12", features = ["json"] }
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }

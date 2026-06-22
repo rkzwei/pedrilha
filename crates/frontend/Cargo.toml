@@ -1,0 +1,15 @@
+[package]
+name = "gem-finder-frontend"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+gem-finder-shared = { path = "../shared" }
+leptos = { version = "0.7", features = ["csr"] }
+leptos_meta = { version = "0.7" }
+leptos_router = { version = "0.7" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+reqwest = { version = "0.12", features = ["json"] }

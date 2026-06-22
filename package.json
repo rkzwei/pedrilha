@@ -1,0 +1,11 @@
+{
+  "name": "gem-finder",
+  "private": true,
+  "scripts": {
+    "build:css": "npx tailwindcss -i ./assets/input.css -o ./assets/tailwind.css --minify",
+    "watch:css": "npx tailwindcss -i ./assets/input.css -o ./assets/tailwind.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4"
+  }
+}
