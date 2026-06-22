@@ -1,9 +1,9 @@
 use leptos::prelude::*;
 use leptos_meta::*;
 
+mod api;
 mod components;
 mod pages;
-mod api;
 
 fn main() {
     mount_to_body(|| view! { <App /> })

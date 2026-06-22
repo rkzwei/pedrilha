@@ -32,14 +32,21 @@ impl OmdbEnrichmentService {
     /// or null `rt_critic_score`. Calls OMDb for each and updates the DB.
     ///
     /// Returns (enriched_count, total_candidates, errors).
-    pub async fn enrich_movies(&self, conn: &Connection, limit: i64) -> Result<(usize, usize, Vec<String>)> {
+    pub async fn enrich_movies(
+        &self,
+        conn: &Connection,
+        limit: i64,
+    ) -> Result<(usize, usize, Vec<String>)> {
         let candidates = models::get_movies_needing_enrichment(conn, limit).await?;
         let total = candidates.len();
         let mut enriched = 0usize;
         let mut errors: Vec<String> = Vec::new();
 
         for (movie_id, title, imdb_id) in &candidates {
-            match self.enrich_single_movie(conn, *movie_id, title, imdb_id).await {
+            match self
+                .enrich_single_movie(conn, *movie_id, title, imdb_id)
+                .await
+            {
                 Ok(true) => enriched += 1,
                 Ok(false) => {} // no new data (OMDb had no RT scores)
                 Err(e) => {
@@ -69,10 +76,7 @@ impl OmdbEnrichmentService {
         title: &str,
         imdb_id: &str,
     ) -> Result<bool> {
-        let url = format!(
-            "{}/?apikey={}&i={}",
-            self.base_url, self.api_key, imdb_id
-        );
+        let url = format!("{}/?apikey={}&i={}", self.base_url, self.api_key, imdb_id);
 
         let response: OmdbResponse = self
             .client
@@ -90,7 +94,12 @@ impl OmdbEnrichmentService {
         let is_ok = response.response.as_deref() == Some("True");
         if !is_ok {
             let err_msg = response.error.as_deref().unwrap_or("unknown error");
-            tracing::warn!("OMDb error for '{}' (imdb: {}): {}", title, imdb_id, err_msg);
+            tracing::warn!(
+                "OMDb error for '{}' (imdb: {}): {}",
+                title,
+                imdb_id,
+                err_msg
+            );
             return Ok(false);
         }
 
@@ -113,7 +122,11 @@ impl OmdbEnrichmentService {
         let (rt_critic, rt_audience) = self.extract_rt_scores(&response);
 
         // Only update if we found at least one new piece of data
-        if imdb_rating.is_none() && imdb_vote_count.is_none() && rt_critic.is_none() && rt_audience.is_none() {
+        if imdb_rating.is_none()
+            && imdb_vote_count.is_none()
+            && rt_critic.is_none()
+            && rt_audience.is_none()
+        {
             return Ok(false);
         }
 

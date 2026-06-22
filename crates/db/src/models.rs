@@ -1,6 +1,6 @@
 use anyhow::Result;
 use gem_finder_shared::types::{Movie, MovieSummary, RunLogEntry};
-use turso::{Connection, Value, params};
+use turso::{params, Connection, Value};
 
 /// Helper to extract an Option<String> from a Value.
 fn value_to_opt_string(v: Value) -> Option<String> {
@@ -9,7 +9,9 @@ fn value_to_opt_string(v: Value) -> Option<String> {
 
 /// Helper to extract an Option<f64> from a Value.
 fn value_to_opt_f64(v: Value) -> Option<f64> {
-    v.as_real().copied().or_else(|| v.as_integer().map(|i| *i as f64))
+    v.as_real()
+        .copied()
+        .or_else(|| v.as_integer().map(|i| *i as f64))
 }
 
 /// Helper to extract an Option<i64> from a Value.
@@ -135,9 +137,7 @@ pub async fn get_top_gems(
 
 /// Get a single movie by its ID.
 pub async fn get_movie_by_id(conn: &Connection, id: i64) -> Result<Option<Movie>> {
-    let mut stmt = conn
-        .prepare("SELECT * FROM movies WHERE id = ?1")
-        .await?;
+    let mut stmt = conn.prepare("SELECT * FROM movies WHERE id = ?1").await?;
     let mut rows = stmt.query(params![id]).await?;
 
     if let Some(row) = rows.next().await? {
@@ -232,9 +232,7 @@ pub async fn get_gems_count(
     min_year: Option<i32>,
     genre: Option<&str>,
 ) -> Result<i64> {
-    let mut sql = String::from(
-        "SELECT COUNT(*) FROM movies WHERE gem_score IS NOT NULL",
-    );
+    let mut sql = String::from("SELECT COUNT(*) FROM movies WHERE gem_score IS NOT NULL");
     if let Some(y) = min_year {
         sql.push_str(&format!(" AND year >= {}", y));
     }
@@ -353,7 +351,10 @@ pub async fn get_recent_run_logs(conn: &Connection, limit: i64) -> Result<Vec<Ru
 }
 
 /// Get movies that are missing enrichment data (IMDb rating or RT scores).
-pub async fn get_movies_needing_enrichment(conn: &Connection, limit: i64) -> Result<Vec<(i64, String, String)>> {
+pub async fn get_movies_needing_enrichment(
+    conn: &Connection,
+    limit: i64,
+) -> Result<Vec<(i64, String, String)>> {
     let mut stmt = conn
         .prepare(
             "SELECT id, title, imdb_id
@@ -477,7 +478,13 @@ pub async fn update_movie_enrichment(
             rt_audience_score = COALESCE(?4, rt_audience_score),
             updated_at = datetime('now')
          WHERE id = ?5",
-        turso::params![imdb_rating, imdb_vote_count, rt_critic_score, rt_audience_score, movie_id],
+        turso::params![
+            imdb_rating,
+            imdb_vote_count,
+            rt_critic_score,
+            rt_audience_score,
+            movie_id
+        ],
     )
     .await?;
     Ok(())

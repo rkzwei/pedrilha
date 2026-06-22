@@ -41,8 +41,7 @@ async fn main() {
     let log_file = tracing_appender::rolling::never(".", "gem_finder.log");
     let (file_writer, _guard) = tracing_appender::non_blocking(log_file);
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     // File layer: no ANSI escape codes so the log file is clean plain text.
     let file_layer = tracing_subscriber::fmt::layer()
@@ -50,8 +49,7 @@ async fn main() {
         .with_ansi(false);
 
     // Stdout layer: with ANSI colours for human reading in the terminal.
-    let stdout_layer = tracing_subscriber::fmt::layer()
-        .with_writer(std::io::stdout);
+    let stdout_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stdout);
 
     tracing_subscriber::registry()
         .with(filter)
@@ -101,19 +99,14 @@ async fn main() {
         &startup_conn,
         "info",
         "startup",
-        &format!(
-            "Gem Finder API v{} starting",
-            env!("CARGO_PKG_VERSION")
-        ),
+        &format!("Gem Finder API v{} starting", env!("CARGO_PKG_VERSION")),
     )
     .await
     {
         tracing::warn!("Failed to write startup log: {}", e);
     }
 
-    let state = AppState {
-        db: Arc::new(db),
-    };
+    let state = AppState { db: Arc::new(db) };
 
     let app = Router::new()
         .route("/health", get(health_check))
@@ -135,9 +128,7 @@ async fn main() {
         .await
         .expect("Failed to bind address");
 
-    axum::serve(listener, app)
-        .await
-        .expect("Server failed");
+    axum::serve(listener, app).await.expect("Server failed");
 }
 
 /// CLI subcommand: seed the database with test data for algorithm validation.
@@ -207,9 +198,12 @@ async fn run_seed_test_data() {
             }
             println!("  Total: {}/{} seeded\n", seeded, total);
             let _ = models::insert_run_log(
-                &conn, "info", "seed_gems",
+                &conn,
+                "info",
+                "seed_gems",
                 &format!("Seeded {}/{} known gems", seeded, total),
-            ).await;
+            )
+            .await;
         }
         Err(e) => {
             eprintln!("Seed known gems failed: {}", e);
@@ -223,9 +217,12 @@ async fn run_seed_test_data() {
             println!("--- Blockbusters ---");
             println!("  {} blockbusters synced to big_hits table\n", count);
             let _ = models::insert_run_log(
-                &conn, "info", "seed_blockbusters",
+                &conn,
+                "info",
+                "seed_blockbusters",
                 &format!("Synced {} blockbusters", count),
-            ).await;
+            )
+            .await;
         }
         Err(e) => {
             eprintln!("Blockbuster sync failed: {}", e);
@@ -244,7 +241,7 @@ async fn run_seed_test_data() {
         (1960, Some(1984), "classics 1960–1984"),
         (1984, Some(1999), "modern classics 1984–1999"),
         (1999, Some(2012), "2000s 1999–2012"),
-        (2012, None,       "recent 2012–present"),
+        (2012, None, "recent 2012–present"),
     ];
     let mut windows_ok = 0usize;
     for (start, end, label) in era_windows {
@@ -258,7 +255,11 @@ async fn run_seed_test_data() {
         }
     }
     println!("--- Gem Candidate Sync ---");
-    println!("  {}/{} era windows completed (see logs for per-window detail)\n", windows_ok, era_windows.len());
+    println!(
+        "  {}/{} era windows completed (see logs for per-window detail)\n",
+        windows_ok,
+        era_windows.len()
+    );
 
     // Step 3c: Sync acclaimed candidates before OMDb enrichment so they get enriched
     // in the same run. Films with vote_avg ≥ 7.5 and vote_count ≥ 10,000 are the
@@ -291,9 +292,12 @@ async fn run_seed_test_data() {
                 }
                 println!();
                 let _ = models::insert_run_log(
-                    &conn, "info", "seed_enrichment",
+                    &conn,
+                    "info",
+                    "seed_enrichment",
                     &format!("Enriched {}/{} movies via OMDb", enriched, total),
-                ).await;
+                )
+                .await;
             }
             Err(e) => {
                 eprintln!("OMDb enrichment failed: {}", e);
@@ -311,9 +315,12 @@ async fn run_seed_test_data() {
             println!("--- Scoring ---");
             println!("  {} movies scored\n", scored);
             let _ = models::insert_run_log(
-                &conn, "info", "seed_scoring",
+                &conn,
+                "info",
+                "seed_scoring",
                 &format!("Scored {} movies", scored),
-            ).await;
+            )
+            .await;
         }
         Err(e) => {
             eprintln!("Scoring failed: {}", e);
@@ -327,9 +334,12 @@ async fn run_seed_test_data() {
             println!("--- Acclaimed Classification ---");
             println!("  {} films in acclaimed table\n", count);
             let _ = models::insert_run_log(
-                &conn, "info", "seed_acclaimed",
+                &conn,
+                "info",
+                "seed_acclaimed",
                 &format!("Classified {} acclaimed films", count),
-            ).await;
+            )
+            .await;
         }
         Err(e) => {
             eprintln!("Acclaimed classification failed: {}", e);
@@ -403,9 +413,7 @@ async fn get_gems(
 
 /// Trigger the batch gem scoring pipeline.
 /// POST /api/score
-async fn run_scoring(
-    State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+async fn run_scoring(State(state): State<AppState>) -> Result<Json<serde_json::Value>, StatusCode> {
     let conn = state
         .db
         .connect()

@@ -1,7 +1,7 @@
-use leptos::prelude::*;
-use leptos::task::spawn_local;
 use crate::api;
 use gem_finder_shared::types::MovieSummary;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
 
 /// Home page - displays a grid of hidden gem movies.
 #[component]
@@ -65,7 +65,10 @@ fn MovieCard(movie: MovieSummary) -> impl IntoView {
     let poster_url = movie.poster_url.unwrap_or_default();
 
     // gem_score is normalised [0, 1] — display as a percentage so it doesn't look like a star rating.
-    let gem_score = movie.gem_score.map(|s| format!("{:.0}%", s * 100.0)).unwrap_or_default();
+    let gem_score = movie
+        .gem_score
+        .map(|s| format!("{:.0}%", s * 100.0))
+        .unwrap_or_default();
     let year_text = movie.year.map(|y| y.to_string()).unwrap_or_default();
 
     view! {

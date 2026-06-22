@@ -2,7 +2,9 @@ use anyhow::{Context, Result};
 use gem_finder_db::models;
 use gem_finder_shared::{
     constants::SEEDED_GEMS,
-    types::{Movie, TmdbConfig, TmdbCredits, TmdbDiscoverResponse, TmdbFindResponse, TmdbMovieDetail},
+    types::{
+        Movie, TmdbConfig, TmdbCredits, TmdbDiscoverResponse, TmdbFindResponse, TmdbMovieDetail,
+    },
 };
 use reqwest::Client;
 use std::env;
@@ -40,7 +42,12 @@ impl TmdbSyncService {
     ///
     /// Sort is `primary_release_date.desc` within the window — newest films in the window
     /// first. Call with multiple era windows from seed-test-data for balanced decade coverage.
-    pub async fn sync_movies(&self, conn: &Connection, start_year: i32, end_year: Option<i32>) -> Result<()> {
+    pub async fn sync_movies(
+        &self,
+        conn: &Connection,
+        start_year: i32,
+        end_year: Option<i32>,
+    ) -> Result<()> {
         use chrono::Datelike;
         use gem_finder_shared::constants::MIN_GEM_AGE_YEARS;
 
@@ -74,7 +81,11 @@ impl TmdbSyncService {
             let page_count = response.results.len();
             tracing::info!(
                 "Discover page {}/{}: {} movies (window {}-{})",
-                page, response.total_pages.min(MAX_PAGES), page_count, start_year, cutoff_year
+                page,
+                response.total_pages.min(MAX_PAGES),
+                page_count,
+                start_year,
+                cutoff_year
             );
 
             for tmdb_movie in response.results {
@@ -97,7 +108,8 @@ impl TmdbSyncService {
 
         tracing::info!(
             "Gem candidate sync complete: {} new, {} already in DB",
-            synced, skipped
+            synced,
+            skipped
         );
         Ok(())
     }
@@ -132,7 +144,9 @@ impl TmdbSyncService {
                 let body = http_resp.text().await.unwrap_or_default();
                 tracing::error!(
                     "TMDB blockbuster discover page {} HTTP {}: {}",
-                    page, status, &body[..body.len().min(200)]
+                    page,
+                    status,
+                    &body[..body.len().min(200)]
                 );
                 break;
             }
@@ -141,7 +155,9 @@ impl TmdbSyncService {
 
             tracing::info!(
                 "TMDB blockbuster page {}/{}: {} movies",
-                page, MAX_PAGES, response.results.len()
+                page,
+                MAX_PAGES,
+                response.results.len()
             );
 
             for tmdb_movie in &response.results {
@@ -184,7 +200,11 @@ impl TmdbSyncService {
                         match models::upsert_movie(conn, &stub).await {
                             Ok(id) => id,
                             Err(e) => {
-                                tracing::warn!("Could not upsert blockbuster stub {}: {}", tmdb_movie.id, e);
+                                tracing::warn!(
+                                    "Could not upsert blockbuster stub {}: {}",
+                                    tmdb_movie.id,
+                                    e
+                                );
                                 continue;
                             }
                         }
@@ -208,7 +228,10 @@ impl TmdbSyncService {
             page += 1;
         }
 
-        tracing::info!("Blockbuster sync complete: {} records written to big_hits", inserted);
+        tracing::info!(
+            "Blockbuster sync complete: {} records written to big_hits",
+            inserted
+        );
         Ok(inserted)
     }
 
@@ -220,16 +243,18 @@ impl TmdbSyncService {
     ///
     /// Returns (seeded_count, total, Vec<(title, result)>), where result is one of
     /// "seeded", "not_found" (no TMDB match), "sync_failed", or "api_error".
-    pub async fn seed_known_gems(&self, conn: &Connection) -> Result<(usize, usize, Vec<(String, String)>)> {
+    pub async fn seed_known_gems(
+        &self,
+        conn: &Connection,
+    ) -> Result<(usize, usize, Vec<(String, String)>)> {
         let total = SEEDED_GEMS.len();
         let mut seeded = 0usize;
         let mut results: Vec<(String, String)> = Vec::new();
 
         for (title, year, imdb_id) in SEEDED_GEMS {
             let result = self.seed_single_gem(conn, title, *year, imdb_id).await;
-            match result.as_str() {
-                "seeded" => seeded += 1,
-                _ => {}
+            if result.as_str() == "seeded" {
+                seeded += 1
             }
             results.push((title.to_string(), result));
         }
@@ -248,7 +273,13 @@ impl TmdbSyncService {
     ///    the IMDb ID yet (common for older or international films).
     ///
     /// Returns a result string: "seeded", "not_found", "sync_failed", or "api_error".
-    async fn seed_single_gem(&self, conn: &Connection, title: &str, year: i32, imdb_id: &str) -> String {
+    async fn seed_single_gem(
+        &self,
+        conn: &Connection,
+        title: &str,
+        year: i32,
+        imdb_id: &str,
+    ) -> String {
         const MAX_RETRIES: u32 = 3;
 
         // ── Phase 1: find by IMDb ID ────────────────────────────────────────
@@ -266,22 +297,48 @@ impl TmdbSyncService {
                 Ok(r) => match r.json().await {
                     Ok(j) => j,
                     Err(e) => {
-                        tracing::warn!("'{}' (imdb:{}) /find attempt {}/{}: parse error: {}", title, imdb_id, attempt, MAX_RETRIES, e);
+                        tracing::warn!(
+                            "'{}' (imdb:{}) /find attempt {}/{}: parse error: {}",
+                            title,
+                            imdb_id,
+                            attempt,
+                            MAX_RETRIES,
+                            e
+                        );
                         if attempt < MAX_RETRIES {
-                            tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64)).await;
+                            tokio::time::sleep(std::time::Duration::from_millis(
+                                500 * attempt as u64,
+                            ))
+                            .await;
                         } else {
-                            tracing::error!("'{}' (imdb:{}): /find parse errors exhausted retries", title, imdb_id);
+                            tracing::error!(
+                                "'{}' (imdb:{}): /find parse errors exhausted retries",
+                                title,
+                                imdb_id
+                            );
                             return "api_error".to_string();
                         }
                         continue;
                     }
                 },
                 Err(e) => {
-                    tracing::warn!("'{}' (imdb:{}) /find attempt {}/{}: request error: {}", title, imdb_id, attempt, MAX_RETRIES, e);
+                    tracing::warn!(
+                        "'{}' (imdb:{}) /find attempt {}/{}: request error: {}",
+                        title,
+                        imdb_id,
+                        attempt,
+                        MAX_RETRIES,
+                        e
+                    );
                     if attempt < MAX_RETRIES {
-                        tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64)).await;
+                        tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64))
+                            .await;
                     } else {
-                        tracing::error!("'{}' (imdb:{}): /find network errors exhausted retries", title, imdb_id);
+                        tracing::error!(
+                            "'{}' (imdb:{}): /find network errors exhausted retries",
+                            title,
+                            imdb_id
+                        );
                         return "api_error".to_string();
                     }
                     continue;
@@ -294,19 +351,39 @@ impl TmdbSyncService {
 
                     // Skip the 2-call sync if the movie is already in the DB.
                     if let Ok(Some(_)) = models::get_movie_by_tmdb_id(conn, found_tmdb_id).await {
-                        tracing::info!("'{}' (tmdb={}) already in DB — skipping API sync", title, found_tmdb_id);
+                        tracing::info!(
+                            "'{}' (tmdb={}) already in DB — skipping API sync",
+                            title,
+                            found_tmdb_id
+                        );
                         return "seeded".to_string();
                     }
 
                     match self.sync_single_movie(conn, found_tmdb_id).await {
                         Ok(_) => {
-                            tracing::info!("Seeded '{}' via /find (imdb={}, tmdb={}) attempt {}", title, imdb_id, found_tmdb_id, attempt);
+                            tracing::info!(
+                                "Seeded '{}' via /find (imdb={}, tmdb={}) attempt {}",
+                                title,
+                                imdb_id,
+                                found_tmdb_id,
+                                attempt
+                            );
                             return "seeded".to_string();
                         }
                         Err(e) => {
-                            tracing::warn!("'{}' /find attempt {}/{}: sync failed (tmdb={}): {}", title, attempt, MAX_RETRIES, found_tmdb_id, e);
+                            tracing::warn!(
+                                "'{}' /find attempt {}/{}: sync failed (tmdb={}): {}",
+                                title,
+                                attempt,
+                                MAX_RETRIES,
+                                found_tmdb_id,
+                                e
+                            );
                             if attempt < MAX_RETRIES {
-                                tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64)).await;
+                                tokio::time::sleep(std::time::Duration::from_millis(
+                                    500 * attempt as u64,
+                                ))
+                                .await;
                             } else {
                                 tracing::error!("'{}' (imdb:{}): /find found movie but all sync attempts failed", title, imdb_id);
                                 return "sync_failed".to_string();
@@ -358,7 +435,9 @@ impl TmdbSyncService {
 
         tracing::info!(
             "'{}' ({}) search fallback returned {} result(s)",
-            title, year, search_resp.results.len()
+            title,
+            year,
+            search_resp.results.len()
         );
 
         match search_resp.results.first() {
@@ -368,7 +447,11 @@ impl TmdbSyncService {
 
                 // Skip sync if already in DB.
                 if let Ok(Some(_)) = models::get_movie_by_tmdb_id(conn, tmdb_id).await {
-                    tracing::info!("'{}' (tmdb={}) already in DB — skipping search fallback sync", title, tmdb_id);
+                    tracing::info!(
+                        "'{}' (tmdb={}) already in DB — skipping search fallback sync",
+                        title,
+                        tmdb_id
+                    );
                     return "seeded".to_string();
                 }
 
@@ -376,12 +459,19 @@ impl TmdbSyncService {
                     Ok(_) => {
                         tracing::info!(
                             "Seeded '{}' via /search fallback (matched '{}', tmdb={})",
-                            title, found_title, tmdb_id
+                            title,
+                            found_title,
+                            tmdb_id
                         );
                         "seeded".to_string()
                     }
                     Err(e) => {
-                        tracing::error!("'{}': /search fallback sync failed for tmdb_id {}: {}", title, tmdb_id, e);
+                        tracing::error!(
+                            "'{}': /search fallback sync failed for tmdb_id {}: {}",
+                            title,
+                            tmdb_id,
+                            e
+                        );
                         "sync_failed".to_string()
                     }
                 }
@@ -426,7 +516,9 @@ impl TmdbSyncService {
                 let body = http_resp.text().await.unwrap_or_default();
                 tracing::error!(
                     "TMDB acclaimed discover page {} HTTP {}: {}",
-                    page, status, &body[..body.len().min(200)]
+                    page,
+                    status,
+                    &body[..body.len().min(200)]
                 );
                 break;
             }
@@ -434,7 +526,9 @@ impl TmdbSyncService {
             let response: TmdbDiscoverResponse = http_resp.json().await?;
             tracing::info!(
                 "Acclaimed candidates page {}/{}: {} movies",
-                page, response.total_pages.min(MAX_PAGES), response.results.len()
+                page,
+                response.total_pages.min(MAX_PAGES),
+                response.results.len()
             );
 
             for tmdb_movie in response.results {
@@ -444,7 +538,11 @@ impl TmdbSyncService {
                 }
                 match self.sync_single_movie(conn, tmdb_movie.id).await {
                     Ok(_) => synced += 1,
-                    Err(e) => tracing::error!("Failed to sync acclaimed candidate {}: {}", tmdb_movie.id, e),
+                    Err(e) => tracing::error!(
+                        "Failed to sync acclaimed candidate {}: {}",
+                        tmdb_movie.id,
+                        e
+                    ),
                 }
             }
 
@@ -456,7 +554,8 @@ impl TmdbSyncService {
 
         tracing::info!(
             "Acclaimed candidate sync complete: {} new, {} already in DB",
-            synced, skipped
+            synced,
+            skipped
         );
         Ok(synced)
     }

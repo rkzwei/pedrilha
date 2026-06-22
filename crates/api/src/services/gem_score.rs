@@ -42,7 +42,7 @@ impl GemScoreCalculator {
         }
 
         // Rating must be in the sweet spot range
-        if rating < IMDB_GEM_MIN || rating > IMDB_GEM_MAX {
+        if !(IMDB_GEM_MIN..=IMDB_GEM_MAX).contains(&rating) {
             return None;
         }
 
@@ -104,7 +104,7 @@ impl GemScoreCalculator {
     /// Peaks around 7.2 (center of range) using a quadratic curve.
     /// At the edges (6.5 or 7.9) → 0.0; at center (7.2) → 1.0.
     fn calc_imdb_rating_score(&self, rating: f64) -> f64 {
-        if rating < IMDB_GEM_MIN || rating > IMDB_GEM_MAX {
+        if !(IMDB_GEM_MIN..=IMDB_GEM_MAX).contains(&rating) {
             return 0.0;
         }
         let center = (IMDB_GEM_MIN + IMDB_GEM_MAX) / 2.0; // 7.2
@@ -261,7 +261,10 @@ pub async fn run_batch_scoring(conn: &Connection) -> Result<usize> {
     //    Avengers are above the 6.0–8.0 gem range and would never appear in the gem
     //    candidate pool, so deriving big_hit_dates from that pool is always wrong.
     let big_hit_dates = models::get_big_hit_dates(conn).await.unwrap_or_else(|e| {
-        tracing::warn!("Could not load big_hit_dates from DB: {}; obscured signal will be zero", e);
+        tracing::warn!(
+            "Could not load big_hit_dates from DB: {}; obscured signal will be zero",
+            e
+        );
         Vec::new()
     });
 
@@ -359,7 +362,15 @@ mod tests {
             (
                 "Sorcerer-profile (1977 thriller, low votes, near Star Wars)",
                 {
-                    let mut m = make_movie(1, 7.5, Some(7.6), 25_000, 1977, "Drama, Thriller", "1977-06-24");
+                    let mut m = make_movie(
+                        1,
+                        7.5,
+                        Some(7.6),
+                        25_000,
+                        1977,
+                        "Drama, Thriller",
+                        "1977-06-24",
+                    );
                     m.rt_critic_score = Some(92);
                     m.rt_audience_score = Some(88);
                     m
@@ -369,7 +380,15 @@ mod tests {
             (
                 "Hurt-Locker-profile (2009, low votes, war/drama)",
                 {
-                    let mut m = make_movie(2, 7.5, Some(7.5), 200_000, 2009, "Drama, Thriller, War", "2009-06-26");
+                    let mut m = make_movie(
+                        2,
+                        7.5,
+                        Some(7.5),
+                        200_000,
+                        2009,
+                        "Drama, Thriller, War",
+                        "2009-06-26",
+                    );
                     m.rt_critic_score = Some(97);
                     m.rt_audience_score = Some(83);
                     m
@@ -379,7 +398,15 @@ mod tests {
             (
                 "Dinner-in-America-profile (2020, very low votes, indie)",
                 {
-                    let mut m = make_movie(3, 7.6, Some(7.5), 5_000, 2020, "Comedy, Drama", "2020-01-20");
+                    let mut m = make_movie(
+                        3,
+                        7.6,
+                        Some(7.5),
+                        5_000,
+                        2020,
+                        "Comedy, Drama",
+                        "2020-01-20",
+                    );
                     m.rt_critic_score = Some(82);
                     m.rt_audience_score = Some(95);
                     m
@@ -413,8 +440,10 @@ mod tests {
         ];
 
         eprintln!("\n{:-<90}", "");
-        eprintln!("{:<50} {:>6} {:>6} {:>6} {:>6} {:>6} {:>6} {:>7}",
-            "Movie", "imdb", "vote_r", "yr_dec", "obscrd", "rt_dis", "boost", "TOTAL%");
+        eprintln!(
+            "{:<50} {:>6} {:>6} {:>6} {:>6} {:>6} {:>6} {:>7}",
+            "Movie", "imdb", "vote_r", "yr_dec", "obscrd", "rt_dis", "boost", "TOTAL%"
+        );
         eprintln!("{:-<90}", "");
 
         for (label, movie, big_hits) in &cases {
@@ -434,7 +463,10 @@ mod tests {
                     );
                 }
                 None => {
-                    eprintln!("{:<50}  -- filtered out (below sweet spot or min votes) --", label);
+                    eprintln!(
+                        "{:<50}  -- filtered out (below sweet spot or min votes) --",
+                        label
+                    );
                 }
             }
         }
@@ -483,9 +515,11 @@ mod tests {
         let old_score = calc.calculate(&old, &[]).unwrap();
         let recent_score = calc.calculate(&recent, &[]).unwrap();
 
-        eprintln!("year_decay: 1965={:.1}%, 2020={:.1}%",
+        eprintln!(
+            "year_decay: 1965={:.1}%, 2020={:.1}%",
             old_score.normalized_score * 100.0,
-            recent_score.normalized_score * 100.0);
+            recent_score.normalized_score * 100.0
+        );
 
         assert!(
             old_score.normalized_score > recent_score.normalized_score,
@@ -530,7 +564,15 @@ mod tests {
     fn test_outside_sweet_spot_returns_none() {
         let calc = GemScoreCalculator::new();
         // Above sweet spot (Avengers-tier)
-        let blockbuster = make_movie(1, 8.4, Some(8.4), 1_200_000, 2012, "Action, Science Fiction", "2012-05-04");
+        let blockbuster = make_movie(
+            1,
+            8.4,
+            Some(8.4),
+            1_200_000,
+            2012,
+            "Action, Science Fiction",
+            "2012-05-04",
+        );
         assert!(
             calc.calculate(&blockbuster, &[]).is_none(),
             "Rating 8.4 is above the sweet spot ceiling — should return None"
@@ -573,8 +615,10 @@ mod tests {
         let u = calc.calculate(&undiscovered, &[]).unwrap();
         let w = calc.calculate(&well_known, &[]).unwrap();
 
-        eprintln!("vote_ratio: undiscovered(1k votes)={:.3}, well_known(500k votes)={:.3}",
-            u.components.vote_ratio_score, w.components.vote_ratio_score);
+        eprintln!(
+            "vote_ratio: undiscovered(1k votes)={:.3}, well_known(500k votes)={:.3}",
+            u.components.vote_ratio_score, w.components.vote_ratio_score
+        );
 
         assert!(
             u.components.vote_ratio_score > w.components.vote_ratio_score,
@@ -600,8 +644,10 @@ mod tests {
         let s_high = calc.calculate(&high_rt, &[]).unwrap();
         let s_low = calc.calculate(&low_rt, &[]).unwrap();
 
-        eprintln!("rt_disparity: high_rt(98%)={:.3}, low_rt(67%)={:.3}",
-            s_high.components.critic_disparity_score, s_low.components.critic_disparity_score);
+        eprintln!(
+            "rt_disparity: high_rt(98%)={:.3}, low_rt(67%)={:.3}",
+            s_high.components.critic_disparity_score, s_low.components.critic_disparity_score
+        );
 
         assert!(
             s_high.components.critic_disparity_score > s_low.components.critic_disparity_score,
@@ -617,7 +663,10 @@ mod tests {
         let movie = make_movie(1, 7.2, None, 10_000, 2010, "Drama", "2010-05-01");
         // No rt_critic_score, no rt_audience_score, imdb_rating is None (TMDB-only).
         let score = calc.calculate(&movie, &[]).unwrap();
-        eprintln!("no_rt_disparity: score={:.3} (should be 0.0)", score.components.critic_disparity_score);
+        eprintln!(
+            "no_rt_disparity: score={:.3} (should be 0.0)",
+            score.components.critic_disparity_score
+        );
         assert_eq!(
             score.components.critic_disparity_score, 0.0,
             "No RT data and no IMDb/TMDB divergence should give 0.0 disparity, not a flat bias"
@@ -651,18 +700,18 @@ mod db_tests {
 
     /// Known seeded gems: (display_name, imdb_id).
     const KNOWN_GEMS: &[(&str, &str)] = &[
-        ("Sorcerer (1977)",          "tt0076740"),
+        ("Sorcerer (1977)", "tt0076740"),
         ("Dinner in America (2020)", "tt9058654"),
-        ("The Hurt Locker (2009)",   "tt0887912"),
+        ("The Hurt Locker (2009)", "tt0887912"),
     ];
 
     /// Scoring result for a single real movie (owned, no lifetime issues).
     struct ScoredMovie {
-        title:      String,
-        year:       i32,
-        imdb_id:    Option<String>,
-        votes:      i64,
-        score:      f64,
+        title: String,
+        year: i32,
+        imdb_id: Option<String>,
+        votes: i64,
+        score: f64,
         components: GemScoreComponents,
     }
 
@@ -704,19 +753,26 @@ mod db_tests {
             .iter()
             .filter_map(|m| {
                 calc.calculate(m, &big_hit_dates).map(|gs| ScoredMovie {
-                    title:      m.title.clone(),
-                    year:       m.year.unwrap_or(0),
-                    imdb_id:    m.imdb_id.clone(),
+                    title: m.title.clone(),
+                    year: m.year.unwrap_or(0),
+                    imdb_id: m.imdb_id.clone(),
                     // Show the actual vote count used in scoring (max of imdb/tmdb),
                     // not just the TMDB count — they can differ substantially.
-                    votes:      m.imdb_vote_count.unwrap_or(0).max(m.tmdb_vote_count.unwrap_or(0)),
-                    score:      gs.normalized_score,
+                    votes: m
+                        .imdb_vote_count
+                        .unwrap_or(0)
+                        .max(m.tmdb_vote_count.unwrap_or(0)),
+                    score: gs.normalized_score,
                     components: gs.components,
                 })
             })
             .collect();
 
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         Some(scored)
     }
 
@@ -724,7 +780,7 @@ mod db_tests {
     #[tokio::test]
     async fn test_real_db_score_table() {
         let scored = match score_real_population().await {
-            Some(s) if s.len() >= 1 => s,
+            Some(s) if !s.is_empty() => s,
             Some(_) | None => {
                 eprintln!("DB has no scored movies — run `cargo run -- seed-test-data` first");
                 return;
@@ -735,13 +791,23 @@ mod db_tests {
         let total_in_db = {
             let conn = match open_db().await {
                 Some(c) => c,
-                None => { eprintln!("Could not re-open DB for count"); return; }
+                None => {
+                    eprintln!("Could not re-open DB for count");
+                    return;
+                }
             };
-            models::get_all_movies_for_scoring(&conn).await.map(|v| v.len()).unwrap_or(scored.len())
+            models::get_all_movies_for_scoring(&conn)
+                .await
+                .map(|v| v.len())
+                .unwrap_or(scored.len())
         };
 
         eprintln!("\n╔══ Real DB Score Table ═══════════════════════════════════════════════════╗");
-        eprintln!("║  {} total movies in DB │ {} passed scoring filter", total_in_db, scored.len());
+        eprintln!(
+            "║  {} total movies in DB │ {} passed scoring filter",
+            total_in_db,
+            scored.len()
+        );
         eprintln!("╠═════╤══════════════════════════════════════╤══════╤════════╤════════════╣");
         eprintln!("║Rank │ Title                                │ Year │ Score% │ Votes      ║");
         eprintln!("╠═════╪══════════════════════════════════════╪══════╪════════╪════════════╣");
@@ -753,7 +819,10 @@ mod db_tests {
         let mut printed_gems = std::collections::HashSet::new();
 
         for (rank, m) in scored.iter().enumerate() {
-            let is_gem = m.imdb_id.as_deref().map_or(false, |id| known_imdb_ids.contains(id));
+            let is_gem = m
+                .imdb_id
+                .as_deref()
+                .is_some_and(|id| known_imdb_ids.contains(id));
             if is_gem {
                 printed_gems.insert(m.imdb_id.clone());
             }
@@ -774,18 +843,27 @@ mod db_tests {
 
         // Component breakdown for known gems
         eprintln!("\n── Known Gem Component Breakdown ───────────────────────────────────────────");
-        eprintln!("{:<35} {:>6} {:>6} {:>6} {:>6} {:>6} {:>6} {:>7}",
-            "Movie", "imdb", "vote_r", "yr_dec", "obscrd", "rt_dis", "boost", "TOTAL%");
+        eprintln!(
+            "{:<35} {:>6} {:>6} {:>6} {:>6} {:>6} {:>6} {:>7}",
+            "Movie", "imdb", "vote_r", "yr_dec", "obscrd", "rt_dis", "boost", "TOTAL%"
+        );
         eprintln!("{:-<85}", "");
         for m in &scored {
-            let is_gem = m.imdb_id.as_deref().map_or(false, |id| known_imdb_ids.contains(id));
+            let is_gem = m
+                .imdb_id
+                .as_deref()
+                .is_some_and(|id| known_imdb_ids.contains(id));
             if is_gem {
                 let c = &m.components;
                 eprintln!(
                     "{:<35} {:>6.3} {:>6.3} {:>6.3} {:>6.3} {:>6.3} {:>6.3} {:>6.1}%",
                     &m.title[..m.title.len().min(34)],
-                    c.imdb_rating_score, c.vote_ratio_score, c.year_decay_score,
-                    c.obscured_by_big_hit_score, c.critic_disparity_score, c.genre_boost,
+                    c.imdb_rating_score,
+                    c.vote_ratio_score,
+                    c.year_decay_score,
+                    c.obscured_by_big_hit_score,
+                    c.critic_disparity_score,
+                    c.genre_boost,
                     m.score * 100.0,
                 );
             }
@@ -831,8 +909,10 @@ mod db_tests {
 
         let top_25_cutoff = ((total as f64 * 0.25).ceil() as usize).max(1);
 
-        eprintln!("\nPopulation: {} scored movies, top-25% = rank ≤ {}",
-            total, top_25_cutoff);
+        eprintln!(
+            "\nPopulation: {} scored movies, top-25% = rank ≤ {}",
+            total, top_25_cutoff
+        );
 
         let mut best_known_rank: Option<usize> = None;
 
@@ -850,8 +930,13 @@ mod db_tests {
                 }
                 Some((rank_idx, m)) => {
                     let rank = rank_idx + 1;
-                    eprintln!("💎 {} → rank {}/{} ({:.1}%)",
-                        label, rank, total, m.score * 100.0);
+                    eprintln!(
+                        "💎 {} → rank {}/{} ({:.1}%)",
+                        label,
+                        rank,
+                        total,
+                        m.score * 100.0
+                    );
 
                     assert!(
                         m.score > 0.0,
@@ -864,7 +949,7 @@ mod db_tests {
                     // algorithm behaviour, not a failure. Only the best known gem needs
                     // to rank in the top 25% as a sanity check.
 
-                    if best_known_rank.map_or(true, |best| rank < best) {
+                    if best_known_rank.is_none_or(|best| rank < best) {
                         best_known_rank = Some(rank);
                     }
                 }
@@ -875,10 +960,14 @@ mod db_tests {
             assert!(
                 best <= top_25_cutoff,
                 "Best known gem ranked {} — expected at least one gem in top 25% (≤ rank {})",
-                best, top_25_cutoff
+                best,
+                top_25_cutoff
             );
-            eprintln!("✅ Best known gem: rank {} (top {:.1}%)",
-                best, (best as f64 / total as f64) * 100.0);
+            eprintln!(
+                "✅ Best known gem: rank {} (top {:.1}%)",
+                best,
+                (best as f64 / total as f64) * 100.0
+            );
         }
     }
 }

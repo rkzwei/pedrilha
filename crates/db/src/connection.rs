@@ -13,18 +13,24 @@ enum InnerDb {
 ///
 /// # Local Usage
 /// ```no_run
+/// # async fn doc() -> anyhow::Result<()> {
 /// use gem_finder_db::Database;
 /// let db = Database::new_local(":memory:").await?;
+/// # Ok(())
+/// # }
 /// ```
 ///
 /// # Turso Cloud Remote Usage
 /// ```no_run
+/// # async fn doc() -> anyhow::Result<()> {
 /// use gem_finder_db::Database;
 /// let db = Database::new_remote(
 ///     "local.db",
 ///     "libsql://your-db.turso.io",
 ///     "your-auth-token",
 /// ).await?;
+/// # Ok(())
+/// # }
 /// ```
 pub struct Database {
     inner: InnerDb,
@@ -40,11 +46,7 @@ impl Database {
     }
 
     /// Create a new remote database that syncs with Turso Cloud.
-    pub async fn new_remote(
-        local_path: &str,
-        remote_url: &str,
-        auth_token: &str,
-    ) -> Result<Self> {
+    pub async fn new_remote(local_path: &str, remote_url: &str, auth_token: &str) -> Result<Self> {
         let inner = turso::sync::Builder::new_remote(local_path)
             .with_remote_url(remote_url)
             .with_auth_token(auth_token)
@@ -71,12 +73,8 @@ impl Database {
                     .expect("TURSO_AUTH_TOKEN must be set when using TURSO_DATABASE_URL");
                 Self::new_remote("gem_finder.db", &remote_url, &token).await
             }
-            Some(local_path) => {
-                Self::new_local(&local_path).await
-            }
-            None => {
-                Self::new_local("gem_finder.db").await
-            }
+            Some(local_path) => Self::new_local(&local_path).await,
+            None => Self::new_local("gem_finder.db").await,
         }
     }
 

@@ -1,3 +1,3 @@
 pub mod gem_score;
-pub mod tmdb_sync;
 pub mod omdb_sync;
+pub mod tmdb_sync;

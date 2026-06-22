@@ -110,13 +110,10 @@ pub async fn trigger_sync(
 
     // Phase B: blockbusters → big_hits
     let phase_b_start = std::time::Instant::now();
-    let blockbusters_synced = sync_service
-        .sync_blockbusters(&conn)
-        .await
-        .map_err(|e| {
-            tracing::error!("Blockbuster sync failed: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let blockbusters_synced = sync_service.sync_blockbusters(&conn).await.map_err(|e| {
+        tracing::error!("Blockbuster sync failed: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let phase_b_duration = phase_b_start.elapsed();
     log_event(
         &conn,
@@ -131,10 +128,8 @@ pub async fn trigger_sync(
 
     // Phase C: ensure the algorithm's ground-truth validation set is in the DB
     let phase_c_start = std::time::Instant::now();
-    let (gems_seeded, gems_total, gem_results) = sync_service
-        .seed_known_gems(&conn)
-        .await
-        .map_err(|e| {
+    let (gems_seeded, gems_total, gem_results) =
+        sync_service.seed_known_gems(&conn).await.map_err(|e| {
             tracing::error!("Seeding known gems failed: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
@@ -207,13 +202,14 @@ pub async fn trigger_enrich(
     .await;
 
     let start = std::time::Instant::now();
-    let (enriched, total, errors) = enrich_service
-        .enrich_movies(&conn, limit)
-        .await
-        .map_err(|e| {
-            tracing::error!("OMDb enrichment failed: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let (enriched, total, errors) =
+        enrich_service
+            .enrich_movies(&conn, limit)
+            .await
+            .map_err(|e| {
+                tracing::error!("OMDb enrichment failed: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
     let duration = start.elapsed();
 
     log_event(
@@ -222,7 +218,10 @@ pub async fn trigger_enrich(
         "enrich_complete",
         &format!(
             "OMDb enrichment: {}/{} enriched, {} errors, took {:?}",
-            enriched, total, errors.len(), duration
+            enriched,
+            total,
+            errors.len(),
+            duration
         ),
     )
     .await;

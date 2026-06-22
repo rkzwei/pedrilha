@@ -33,6 +33,7 @@ pub async fn fetch_gems(
 }
 
 /// Fetch a single movie by its ID.
+#[expect(dead_code)]
 pub async fn fetch_movie(id: i64) -> Result<Movie, String> {
     let url = format!("{}/api/movies/{}", API_BASE, id);
 
