@@ -7,7 +7,9 @@ on:
     branches: [main, develop]
 
 jobs:
-  build:
+  # ── Backend: API + DB + shared crates ──────────────────────────────────────
+  backend:
+    name: Backend (API / DB / shared)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,13 +21,76 @@ jobs:
         uses: swatinem/rust-cache@v2
 
       - name: Check formatting
-        run: cargo fmt -- --check
+        run: cargo fmt --check
 
-      - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Clippy (backend crates)
+        run: >
+          cargo clippy
+          -p gem-finder-api
+          -p gem-finder-db
+          -p gem-finder-shared
+          --all-targets
+          -- -D warnings
 
-      - name: Build workspace
-        run: cargo build --workspace
+      - name: Build (backend crates)
+        run: >
+          cargo build
+          -p gem-finder-api
+          -p gem-finder-db
+          -p gem-finder-shared
 
-      - name: Run tests
-        run: cargo test --workspace
+      - name: Test (backend crates)
+        # --test-threads=1 required: the DB integration tests in gem_score.rs use
+        # Turso local SQLite which does not allow concurrent connections from the
+        # same process. Without this flag, parallel test runners race on open().
+        # DB integration tests skip gracefully (return early) when gem_finder.db
+        # doesn't exist in CI, so this is safe to run without seeding.
+        run: >
+          cargo test
+          -p gem-finder-api
+          -p gem-finder-db
+          -p gem-finder-shared
+          -- --test-threads=1
+
+  # ── Frontend: Leptos WASM ───────────────────────────────────────────────────
+  frontend:
+    name: Frontend (Leptos WASM)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust + wasm32 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache dependencies
+        uses: swatinem/rust-cache@v2
+
+      - name: Install trunk
+        uses: jetli/trunk-action@v0.5.0
+        with:
+          version: "latest"
+
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --locked
+
+      - name: Clippy (frontend, wasm32 target)
+        run: >
+          cargo clippy
+          -p gem-finder-frontend
+          --target wasm32-unknown-unknown
+          -- -D warnings
+
+      - name: Build CSS (Tailwind — only if package.json present)
+        working-directory: crates/frontend
+        run: |
+          if [ -f package.json ]; then
+            npm ci && npm run build:css
+          else
+            echo "No package.json — CSS step skipped (trunk handles assets inline)"
+          fi
+
+      - name: Build frontend (trunk)
+        working-directory: crates/frontend
+        run: trunk build --release

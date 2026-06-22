@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use gem_finder_db::models;
 use gem_finder_shared::{
-    constants::SEEDED_GEMS,
+    constants::{tmdb_rate_limit, SEEDED_GEMS},
     types::{
         Movie, TmdbConfig, TmdbCredits, TmdbDiscoverResponse, TmdbFindResponse, TmdbMovieDetail,
     },
@@ -40,8 +40,16 @@ impl TmdbSyncService {
     /// `end_year`: upper date bound (inclusive). Defaults to `current_year - MIN_GEM_AGE_YEARS`
     /// when `None`. Pass an explicit value to sync a specific era window (e.g. 1985 for classics).
     ///
-    /// Sort is `primary_release_date.desc` within the window — newest films in the window
-    /// first. Call with multiple era windows from seed-test-data for balanced decade coverage.
+    /// Sort is `vote_count.desc` — most-voted films in the window appear first, so each page
+    /// covers notable films distributed across ALL years in the era rather than the newest N.
+    ///
+    /// Exhausts all available TMDB pages using wave-based rate limiting:
+    /// - `PAGE_DELAY_MS` between every discover page request
+    /// - `WAVE_DELAY_MS` after every `WAVE_SIZE` pages (lets the sliding-window bucket recover)
+    ///
+    /// The natural ceiling is `response.total_pages` (up to TMDB's 500-page limit).
+    /// On re-runs, cached movies are skipped via `get_movie_by_tmdb_id` so only the
+    /// discover call is made — the delay still prevents 429s when many pages fire quickly.
     pub async fn sync_movies(
         &self,
         conn: &Connection,
@@ -52,14 +60,12 @@ impl TmdbSyncService {
         use gem_finder_shared::constants::MIN_GEM_AGE_YEARS;
 
         let mut page = 1;
-        // Limit to 5 pages (100 movies) per era window — callers run multiple windows.
-        const MAX_PAGES: i32 = 5;
 
         let default_cutoff = chrono::Utc::now().year() - MIN_GEM_AGE_YEARS;
         let cutoff_year = end_year.unwrap_or(default_cutoff).min(default_cutoff);
 
         tracing::info!(
-            "Syncing gem candidates: release {}-01-01 to {}-12-31, vote_avg 6.0-8.0, vote_count ≥ 500",
+            "Syncing gem candidates: {}-01-01 to {}-12-31, vote_avg 6.0-8.0, vote_count ≥ 500 (wave pagination)",
             start_year, cutoff_year
         );
 
@@ -67,22 +73,55 @@ impl TmdbSyncService {
         let mut skipped = 0usize;
 
         loop {
+            // Wave boundary: longer pause every WAVE_SIZE pages so the rate-limit bucket recovers.
+            if page > 1 && (page - 1) % tmdb_rate_limit::WAVE_SIZE == 0 {
+                tracing::info!(
+                    "Wave boundary at page {} (window {}-{}) — pausing {}ms",
+                    page,
+                    start_year,
+                    cutoff_year,
+                    tmdb_rate_limit::WAVE_DELAY_MS
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    tmdb_rate_limit::WAVE_DELAY_MS,
+                ))
+                .await;
+            } else if page > 1 {
+                // Standard inter-page delay.
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    tmdb_rate_limit::PAGE_DELAY_MS,
+                ))
+                .await;
+            }
+
             let discover_url = format!(
                 "{}/discover/movie?api_key={}&primary_release_date.gte={}-01-01\
                  &primary_release_date.lte={}-12-31\
                  &vote_average.gte=6.0&vote_average.lte=8.0&vote_count.gte=500\
-                 &sort_by=primary_release_date.desc&page={}",
+                 &sort_by=vote_count.desc&page={}",
                 self.base_url, self.api_key, start_year, cutoff_year, page
             );
 
-            let response: TmdbDiscoverResponse =
-                self.client.get(&discover_url).send().await?.json().await?;
+            let http_resp = self.client.get(&discover_url).send().await?;
+            let status = http_resp.status();
+            if !status.is_success() {
+                let body = http_resp.text().await.unwrap_or_default();
+                tracing::error!(
+                    "TMDB discover page {} HTTP {}: {}",
+                    page,
+                    status,
+                    &body[..body.len().min(200)]
+                );
+                break;
+            }
+
+            let response: TmdbDiscoverResponse = http_resp.json().await?;
 
             let page_count = response.results.len();
             tracing::info!(
                 "Discover page {}/{}: {} movies (window {}-{})",
                 page,
-                response.total_pages.min(MAX_PAGES),
+                response.total_pages,
                 page_count,
                 start_year,
                 cutoff_year
@@ -100,16 +139,15 @@ impl TmdbSyncService {
                 }
             }
 
-            if page >= response.total_pages || page >= MAX_PAGES {
+            if page >= response.total_pages || page >= tmdb_rate_limit::MAX_PAGES {
                 break;
             }
             page += 1;
         }
 
         tracing::info!(
-            "Gem candidate sync complete: {} new, {} already in DB",
-            synced,
-            skipped
+            "Gem candidate sync complete (window {}-{}): {} new, {} already in DB ({} pages fetched)",
+            start_year, cutoff_year, synced, skipped, page
         );
         Ok(())
     }
@@ -488,22 +526,39 @@ impl TmdbSyncService {
 
     /// Sync acclaimed candidates: highly-rated movies that may qualify for the acclaimed table.
     ///
-    /// Targets films with TMDB vote_average ≥ 7.5 and vote_count ≥ 10,000 — these are
-    /// the films the audience and critics both love, regardless of whether they're hidden gems.
-    /// After this sync, `classify_acclaimed_films` in models.rs applies the IMDb ≥ 8.0 /
-    /// RT ≥ 80 threshold to populate the acclaimed table itself.
+    /// Targets films with TMDB vote_average ≥ 7.5 and vote_count ≥ 10,000.
+    /// After this sync, `classify_acclaimed_films` applies the IMDb ≥ 8.0 / RT ≥ 80
+    /// threshold to populate the acclaimed table itself.
     ///
-    /// Capped at 5 pages (100 films) — enough to cover all legitimate acclaimed films without
-    /// burning through API quota.
+    /// Exhausts all available pages using wave-based rate limiting (same as `sync_movies`).
     pub async fn sync_acclaimed_candidates(&self, conn: &Connection) -> Result<usize> {
         let mut page = 1;
-        const MAX_PAGES: i32 = 5;
         let mut synced = 0usize;
         let mut skipped = 0usize;
 
-        tracing::info!("Syncing acclaimed candidates: vote_avg ≥ 7.5, vote_count ≥ 10000");
+        tracing::info!(
+            "Syncing acclaimed candidates: vote_avg ≥ 7.5, vote_count ≥ 10000 (wave pagination)"
+        );
 
         loop {
+            // Wave / page delays (same pattern as sync_movies).
+            if page > 1 && (page - 1) % tmdb_rate_limit::WAVE_SIZE == 0 {
+                tracing::info!(
+                    "Wave boundary at acclaimed page {} — pausing {}ms",
+                    page,
+                    tmdb_rate_limit::WAVE_DELAY_MS
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    tmdb_rate_limit::WAVE_DELAY_MS,
+                ))
+                .await;
+            } else if page > 1 {
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    tmdb_rate_limit::PAGE_DELAY_MS,
+                ))
+                .await;
+            }
+
             let url = format!(
                 "{}/discover/movie?api_key={}&vote_average.gte=7.5&vote_count.gte=10000\
                  &sort_by=vote_average.desc&page={}",
@@ -527,7 +582,7 @@ impl TmdbSyncService {
             tracing::info!(
                 "Acclaimed candidates page {}/{}: {} movies",
                 page,
-                response.total_pages.min(MAX_PAGES),
+                response.total_pages,
                 response.results.len()
             );
 
@@ -546,16 +601,17 @@ impl TmdbSyncService {
                 }
             }
 
-            if page >= response.total_pages || page >= MAX_PAGES {
+            if page >= response.total_pages || page >= tmdb_rate_limit::MAX_PAGES {
                 break;
             }
             page += 1;
         }
 
         tracing::info!(
-            "Acclaimed candidate sync complete: {} new, {} already in DB",
+            "Acclaimed candidate sync complete: {} new, {} already in DB ({} pages fetched)",
             synced,
-            skipped
+            skipped,
+            page
         );
         Ok(synced)
     }

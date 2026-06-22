@@ -108,7 +108,7 @@ async fn main() {
 
     let state = AppState { db: Arc::new(db) };
 
-    let app = Router::new()
+    let router = Router::new()
         .route("/health", get(health_check))
         .route("/api/gems", get(get_gems))
         .route("/api/acclaimed", get(get_acclaimed))
@@ -120,6 +120,19 @@ async fn main() {
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
         .with_state(state);
+
+    // In production (SERVE_FRONTEND=1), serve the compiled WASM frontend from dist/.
+    // trunk build writes index.html + wasm assets there. The fallback serves index.html
+    // for all unmatched paths so the Leptos client-side router handles navigation.
+    // In API-only or development mode (trunk serve handles the frontend), leave this off.
+    let app = if std::env::var("SERVE_FRONTEND").is_ok() {
+        use tower_http::services::{ServeDir, ServeFile};
+        let serve_dir = ServeDir::new("dist").not_found_service(ServeFile::new("dist/index.html"));
+        tracing::info!("Frontend serving enabled from dist/");
+        router.fallback_service(serve_dir)
+    } else {
+        router
+    };
 
     let addr = "0.0.0.0:3000";
     tracing::info!("Starting server on {}", addr);
@@ -230,9 +243,9 @@ async fn run_seed_test_data() {
     }
 
     // Step 3b: Discover sync — gem candidates across 4 era windows.
-    // Each window uses 5 pages (100 films, primary_release_date.desc) so we get
-    // the most recently released films from each era. This gives ~400 candidates
-    // spread across 1960–2023 instead of 200 candidates all from 2022-2023.
+    // Each window uses 5 pages (100 films, vote_count.desc) so we get the most-notable
+    // films distributed across ALL years in the era, not just the newest 100.
+    // This gives ~400 candidates spread across 1960–present.
     //
     // Windows: classics (1960-1984), modern classics (1984-1999),
     //          2000s (1999-2012), recent (2012-present)

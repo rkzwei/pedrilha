@@ -11,11 +11,6 @@ use serde::Deserialize;
 use std::env;
 
 #[derive(Deserialize)]
-pub struct SyncQuery {
-    pub start_year: Option<i32>,
-}
-
-#[derive(Deserialize)]
 pub struct EnrichQuery {
     pub limit: Option<i64>,
 }
@@ -62,7 +57,6 @@ async fn log_event(conn: &turso::Connection, level: &str, event_type: &str, mess
 pub async fn trigger_sync(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(payload): Json<SyncQuery>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     check_admin_token(&headers)?;
 
@@ -85,25 +79,35 @@ pub async fn trigger_sync(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let start_year = payload.start_year.unwrap_or(1990);
-
-    // Phase A: gem candidates
+    // Phase A: gem candidates — 4 era windows, sorted by vote_count.desc so each
+    // window returns the most-notable films across ALL years in the range (not just
+    // the newest 100). start_year param is ignored in favour of fixed era windows for
+    // consistent temporal coverage.
     let phase_a_start = std::time::Instant::now();
-    sync_service
-        .sync_movies(&conn, start_year, None)
-        .await
-        .map_err(|e| {
-            tracing::error!("Gem candidate sync failed: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let era_windows: &[(i32, Option<i32>, &str)] = &[
+        (1960, Some(1984), "classics 1960–1984"),
+        (1984, Some(1999), "modern classics 1984–1999"),
+        (1999, Some(2012), "2000s 1999–2012"),
+        (2012, None, "recent 2012–present"),
+    ];
+    for (start, end, label) in era_windows {
+        sync_service
+            .sync_movies(&conn, *start, *end)
+            .await
+            .map_err(|e| {
+                tracing::error!("Gem candidate sync ({}) failed: {}", label, e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+    }
     let phase_a_duration = phase_a_start.elapsed();
     log_event(
         &conn,
         "info",
         "sync_phase_a_complete",
         &format!(
-            "Gem candidate sync from {} completed in {:?}",
-            start_year, phase_a_duration
+            "Gem candidate sync ({} era windows) completed in {:?}",
+            era_windows.len(),
+            phase_a_duration
         ),
     )
     .await;
@@ -160,7 +164,7 @@ pub async fn trigger_sync(
     Ok(Json(serde_json::json!({
         "status": "success",
         "message": "Sync completed",
-        "start_year": start_year,
+        "era_windows": era_windows.len(),
         "blockbusters_synced": blockbusters_synced,
         "known_gems_seeded": gems_seeded,
         "known_gems_total": gems_total,

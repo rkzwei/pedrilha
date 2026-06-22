@@ -88,11 +88,33 @@ pub mod genre_boosts {
     ];
 }
 
+/// TMDB API rate limiting.
+///
+/// TMDB allows 40 requests per 10 seconds on the v3 API. With `sync_movies` making
+/// up to 41 calls per page (1 discover + 20 × 2 movie detail/credits), sequential
+/// processing already throttles the per-movie calls. The page-level delay protects
+/// against the "all movies cached" re-run case where the inner loop is a no-op and
+/// discover pages fire as fast as the network allows.
+///
+/// Wave design: every WAVE_SIZE pages, pause WAVE_DELAY_MS. This gives a natural
+/// heartbeat — short pauses prevent 429s during normal operation; the wave pause
+/// lets the sliding-window bucket fully recover between waves.
+pub mod tmdb_rate_limit {
+    /// Sleep between consecutive discover page requests (ms).
+    pub const PAGE_DELAY_MS: u64 = 300;
+    /// Pages per wave before a longer pause.
+    pub const WAVE_SIZE: i32 = 20;
+    /// Extra sleep at the end of each wave (ms). Lets the TMDB rate-limit bucket recover.
+    pub const WAVE_DELAY_MS: u64 = 2_000;
+    /// Absolute ceiling: TMDB's own limit is 500 pages per query.
+    pub const MAX_PAGES: i32 = 500;
+}
+
 /// Seeded hidden gems — movies known to be incredible but underappreciated.
 /// These are used to seed the database and validate the algorithm.
 pub const SEEDED_GEMS: &[(&str, i32, &str)] = &[
     ("Sorcerer", 1977, "tt0076740"),
     ("Dinner in America", 2020, "tt9058654"),
     ("The Hurt Locker", 2009, "tt0887912"),
-    // Add more as discovered
+    ("The Messenger", 2009, "tt1340803"),
 ];

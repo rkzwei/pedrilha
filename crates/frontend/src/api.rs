@@ -32,8 +32,29 @@ pub async fn fetch_gems(
     Ok(data)
 }
 
+/// Fetch a paginated list of acclaimed films (IMDb ≥ 8.0, RT ≥ 80%).
+pub async fn fetch_acclaimed(
+    page: i32,
+    per_page: i32,
+) -> Result<PaginatedResponse<MovieSummary>, String> {
+    let url = format!(
+        "{}/api/acclaimed?page={}&per_page={}",
+        API_BASE, page, per_page
+    );
+
+    let response = reqwest::get(&url)
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    let data = response
+        .json::<PaginatedResponse<MovieSummary>>()
+        .await
+        .map_err(|e| format!("Parse error: {}", e))?;
+
+    Ok(data)
+}
+
 /// Fetch a single movie by its ID.
-#[expect(dead_code)]
 pub async fn fetch_movie(id: i64) -> Result<Movie, String> {
     let url = format!("{}/api/movies/{}", API_BASE, id);
 

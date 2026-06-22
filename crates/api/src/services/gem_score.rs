@@ -288,7 +288,26 @@ pub async fn run_batch_scoring(conn: &Connection) -> Result<usize> {
     // 4. Sort by score descending and assign ranks
     scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    // 5. Persist scores and ranks back to the database
+    // 5. Normalize: divide all scores by the population max so the top gem = 1.0.
+    //    Raw scores rarely reach theoretical max (all components peak simultaneously,
+    //    which requires e.g. year_decay=1.0 AND vote_ratio=1.0 AND imdb=7.2 exactly AND
+    //    big-hit overlap). Without normalization, Sorcerer scores ~66% instead of 100%.
+    //    After normalization, the best gem in the current pool always scores 100% and
+    //    all other gems are expressed relative to it.
+    if let Some(&(_, max_score)) = scored.first() {
+        if max_score > 0.0 && max_score < 1.0 {
+            tracing::info!(
+                "Normalizing {} scores by population max {:.4} (top gem → 100%)",
+                scored_count,
+                max_score
+            );
+            for (_, score) in &mut scored {
+                *score = (*score / max_score).clamp(0.0, 1.0);
+            }
+        }
+    }
+
+    // 6. Persist scores and ranks back to the database
     for (rank_idx, (movie_id, score)) in scored.iter().enumerate() {
         let rank = (rank_idx + 1) as i64;
         if let Err(e) = models::update_movie_gem_score(conn, *movie_id, *score, rank).await {
@@ -297,7 +316,7 @@ pub async fn run_batch_scoring(conn: &Connection) -> Result<usize> {
     }
 
     tracing::info!(
-        "Batch scoring complete: {}/{} movies scored",
+        "Batch scoring complete: {}/{} movies scored (normalized to population max)",
         scored_count,
         total
     );
