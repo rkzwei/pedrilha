@@ -24,6 +24,8 @@ jobs:
         run: cargo fmt --check
 
       - name: Clippy (backend crates)
+        env:
+          SKIP_TRUNK_BUILD: "1"
         run: >
           cargo clippy
           -p gem-finder-api
@@ -33,6 +35,8 @@ jobs:
           -- -D warnings
 
       - name: Build (backend crates)
+        env:
+          SKIP_TRUNK_BUILD: "1"
         run: >
           cargo build
           -p gem-finder-api
@@ -45,6 +49,8 @@ jobs:
         # same process. Without this flag, parallel test runners race on open().
         # DB integration tests skip gracefully (return early) when gem_finder.db
         # doesn't exist in CI, so this is safe to run without seeding.
+        env:
+          SKIP_TRUNK_BUILD: "1"
         run: >
           cargo test
           -p gem-finder-api

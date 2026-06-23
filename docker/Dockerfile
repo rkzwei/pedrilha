@@ -1,49 +1,71 @@
-# Stage 1: Build the API server
-FROM rust:1.96-slim-bookworm AS builder
+# ─── Stage 1: Frontend (Tailwind CSS + Leptos WASM) ──────────────────────────
+FROM rust:1.78-slim-bookworm AS frontend-builder
 
 RUN apt-get update && apt-get install -y \
-    pkg-config \
-    libssl-dev \
+    curl ca-certificates pkg-config libssl-dev \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# wasm32 compile target
+RUN rustup target add wasm32-unknown-unknown
+
+# trunk: download pre-built binary (much faster than cargo install)
+RUN curl -fsSL \
+    https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz \
+    | tar -xzC /usr/local/bin
+
+# wasm-bindgen-cli: required by trunk
+RUN cargo install wasm-bindgen-cli
+
+WORKDIR /app
+COPY . .
+
+# Build Tailwind CSS then WASM frontend
+RUN cd crates/frontend && npm install && npm run build:css
+RUN trunk build --release
+
+# ─── Stage 2: API binary ─────────────────────────────────────────────────────
+FROM rust:1.78-slim-bookworm AS api-builder
+
+RUN apt-get update && apt-get install -y pkg-config libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy manifests for dependency caching
+# Cache Cargo dependencies in a separate layer
 COPY Cargo.toml Cargo.lock ./
-COPY crates/shared/Cargo.toml crates/shared/
-COPY crates/db/Cargo.toml crates/db/
-COPY crates/api/Cargo.toml crates/api/
+COPY crates/shared/Cargo.toml  crates/shared/
+COPY crates/db/Cargo.toml      crates/db/
+COPY crates/api/Cargo.toml     crates/api/
+COPY crates/frontend/Cargo.toml crates/frontend/
 
-# Build dependencies (cached layer)
-RUN mkdir -p crates/shared/src crates/db/src crates/api/src && \
-    echo "fn main() {}" > crates/api/src/main.rs && \
-    echo "" > crates/shared/src/lib.rs && \
-    echo "" > crates/db/src/lib.rs && \
-    cargo build --package gem-finder-api --release 2>/dev/null || true
+RUN mkdir -p crates/shared/src crates/db/src crates/api/src crates/frontend/src \
+    && echo "fn main() {}" > crates/api/src/main.rs \
+    && echo "fn main() {}" > crates/frontend/src/main.rs \
+    && echo "" > crates/shared/src/lib.rs \
+    && echo "" > crates/db/src/lib.rs \
+    && SKIP_TRUNK_BUILD=1 cargo build --package gem-finder-api --release 2>/dev/null || true
 
-# Copy actual source
+# Copy real source
 COPY crates/shared/src crates/shared/src/
-COPY crates/db/src crates/db/src/
-COPY crates/api/src crates/api/src/
+COPY crates/db/src     crates/db/src/
+COPY crates/api/src    crates/api/src/
 
-# Build the actual binary
-RUN cargo build --package gem-finder-api --release
+# SKIP_TRUNK_BUILD: frontend is already built in stage 1
+RUN SKIP_TRUNK_BUILD=1 cargo build --package gem-finder-api --release
 
-# Stage 2: Runtime
+# ─── Stage 3: Runtime image ───────────────────────────────────────────────────
 FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    libssl3 \
+RUN apt-get update && apt-get install -y ca-certificates libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy the binary
-COPY --from=builder /app/target/release/gem-finder-api /app/gem-finder-api
+COPY --from=api-builder   /app/target/release/gem-finder-api ./gem-finder-api
+COPY --from=frontend-builder /app/dist ./dist
 
-# Expose the API port
+ENV SERVE_FRONTEND=1
 EXPOSE 3000
-
-# Run the API server
-CMD ["/app/gem-finder-api"]
+CMD ["./gem-finder-api"]
