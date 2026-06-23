@@ -73,7 +73,7 @@ jobs:
           version: "latest"
 
       - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli --locked
+        run: cargo install wasm-bindgen-cli
 
       - name: Clippy (frontend, wasm32 target)
         run: >
@@ -86,7 +86,7 @@ jobs:
         working-directory: crates/frontend
         run: |
           if [ -f package.json ]; then
-            npm ci && npm run build:css
+            npm install && npm run build:css
           else
             echo "No package.json — CSS step skipped (trunk handles assets inline)"
           fi

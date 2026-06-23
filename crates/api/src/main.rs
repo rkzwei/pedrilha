@@ -116,6 +116,7 @@ async fn main() {
         .route("/api/score", post(run_scoring))
         .route("/api/admin/sync", post(routes::admin::trigger_sync))
         .route("/api/admin/enrich", post(routes::admin::trigger_enrich))
+        .route("/api/admin/score", post(routes::admin::trigger_score))
         .route("/api/admin/logs", get(routes::admin::get_run_logs))
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())

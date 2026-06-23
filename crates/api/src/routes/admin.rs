@@ -243,6 +243,50 @@ pub async fn trigger_enrich(
     })))
 }
 
+/// POST /api/admin/score
+///
+/// Runs the gem scoring algorithm over all movies in the DB.
+pub async fn trigger_score(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    check_admin_token(&headers)?;
+
+    let conn = state
+        .db
+        .connect()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    log_event(&conn, "info", "score_started", "Gem scoring run starting").await;
+
+    let start = std::time::Instant::now();
+    let scored = crate::services::gem_score::run_batch_scoring(&conn)
+        .await
+        .map_err(|e| {
+            tracing::error!("Scoring failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    let duration = start.elapsed();
+
+    log_event(
+        &conn,
+        "info",
+        "score_complete",
+        &format!(
+            "Scoring complete: {} movies scored in {:?}",
+            scored, duration
+        ),
+    )
+    .await;
+
+    Ok(Json(serde_json::json!({
+        "status": "success",
+        "movies_scored": scored,
+        "duration_secs": duration.as_secs_f64(),
+    })))
+}
+
 /// GET /api/admin/logs
 ///
 /// Returns the most recent run log entries.

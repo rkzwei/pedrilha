@@ -35,6 +35,9 @@ fn App() -> impl IntoView {
                             <A href="/acclaimed" attr:class="text-gray-300 hover:text-white transition-colors">
                                 "Acclaimed"
                             </A>
+                            <A href="/admin" attr:class="text-gray-300 hover:text-white transition-colors">
+                                "Admin"
+                            </A>
                         </div>
                     </nav>
                 </header>
@@ -50,6 +53,7 @@ fn App() -> impl IntoView {
                         <Route path=path!("/") view=pages::HomePage />
                         <Route path=path!("/acclaimed") view=pages::AcclaimedPage />
                         <Route path=path!("/movie/:id") view=pages::MovieDetail />
+                        <Route path=path!("/admin") view=pages::AdminPage />
                     </Routes>
                 </main>
 

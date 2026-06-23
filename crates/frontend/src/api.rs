@@ -54,6 +54,62 @@ pub async fn fetch_acclaimed(
     Ok(data)
 }
 
+/// POST /api/admin/sync — trigger TMDB sync pipeline.
+pub async fn admin_sync() -> Result<serde_json::Value, String> {
+    let url = format!("{}/api/admin/sync", API_BASE);
+    let response = reqwest::Client::new()
+        .post(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("Parse error: {}", e))
+}
+
+/// POST /api/admin/enrich — run OMDb enrichment.
+pub async fn admin_enrich(limit: i64) -> Result<serde_json::Value, String> {
+    let url = format!("{}/api/admin/enrich", API_BASE);
+    let response = reqwest::Client::new()
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .body(format!(r#"{{"limit":{}}}"#, limit))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("Parse error: {}", e))
+}
+
+/// POST /api/admin/score — run gem scoring.
+pub async fn admin_score() -> Result<serde_json::Value, String> {
+    let url = format!("{}/api/admin/score", API_BASE);
+    let response = reqwest::Client::new()
+        .post(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("Parse error: {}", e))
+}
+
+/// GET /api/admin/logs — fetch recent run logs.
+pub async fn admin_logs() -> Result<serde_json::Value, String> {
+    let url = format!("{}/api/admin/logs", API_BASE);
+    let response = reqwest::get(&url)
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("Parse error: {}", e))
+}
+
 /// Fetch a single movie by its ID.
 pub async fn fetch_movie(id: i64) -> Result<Movie, String> {
     let url = format!("{}/api/movies/{}", API_BASE, id);

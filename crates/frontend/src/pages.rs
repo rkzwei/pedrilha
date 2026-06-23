@@ -365,19 +365,201 @@ fn MovieCard(movie: MovieSummary) -> impl IntoView {
                     view!{ <p class="text-xs text-gray-500 mt-1 truncate">{director}</p> }.into_any()
                 } else { view!{ <span /> }.into_any() }}
             </div>
-        </A>
+       
+// ── Admin page ───────────────────────────────────────────────────────────────
+#[derive(Clone, PartialEq)]
+enum ActionState {
+    Idle,
+    Running,
+    Done(String),
+    Failed(String),
+}
+
+#[component]
+pub fn AdminPage() -> impl IntoView {
+    let (sync_state, set_sync_state) = signal(ActionState::Idle);
+    let (enrich_state, set_enrich_state) = signal(ActionState::Idle);
+    let (score_state, set_score_state) = signal(ActionState::Idle);
+    let (logs, set_logs) = signal(Vec::<serde_json::Value>::new());
+    let (logs_loading, set_logs_loading) = signal(false);
+
+    Effect::new(move |_| {
+        set_logs_loading.set(true);
+        spawn_local(async move {
+            if let Ok(resp) = api::admin_logs().await {
+                if let Some(arr) = resp.get("logs").and_then(|v| v.as_array()) {
+                    set_logs.set(arr.clone());
+                }
+            }
+            set_logs_loading.set(false);
+        });
+    });
+
+    let run_sync = move |_| {
+        set_sync_state.set(ActionState::Running);
+        spawn_local(async move {
+            match api::admin_sync().await {
+                Ok(v) => {
+                    let msg = format!(
+                        "✓ {} era windows, {} blockbusters, {}/{} gems",
+                        v.get("era_windows").and_then(|x| x.as_i64()).unwrap_or(0),
+                        v.get("blockbusters_synced").and_then(|x| x.as_i64()).unwrap_or(0),
+                        v.get("known_gems_seeded").and_then(|x| x.as_i64()).unwrap_or(0),
+                        v.get("known_gems_total").and_then(|x| x.as_i64()).unwrap_or(0),
+                    );
+                    set_sync_state.set(ActionState::Done(msg));
+                }
+                Err(e) => set_sync_state.set(ActionState::Failed(e)),
+            }
+        });
+    };
+
+    let run_enrich = move |_| {
+        set_enrich_state.set(ActionState::Running);
+        spawn_local(async move {
+            match api::admin_enrich(500).await {
+                Ok(v) => {
+                    let msg = format!(
+                        "✓ {}/{} enriched, {} errors",
+                        v.get("enriched").and_then(|x| x.as_i64()).unwrap_or(0),
+                        v.get("total_candidates").and_then(|x| x.as_i64()).unwrap_or(0),
+                        v.get("errors_count").and_then(|x| x.as_i64()).unwrap_or(0),
+                    );
+                    set_enrich_state.set(ActionState::Done(msg));
+                }
+                Err(e) => set_enrich_state.set(ActionState::Failed(e)),
+            }
+        });
+    };
+
+    let run_score = move |_| {
+        set_score_state.set(ActionState::Running);
+        spawn_local(async move {
+            match api::admin_score().await {
+                Ok(v) => {
+                    let msg = format!(
+                        "✓ {} movies in {:.1}s",
+                        v.get("movies_scored").and_then(|x| x.as_i64()).unwrap_or(0),
+                        v.get("duration_secs").and_then(|x| x.as_f64()).unwrap_or(0.0),
+                    );
+                    set_score_state.set(ActionState::Done(msg));
+                }
+                Err(e) => set_score_state.set(ActionState::Failed(e)),
+            }
+        });
+    };
+
+    view! {
+        <div class="max-w-3xl mx-auto px-4 py-8">
+            <h1 class="text-3xl font-bold text-white mb-2">"Admin"</h1>
+            <p class="text-gray-400 mb-8">"Manage sync, enrichment, and scoring pipelines."</p>
+
+            <div class="space-y-4 mb-10">
+                <AdminAction
+                    label="Sync Movies"
+                    description="Fetch hidden gem candidates + blockbusters from TMDB (all eras)"
+                    button_label="Run Sync"
+                    button_class="bg-emerald-700 hover:bg-emerald-600"
+                    state=sync_state
+                    on_click=run_sync
+                />
+                <AdminAction
+                    label="Enrich (OMDb)"
+                    description="Fetch IMDb ratings + Rotten Tomatoes scores (500 movies)"
+                    button_label="Run Enrich"
+                    button_class="bg-blue-700 hover:bg-blue-600"
+                    state=enrich_state
+                    on_click=run_enrich
+                />
+                <AdminAction
+                    label="Score Gems"
+                    description="Recompute gem scores for all movies in the DB"
+                    button_label="Run Score"
+                    button_class="bg-purple-700 hover:bg-purple-600"
+                    state=score_state
+                    on_click=run_score
+                />
+            </div>
+
+            <h2 class="text-xl font-semibold text-white mb-3">"Recent Logs"</h2>
+            {move || if logs_loading.get() {
+                view!{ <p class="text-gray-500 text-sm animate-pulse">"Loading logs…"</p> }.into_any()
+            } else if logs.get().is_empty() {
+                view!{ <p class="text-gray-500 text-sm">"No logs yet."</p> }.into_any()
+            } else {
+                let rows = logs.get().into_iter().map(|entry| {
+                    let level = entry.get("level").and_then(|v| v.as_str()).unwrap_or("info").to_string();
+                    let event = entry.get("event_type").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let msg   = entry.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let ts    = entry.get("created_at").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let level_class = match level.as_str() {
+                        "error" => "text-red-400",
+                        "warn"  => "text-yellow-400",
+                        _       => "text-emerald-400",
+                    }.to_string();
+                    view!{
+                        <tr class="border-t border-gray-800 text-xs font-mono">
+                            <td class={format!("py-1.5 pr-3 {}", level_class)}>{level}</td>
+                            <td class="py-1.5 pr-3 text-gray-400">{event}</td>
+                            <td class="py-1.5 pr-3 text-gray-300 max-w-xs truncate">{msg}</td>
+                            <td class="py-1.5 text-gray-600 whitespace-nowrap">{ts}</td>
+                        </tr>
+                    }
+                }).collect::<Vec<_>>();
+                view!{
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead>
+                                <tr class="text-xs text-gray-600 uppercase">
+                                    <th class="pb-2 text-left">"Level"</th>
+                                    <th class="pb-2 text-left">"Event"</th>
+                                    <th class="pb-2 text-left">"Message"</th>
+                                    <th class="pb-2 text-left">"Time"</th>
+                                </tr>
+                            </thead>
+                            <tbody>{rows}</tbody>
+                        </table>
+                    </div>
+                }.into_any()
+            }}
+        </div>
     }
 }
 
-// ── Skeleton card ────────────────────────────────────────────────────────────
 #[component]
-fn SkeletonCard() -> impl IntoView {
+fn AdminAction(
+    label: &'static str,
+    description: &'static str,
+    button_label: &'static str,
+    button_class: &'static str,
+    #[prop(into)] state: Signal<ActionState>,
+    on_click: impl Fn(web_sys::MouseEvent) + 'static,
+) -> impl IntoView {
     view! {
-        <div class="bg-gray-800 rounded-lg overflow-hidden animate-pulse">
-            <div class="bg-gray-700" style="aspect-ratio:2/3" />
-            <div class="p-3 space-y-2">
-                <div class="h-4 bg-gray-700 rounded w-4/5" />
-                <div class="h-3 bg-gray-700 rounded w-2/5" />
+        <div class="flex items-center gap-4 p-4 bg-gray-900 rounded-lg border border-gray-800">
+            <div class="flex-1 min-w-0">
+                <p class="text-white font-medium text-sm">{label}</p>
+                <p class="text-xs text-gray-500 mt-0.5">{description}</p>
+            </div>
+            <div class="flex items-center gap-3 flex-shrink-0">
+                <span class="text-xs max-w-xs truncate" class:text-gray-400={move || state.get() == ActionState::Idle}
+                    class:text-yellow-400={move || state.get() == ActionState::Running}
+                    class:animate-pulse={move || state.get() == ActionState::Running}
+                    class:text-emerald-400={move || matches!(state.get(), ActionState::Done(_))}
+                    class:text-red-400={move || matches!(state.get(), ActionState::Failed(_))}>
+                    {move || match state.get() {
+                        ActionState::Idle       => String::new(),
+                        ActionState::Running    => "Running…".to_string(),
+                        ActionState::Done(msg)  => msg,
+                        ActionState::Failed(e)  => format!("✗ {}", e),
+                    }}
+                </span>
+                <button
+                    class={format!("px-4 py-2 {} text-white rounded text-sm disabled:opacity-40 transition-colors", button_class)}
+                    disabled=move || state.get() == ActionState::Running
+                    on:click=on_click>
+                    {button_label}
+                </button>
             </div>
         </div>
     }
