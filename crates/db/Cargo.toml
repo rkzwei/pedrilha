@@ -9,3 +9,4 @@ turso = { version = "0.7.0-pre.10", features = ["sync"] }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"
+tracing = "0.1"

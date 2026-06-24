@@ -560,6 +560,109 @@ pub async fn get_wildcards_count(conn: &Connection) -> Result<i64> {
     }
 }
 
+// ── Cache-feed queries (full sorted lists, no pagination) ─────────────────────
+//
+// These power the in-memory TTL cache in the API layer. Each function returns
+// the complete sorted list; the API handler applies user-supplied filters and
+// pagination on the in-memory Vec, so the DB is only hit on cache misses.
+
+/// All scored hidden gems ordered by gem_score DESC — excludes wildcards (RT < 50).
+/// Films with no RT data (NULL) are kept — benefit of the doubt for older films.
+pub async fn get_all_gems_for_cache(conn: &Connection) -> Result<Vec<MovieSummary>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, title, year, genre, director, poster_url,
+                    imdb_rating, rt_critic_score, gem_score, gem_rank
+             FROM movies
+             WHERE gem_score IS NOT NULL
+               AND (rt_critic_score IS NULL OR rt_critic_score >= 50)
+             ORDER BY gem_score DESC, gem_rank ASC",
+        )
+        .await?;
+    let mut rows = stmt.query(turso::params![]).await?;
+
+    let mut results = Vec::new();
+    while let Some(row) = rows.next().await? {
+        results.push(MovieSummary {
+            id: value_to_opt_i64(row.get_value(0)?).unwrap_or(0),
+            title: value_to_opt_string(row.get_value(1)?).unwrap_or_default(),
+            year: value_to_opt_i32(row.get_value(2)?),
+            genre: value_to_opt_string(row.get_value(3)?),
+            director: value_to_opt_string(row.get_value(4)?),
+            poster_url: value_to_opt_string(row.get_value(5)?),
+            imdb_rating: value_to_opt_f64(row.get_value(6)?),
+            rt_critic_score: value_to_opt_i32(row.get_value(7)?),
+            gem_score: value_to_opt_f64(row.get_value(8)?),
+            gem_rank: value_to_opt_i64(row.get_value(9)?),
+        });
+    }
+    Ok(results)
+}
+
+/// All acclaimed films ordered by imdb_rating DESC, rt_critic_score DESC.
+pub async fn get_all_acclaimed_for_cache(conn: &Connection) -> Result<Vec<MovieSummary>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT m.id, m.title, m.year, m.genre, m.director,
+                    m.poster_url, m.imdb_rating, m.rt_critic_score,
+                    m.gem_score, m.gem_rank
+             FROM acclaimed a
+             JOIN movies m ON m.id = a.movie_id
+             ORDER BY m.imdb_rating DESC, m.rt_critic_score DESC",
+        )
+        .await?;
+    let mut rows = stmt.query(turso::params![]).await?;
+
+    let mut results = Vec::new();
+    while let Some(row) = rows.next().await? {
+        results.push(MovieSummary {
+            id: value_to_opt_i64(row.get_value(0)?).unwrap_or(0),
+            title: value_to_opt_string(row.get_value(1)?).unwrap_or_default(),
+            year: value_to_opt_i32(row.get_value(2)?),
+            genre: value_to_opt_string(row.get_value(3)?),
+            director: value_to_opt_string(row.get_value(4)?),
+            poster_url: value_to_opt_string(row.get_value(5)?),
+            imdb_rating: value_to_opt_f64(row.get_value(6)?),
+            rt_critic_score: value_to_opt_i32(row.get_value(7)?),
+            gem_score: value_to_opt_f64(row.get_value(8)?),
+            gem_rank: value_to_opt_i64(row.get_value(9)?),
+        });
+    }
+    Ok(results)
+}
+
+/// All wildcard films ordered by gem_score DESC.
+pub async fn get_all_wildcards_for_cache(conn: &Connection) -> Result<Vec<MovieSummary>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT m.id, m.title, m.year, m.genre, m.director,
+                    m.poster_url, m.imdb_rating, m.rt_critic_score,
+                    m.gem_score, m.gem_rank
+             FROM wildcards w
+             JOIN movies m ON m.id = w.movie_id
+             ORDER BY m.gem_score DESC",
+        )
+        .await?;
+    let mut rows = stmt.query(turso::params![]).await?;
+
+    let mut results = Vec::new();
+    while let Some(row) = rows.next().await? {
+        results.push(MovieSummary {
+            id: value_to_opt_i64(row.get_value(0)?).unwrap_or(0),
+            title: value_to_opt_string(row.get_value(1)?).unwrap_or_default(),
+            year: value_to_opt_i32(row.get_value(2)?),
+            genre: value_to_opt_string(row.get_value(3)?),
+            director: value_to_opt_string(row.get_value(4)?),
+            poster_url: value_to_opt_string(row.get_value(5)?),
+            imdb_rating: value_to_opt_f64(row.get_value(6)?),
+            rt_critic_score: value_to_opt_i32(row.get_value(7)?),
+            gem_score: value_to_opt_f64(row.get_value(8)?),
+            gem_rank: value_to_opt_i64(row.get_value(9)?),
+        });
+    }
+    Ok(results)
+}
+
 /// Update a movie's enrichment data from OMDb.
 /// Only sets fields that are Some — None values leave the existing DB column unchanged.
 pub async fn update_movie_enrichment(

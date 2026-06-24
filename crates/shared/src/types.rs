@@ -63,21 +63,165 @@ pub struct BigHit {
     pub popularity_score: Option<f64>,
 }
 
-/// A user's watchlist entry (for future use).
+// ──────────────────────────────────────────────
+// Phase 8: Users, Auth, Watchlist
+// ──────────────────────────────────────────────
+
+/// A registered user (one row per email address).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct User {
+    pub id: String, // UUID v4
+    pub email: String,
+    pub username: Option<String>, // user-chosen; NULL until set during onboarding
+    pub created_at: Option<String>,
+    pub last_login: Option<String>,
+}
+
+/// A one-time magic-link auth token.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MagicToken {
+    pub token: String, // UUID v4, unguessable
+    pub user_id: String,
+    pub expires_at: String, // ISO-8601 UTC
+    pub used_at: Option<String>,
+    pub created_at: Option<String>,
+}
+
+/// A user's watchlist entry (one per user × movie pair).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WatchlistEntry {
     pub id: Option<i64>,
+    pub user_id: String,
     pub movie_id: i64,
-    pub status: WatchStatus,
-    pub added_at: Option<String>,
+    pub state: WatchState,
+    /// Optional 1–10 user rating; only meaningful when state is `Watched`.
+    pub user_rating: Option<i32>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
 }
 
-/// Status of a movie in a user's watchlist.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum WatchStatus {
-    ToWatch,
-    Watching,
+/// State of a movie in a user's watchlist.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WatchState {
+    WantToWatch,
     Watched,
+    NotInterested,
+}
+
+impl WatchState {
+    /// Canonical DB string value (matches the CHECK constraint in migrations).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            WatchState::WantToWatch => "want_to_watch",
+            WatchState::Watched => "watched",
+            WatchState::NotInterested => "not_interested",
+        }
+    }
+}
+
+impl std::fmt::Display for WatchState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl TryFrom<&str> for WatchState {
+    type Error = anyhow::Error;
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        match s {
+            "want_to_watch" => Ok(WatchState::WantToWatch),
+            "watched" => Ok(WatchState::Watched),
+            "not_interested" => Ok(WatchState::NotInterested),
+            other => Err(anyhow::anyhow!("unknown watch state: {other}")),
+        }
+    }
+}
+
+/// A WebAuthn passkey credential registered by a user.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserPasskey {
+    pub id: Option<i64>,
+    pub user_id: String,
+    pub credential_id: String, // base64url
+    pub public_key: String,    // webauthn-rs serialized JSON
+    pub sign_count: i64,
+    pub name: Option<String>, // user-given label
+    pub created_at: Option<String>,
+}
+
+// ── Auth request / response DTOs ─────────────────────────────────────────────
+
+/// Request body for `PATCH /api/user/username` — set or update username after first login.
+///
+/// **Validation (enforced in the API handler before any DB call):**
+/// - 3–30 characters
+/// - Only `[a-zA-Z0-9_]` — the regex rejects SQL metacharacters (`'`, `;`, `--`, spaces, etc.)
+///   before the value ever reaches a query, providing defence-in-depth on top of the
+///   parameterized queries (`turso::params![]`) used throughout the DB layer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsernameUpdate {
+    pub username: String,
+}
+
+impl UsernameUpdate {
+    /// Returns `Ok(())` if the username passes all constraints, or a human-readable
+    /// error string if not. Call this in the API handler before touching the DB.
+    pub fn validate(&self) -> Result<(), &'static str> {
+        let len = self.username.len();
+        if len < 3 {
+            return Err("Username must be at least 3 characters");
+        }
+        if len > 30 {
+            return Err("Username must be 30 characters or fewer");
+        }
+        if !self
+            .username
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return Err("Username may only contain letters, numbers, and underscores");
+        }
+        Ok(())
+    }
+}
+
+/// Response from `GET /api/user/username/check?username=` — availability check.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsernameAvailability {
+    pub username: String,
+    pub available: bool,
+}
+
+/// Request body for `POST /api/auth/magic` — initiates magic-link flow.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MagicLinkRequest {
+    pub email: String,
+}
+
+/// Request body for `POST /api/auth/verify` — exchanges token for JWT.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MagicLinkVerify {
+    pub token: String,
+}
+
+/// Response from a successful auth verify — contains the session JWT.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthResponse {
+    pub token: String,
+    pub user_id: String,
+    pub email: String,
+}
+
+// ── Watchlist request DTOs ────────────────────────────────────────────────────
+
+/// Request body for `POST /api/watchlist`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchlistUpsert {
+    pub movie_id: i64,
+    pub state: WatchState,
+    /// Optional 1–10 rating; required when state == Watched, ignored otherwise.
+    pub user_rating: Option<i32>,
 }
 
 /// API response wrapper for paginated results.

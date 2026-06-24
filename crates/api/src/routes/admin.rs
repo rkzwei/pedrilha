@@ -75,6 +75,7 @@ pub async fn trigger_sync(
     let guard = acquire_busy(&state.admin_busy)?;
     let db = state.db.clone();
     let tmdb_key = state.tmdb_api_key.clone();
+    let cache = state.movie_cache.clone();
 
     tokio::spawn(async move {
         let _guard = guard; // released when this task ends (or panics)
@@ -159,6 +160,10 @@ pub async fn trigger_sync(
             }
             Err(e) => log("error", "sync_failed", format!("known gems: {}", e)).await,
         }
+
+        // Sync added new movies — movie list cache is stale.
+        cache.write().await.invalidate();
+        tracing::info!("movie list cache invalidated after sync");
     });
 
     Ok(Json(serde_json::json!({
@@ -252,6 +257,7 @@ pub async fn trigger_score(
 
     let guard = acquire_busy(&state.admin_busy)?;
     let db = state.db.clone();
+    let cache = state.movie_cache.clone();
 
     tokio::spawn(async move {
         let _guard = guard;
@@ -292,6 +298,10 @@ pub async fn trigger_score(
             }
             Err(e) => tracing::warn!("wildcard classification failed: {}", e),
         }
+
+        // Scores changed — movie list cache is stale.
+        cache.write().await.invalidate();
+        tracing::info!("movie list cache invalidated after scoring");
     });
 
     Ok(Json(serde_json::json!({

@@ -1,0 +1,27 @@
+phase 8 foundation: versioned migrations, cache, WAL, username
+
+DB:
+- Versioned migration system (schema_migrations table)
+- v1: existing tables (movies, big_hits, acclaimed, wildcards, run_logs)
+- v2: users (UUID PK, email, username UNIQUE), magic_tokens, watchlist
+  (user_id FK, state enum, user_rating 1-10), passkeys (WebAuthn credentials)
+- WAL mode + perf pragmas on local SQLite (cache_size 64MB, mmap 128MB,
+  busy_timeout 5s, synchronous=NORMAL)
+- tracing dep added to gem-finder-db
+
+Shared types:
+- User, MagicToken, UserPasskey, WatchState (want_to_watch/watched/not_interested)
+- WatchlistEntry updated with user_id, state, user_rating
+- Auth DTOs: MagicLinkRequest, MagicLinkVerify, AuthResponse
+- UsernameUpdate with validate() — rejects SQL metacharacters via [a-zA-Z0-9_]
+  charset check before any DB call (defence-in-depth on parameterized queries)
+- UsernameAvailability, WatchlistUpsert
+- anyhow dep added to gem-finder-shared
+
+API caching:
+- In-memory TTL cache (5min) for gems/acclaimed/wildcards lists
+- Full sorted list cached once; pagination + filters applied in memory
+- Cache invalidated automatically after admin score or sync jobs
+- Eliminates N identical DB queries for N concurrent users on hot paths
+
+SECRETS.env.example: WEBAUTHN_ORIGIN + WEBAUTHN_RP_ID

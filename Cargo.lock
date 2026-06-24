@@ -1118,6 +1118,7 @@ dependencies = [
  "gem-finder-shared",
  "serde",
  "tokio",
+ "tracing",
  "turso",
 ]
 
@@ -1140,6 +1141,7 @@ dependencies = [
 name = "gem-finder-shared"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "chrono",
  "serde",
 ]

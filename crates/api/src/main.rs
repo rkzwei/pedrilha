@@ -10,9 +10,63 @@ use gem_finder_db::{migrations, models, Database};
 use gem_finder_shared::types::{HealthResponse, Movie, MovieSummary, PaginatedResponse};
 use serde::Deserialize;
 use std::sync::{atomic::AtomicBool, Arc};
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+/// How long list responses are served from the in-memory cache before a DB refresh.
+/// Lists only change when the admin runs a score/sync job, so 5 minutes is conservative.
+const CACHE_TTL: Duration = Duration::from_secs(300);
+
+/// A single cached value with an expiry timestamp.
+struct Cached<T> {
+    data: T,
+    expires: Instant,
+}
+
+impl<T> Cached<T> {
+    fn new(data: T) -> Self {
+        Self {
+            data,
+            expires: Instant::now() + CACHE_TTL,
+        }
+    }
+    fn is_valid(&self) -> bool {
+        Instant::now() < self.expires
+    }
+}
+
+/// In-memory TTL cache for the three public movie lists.
+///
+/// Each list changes only when the admin runs a scoring or sync job. Caching
+/// the full sorted list and applying user filters + pagination in memory means
+/// the DB is hit at most once per CACHE_TTL period regardless of concurrency.
+pub(crate) struct MovieCache {
+    pub gems: Option<Cached<Vec<MovieSummary>>>,
+    pub acclaimed: Option<Cached<Vec<MovieSummary>>>,
+    pub wildcards: Option<Cached<Vec<MovieSummary>>>,
+}
+
+impl Default for MovieCache {
+    fn default() -> Self {
+        Self {
+            gems: None,
+            acclaimed: None,
+            wildcards: None,
+        }
+    }
+}
+
+impl MovieCache {
+    /// Drop all cached lists. The next request for each will trigger a DB fetch.
+    pub fn invalidate(&mut self) {
+        self.gems = None;
+        self.acclaimed = None;
+        self.wildcards = None;
+    }
+}
 
 /// Application state shared across all handlers.
 #[derive(Clone)]
@@ -23,6 +77,8 @@ struct AppState {
     /// Prevents concurrent admin operations (sync, enrich, score, seed).
     /// Set to `true` while any admin task is running; cleared by the task's RAII guard.
     admin_busy: Arc<AtomicBool>,
+    /// In-memory TTL cache for the three public movie list endpoints.
+    movie_cache: Arc<RwLock<MovieCache>>,
 }
 
 #[derive(Deserialize)]
@@ -133,6 +189,7 @@ async fn main() {
         tmdb_api_key,
         omdb_api_key,
         admin_busy: Arc::new(AtomicBool::new(false)),
+        movie_cache: Arc::new(RwLock::new(MovieCache::default())),
     };
 
     let router = Router::new()
@@ -441,6 +498,10 @@ async fn health_check(State(state): State<AppState>) -> Json<HealthResponse> {
 }
 
 /// GET /api/gems — paginated hidden gems with optional year/genre filters.
+///
+/// Serves from an in-memory TTL cache (CACHE_TTL). Cache miss triggers one DB
+/// query that fetches the full sorted list; subsequent requests paginate and
+/// filter the in-memory Vec until the TTL expires or admin scoring invalidates it.
 async fn get_gems(
     State(state): State<AppState>,
     Query(query): Query<GemsQuery>,
@@ -448,28 +509,71 @@ async fn get_gems(
     let page = query.page.unwrap_or(1).max(1);
     let per_page = query.per_page.unwrap_or(20).clamp(1, 100);
 
-    let conn = state
-        .db
-        .connect()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // ── 1. Try cache (read lock — cheap, allows concurrent readers) ──────────
+    let full_list: Vec<MovieSummary> = {
+        let cache = state.movie_cache.read().await;
+        if let Some(ref c) = cache.gems {
+            if c.is_valid() {
+                c.data.clone()
+            } else {
+                vec![]
+            }
+        } else {
+            vec![]
+        }
+    };
 
-    let movies = models::get_top_gems(
-        &conn,
-        page,
-        per_page,
-        query.min_year,
-        query.genre.as_deref(),
-    )
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // ── 2. Cache miss — fetch full list from DB and populate cache ───────────
+    let full_list = if full_list.is_empty() {
+        let conn = state
+            .db
+            .connect()
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let list = models::get_all_gems_for_cache(&conn)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        state.movie_cache.write().await.gems = Some(Cached::new(list.clone()));
+        list
+    } else {
+        full_list
+    };
 
-    let total = models::get_gems_count(&conn, query.min_year, query.genre.as_deref())
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // ── 3. Apply user-supplied filters in memory ─────────────────────────────
+    let filtered: Vec<&MovieSummary> = full_list
+        .iter()
+        .filter(|m| {
+            if let Some(min_y) = query.min_year {
+                if m.year.map_or(true, |y| y < min_y) {
+                    return false;
+                }
+            }
+            if let Some(ref g) = query.genre {
+                let g_lower = g.to_lowercase();
+                if !m
+                    .genre
+                    .as_deref()
+                    .map_or(false, |mg| mg.to_lowercase().contains(&g_lower))
+                {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+
+    // ── 4. Paginate ──────────────────────────────────────────────────────────
+    let total = filtered.len() as i64;
+    let start = ((page - 1) * per_page) as usize;
+    let data: Vec<MovieSummary> = filtered
+        .into_iter()
+        .skip(start)
+        .take(per_page as usize)
+        .cloned()
+        .collect();
 
     Ok(Json(PaginatedResponse {
-        data: movies,
+        data,
         total,
         page,
         per_page,
@@ -484,22 +588,44 @@ async fn get_acclaimed(
     let page = query.page.unwrap_or(1).max(1);
     let per_page = query.per_page.unwrap_or(20).clamp(1, 100);
 
-    let conn = state
-        .db
-        .connect()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let full_list: Vec<MovieSummary> = {
+        let cache = state.movie_cache.read().await;
+        if let Some(ref c) = cache.acclaimed {
+            if c.is_valid() {
+                c.data.clone()
+            } else {
+                vec![]
+            }
+        } else {
+            vec![]
+        }
+    };
 
-    let movies = models::get_acclaimed_films(&conn, page, per_page)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let full_list = if full_list.is_empty() {
+        let conn = state
+            .db
+            .connect()
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let list = models::get_all_acclaimed_for_cache(&conn)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        state.movie_cache.write().await.acclaimed = Some(Cached::new(list.clone()));
+        list
+    } else {
+        full_list
+    };
 
-    let total = models::get_acclaimed_count(&conn)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let total = full_list.len() as i64;
+    let start = ((page - 1) * per_page) as usize;
+    let data: Vec<MovieSummary> = full_list
+        .into_iter()
+        .skip(start)
+        .take(per_page as usize)
+        .collect();
 
     Ok(Json(PaginatedResponse {
-        data: movies,
+        data,
         total,
         page,
         per_page,
@@ -514,22 +640,44 @@ async fn get_wildcards(
     let page = query.page.unwrap_or(1).max(1);
     let per_page = query.per_page.unwrap_or(20).clamp(1, 100);
 
-    let conn = state
-        .db
-        .connect()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let full_list: Vec<MovieSummary> = {
+        let cache = state.movie_cache.read().await;
+        if let Some(ref c) = cache.wildcards {
+            if c.is_valid() {
+                c.data.clone()
+            } else {
+                vec![]
+            }
+        } else {
+            vec![]
+        }
+    };
 
-    let movies = models::get_wildcards(&conn, page, per_page)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let full_list = if full_list.is_empty() {
+        let conn = state
+            .db
+            .connect()
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let list = models::get_all_wildcards_for_cache(&conn)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        state.movie_cache.write().await.wildcards = Some(Cached::new(list.clone()));
+        list
+    } else {
+        full_list
+    };
 
-    let total = models::get_wildcards_count(&conn)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let total = full_list.len() as i64;
+    let start = ((page - 1) * per_page) as usize;
+    let data: Vec<MovieSummary> = full_list
+        .into_iter()
+        .skip(start)
+        .take(per_page as usize)
+        .collect();
 
     Ok(Json(PaginatedResponse {
-        data: movies,
+        data,
         total,
         page,
         per_page,

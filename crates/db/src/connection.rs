@@ -40,9 +40,43 @@ impl Database {
     /// Create a new local database (file or in-memory).
     pub async fn new_local(path: &str) -> Result<Self> {
         let inner = Builder::new_local(path).build().await?;
-        Ok(Self {
+        let db = Self {
             inner: InnerDb::Local(inner),
-        })
+        };
+        // Skip pragmas for in-memory DBs (WAL not supported; used in tests only).
+        if path != ":memory:" {
+            if let Err(e) = db.apply_local_pragmas().await {
+                tracing::warn!("SQLite pragma setup failed (non-fatal): {}", e);
+            }
+        }
+        Ok(db)
+    }
+
+    /// Apply WAL mode and performance pragmas to a local SQLite file.
+    ///
+    /// WAL allows multiple concurrent readers while a write is in progress —
+    /// critical for serving many users without read-blocking on admin ops.
+    async fn apply_local_pragmas(&self) -> Result<()> {
+        let conn = self.connect().await?;
+
+        // journal_mode returns a row ("wal") — must be drained via query, not execute.
+        let mut rows = conn
+            .query("PRAGMA journal_mode=WAL", turso::params![])
+            .await?;
+        while rows.next().await?.is_some() {}
+
+        // Remaining pragmas return no rows.
+        for pragma in [
+            "PRAGMA synchronous=NORMAL",  // safe with WAL; faster than FULL
+            "PRAGMA cache_size=-65536",   // 64 MB page cache
+            "PRAGMA busy_timeout=5000",   // wait 5s on lock contention, don't 500
+            "PRAGMA temp_store=MEMORY",   // temp tables in RAM
+            "PRAGMA mmap_size=134217728", // 128 MB memory-mapped I/O
+        ] {
+            conn.execute(pragma, turso::params![]).await?;
+        }
+
+        Ok(())
     }
 
     /// Create a new remote database that syncs with Turso Cloud.
