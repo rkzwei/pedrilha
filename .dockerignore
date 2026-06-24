@@ -1,0 +1,31 @@
+# Rust build artifacts — by far the largest offender (can exceed 20 GB)
+target/
+**/target/
+
+# Frontend build output (rebuilt inside Docker)
+dist/
+
+# Node dependencies (reinstalled inside Docker)
+node_modules/
+**/node_modules/
+
+# Local database and logs
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+# Secrets — never send to Docker daemon
+SECRETS.env
+.env
+.env.*
+
+# Dev tooling
+.git/
+.github/
+.vscode/
+.idea/
+
+# Docs and local notes
+*.md
+turso_docs.html

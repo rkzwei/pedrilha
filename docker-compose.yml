@@ -1,0 +1,29 @@
+services:
+  app:
+    image: gem-finder
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - SERVE_FRONTEND=1
+      - RUST_LOG=${RUST_LOG:-info}
+      # API keys — loaded from host environment or .env file.
+      # Docker Compose auto-reads .env in the same directory for ${VAR} substitution.
+      # To use: copy SECRETS.env to .env, or export the vars in your shell before running.
+      - TMDB_API_KEY=${TMDB_API_KEY}
+      - OMDB_API_KEY=${OMDB_API_KEY}
+      # Always local SQLite — no cloud database in Docker
+      - TURSO_DATABASE_URL=
+      - TURSO_AUTH_TOKEN=
+      - DATABASE_URL=
+    volumes:
+      # Named volume — persists gem_finder.db across image rebuilds.
+      # Data survives `docker compose build` and `docker compose up/down`.
+      # Only lost on `docker compose down -v` (explicit volume deletion).
+      - gem-data:/app
+    restart: unless-stopped
+
+volumes:
+  gem-data:
