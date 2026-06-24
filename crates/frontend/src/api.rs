@@ -1,9 +1,12 @@
 use gem_finder_shared::types::{AuthResponse, Movie, MovieSummary, PaginatedResponse, WatchlistEntry, WatchlistUpsert, WatchState};
 
 /// Base URL for the API server.
-/// In development, this is the Axum backend running on localhost:3000.
-/// In production, this should be set via environment or build-time config.
+/// Debug builds proxy to localhost:3000 (trunk serves the frontend separately).
+/// Release builds use relative URLs — frontend is served by the same Axum process.
+#[cfg(debug_assertions)]
 const API_BASE: &str = "http://localhost:3000";
+#[cfg(not(debug_assertions))]
+const API_BASE: &str = "";
 
 /// Fetch a paginated list of hidden gems.
 pub async fn fetch_gems(
@@ -262,6 +265,18 @@ pub async fn delete_watchlist(movie_id: i64, token: &str) -> Result<(), String> 
     } else {
         Err(format!("Server error: {}", resp.status()))
     }
+}
+
+/// `GET /api/admin/status` — capability flags (no auth required).
+/// Returns smtp_configured, tmdb_configured, omdb_configured.
+pub async fn fetch_admin_status() -> Result<serde_json::Value, String> {
+    let url = format!("{}/api/admin/status", API_BASE);
+    let resp = reqwest::get(&url)
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    resp.json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("Parse error: {}", e))
 }
 
 /// Shared helper for admin POST endpoints that return JSON.

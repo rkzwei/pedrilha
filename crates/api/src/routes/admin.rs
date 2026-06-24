@@ -16,7 +16,7 @@ use std::sync::{
 
 /// RAII guard that clears the admin_busy flag on drop.
 /// Ensures the flag is always released even if the background task panics.
-struct BusyGuard(Arc<AtomicBool>);
+pub(crate) struct BusyGuard(pub(crate) Arc<AtomicBool>);
 impl Drop for BusyGuard {
     fn drop(&mut self) {
         self.0.store(false, Ordering::Release);
@@ -285,6 +285,20 @@ pub async fn trigger_score(
             }
         }
 
+        // Classify acclaimed after scoring
+        match models::classify_acclaimed_films(&conn).await {
+            Ok(n) => {
+                let _ = models::insert_run_log(
+                    &conn,
+                    "info",
+                    "acclaimed_classified",
+                    &format!("{} acclaimed films", n),
+                )
+                .await;
+            }
+            Err(e) => tracing::warn!("acclaimed classification failed: {}", e),
+        }
+
         // Classify wildcards after scoring
         match models::classify_wildcards(&conn).await {
             Ok(n) => {
@@ -422,6 +436,21 @@ pub async fn trigger_seed(
         "status": "started",
         "message": "Seed started in background — watch logs for progress",
     })))
+}
+
+/// GET /api/admin/status
+///
+/// Returns which external services are configured. Used by the frontend to
+/// conditionally hide sign-in (if SMTP is absent) and show admin warnings.
+/// No auth required — contains no secrets, only boolean capability flags.
+pub async fn get_status(
+    State(state): State<AppState>,
+) -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "smtp_configured":  state.smtp_configured,
+        "tmdb_configured":  !state.tmdb_api_key.is_empty(),
+        "omdb_configured":  !state.omdb_api_key.is_empty(),
+    }))
 }
 
 /// GET /api/admin/logs

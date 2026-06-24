@@ -1,4 +1,5 @@
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 use leptos_meta::*;
 use leptos_router::{
     components::{Route, Router, Routes, A},
@@ -85,9 +86,20 @@ fn App() -> impl IntoView {
     let auth: RwSignal<Option<AuthState>> = RwSignal::new(load_auth_from_storage());
     provide_context(auth);
 
-    // Sign-in modal visibility — provided so any component can trigger it.
-    let modal_open: RwSignal<bool> = RwSignal::new(false);
-    provide_context(modal_open);
+    // SMTP availability — fetched once at startup. Defaults to true (show sign-in)
+    // until the status endpoint responds, so there's no flicker on first render.
+    let smtp_ok: RwSignal<bool> = RwSignal::new(true);
+    provide_context(smtp_ok);
+
+    spawn_local(async move {
+        if let Ok(status) = api::fetch_admin_status().await {
+            let configured = status
+                .get("smtp_configured")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            smtp_ok.set(configured);
+        }
+    });
 
     view! {
         <Router>
@@ -113,7 +125,7 @@ fn App() -> impl IntoView {
                             <A href="/admin" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide">
                                 "ADMIN"
                             </A>
-                            // Auth section
+                            // Auth section — hidden when SMTP is not configured
                             {move || match auth.get() {
                                 Some(a) => {
                                     let display = a.username.clone()
@@ -130,14 +142,17 @@ fn App() -> impl IntoView {
                                         </button>
                                     }.into_any()
                                 }
-                                None => view! {
-                                    <button
-                                        class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide"
-                                        on:click=move |_| modal_open.set(true)
-                                    >
-                                        "SIGN IN"
-                                    </button>
-                                }.into_any()
+                                None => {
+                                    if smtp_ok.get() {
+                                        view! {
+                                            <A href="/signin" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide">
+                                                "SIGN IN"
+                                            </A>
+                                        }.into_any()
+                                    } else {
+                                        view! { <span /> }.into_any()
+                                    }
+                                }
                             }}
                         </div>
                     </nav>
@@ -156,16 +171,10 @@ fn App() -> impl IntoView {
                         <Route path=path!("/wildcards") view=pages::WildcardsPage />
                         <Route path=path!("/movie/:id") view=pages::MovieDetail />
                         <Route path=path!("/admin") view=pages::AdminPage />
+                        <Route path=path!("/signin") view=pages::SignInPage />
                         <Route path=path!("/auth/verify") view=pages::VerifyPage />
                     </Routes>
                 </main>
-
-                // Sign-in modal — always in DOM, visibility controlled inside the component.
-                // This avoids mount/unmount state-loss bugs when the modal is reopened.
-                <components::SignInModal
-                    is_open=Signal::derive(move || modal_open.get())
-                    on_close=Callback::new(move |_| modal_open.set(false))
-                />
 
                 <footer class="bg-sc-panel border-t border-sc-border py-8 text-center text-stone-600 text-sm">
                     <p>"Gem Finder — Unearthing what the blockbusters buried."</p>

@@ -144,14 +144,20 @@ fn FilterBar(
                 }
             }}
 
-            // ── Transparent backdrop + floating panel ─────────────────────────
+            // ── Backdrop + floating panel ─────────────────────────────────────
+            // Backdrop: fixed, covers viewport, blocks all pointer events.
+            // Panel: absolute inside the relative container, z above backdrop.
             {move || if panel_open.get() {
                 view! {
                     <div
                         class="fixed inset-0 z-20"
+                        style="background: rgba(0,0,0,0.45)"
                         on:click=move |_| set_panel_open.set(false)
                     />
-                    <div class="absolute top-full left-0 right-0 mt-1 bg-sc-panel border border-sc-border rounded-lg p-5 z-30 shadow-xl">
+                    <div
+                        class="absolute top-full left-0 right-0 mt-1 border border-sc-border rounded-lg p-5 z-30 shadow-2xl"
+                        style="background-color: var(--sc-panel, #1c1917)"
+                    >
                         <div class="flex flex-col sm:flex-row gap-6">
                             // ERA — single-select
                             <div class="flex-shrink-0">
@@ -989,6 +995,11 @@ pub fn AdminPage() -> impl IntoView {
     let (logs,         set_logs)         = signal(Vec::<serde_json::Value>::new());
     let (logs_loading, set_logs_loading) = signal(false);
 
+    // Service capability flags — fetched from /api/admin/status.
+    let (smtp_warn,  set_smtp_warn)  = signal(false);
+    let (tmdb_warn,  set_tmdb_warn)  = signal(false);
+    let (omdb_warn,  set_omdb_warn)  = signal(false);
+
     let fetch_logs = move || {
         set_logs_loading.set(true);
         spawn_local(async move {
@@ -1001,7 +1012,19 @@ pub fn AdminPage() -> impl IntoView {
         });
     };
 
-    Effect::new(move |_| { fetch_logs(); });
+    Effect::new(move |_| {
+        fetch_logs();
+        spawn_local(async move {
+            if let Ok(status) = api::fetch_admin_status().await {
+                let smtp = status.get("smtp_configured").and_then(|v| v.as_bool()).unwrap_or(true);
+                let tmdb = status.get("tmdb_configured").and_then(|v| v.as_bool()).unwrap_or(true);
+                let omdb = status.get("omdb_configured").and_then(|v| v.as_bool()).unwrap_or(true);
+                set_smtp_warn.set(!smtp);
+                set_tmdb_warn.set(!tmdb);
+                set_omdb_warn.set(!omdb);
+            }
+        });
+    });
 
     let run_seed = move |_| {
         set_seed_state.set(ActionState::Running);
@@ -1044,7 +1067,40 @@ pub fn AdminPage() -> impl IntoView {
     view! {
         <div class="max-w-3xl mx-auto px-4 py-8">
             <h1 class="text-3xl font-bold text-stone-100 mb-2">"Admin"</h1>
-            <p class="text-stone-400 mb-8">"Operations run on the server — you can close this page. Check logs below for progress."</p>
+            <p class="text-stone-400 mb-6">"Operations run on the server — you can close this page. Check logs below for progress."</p>
+
+            // Service warnings
+            {move || {
+                let has_warn = smtp_warn.get() || tmdb_warn.get() || omdb_warn.get();
+                if !has_warn { return view!{ <div /> }.into_any(); }
+                let items: Vec<(&str, &str)> = vec![
+                    ("SMTP_HOST / SMTP_USER", "Magic-link sign-in is unavailable. Users cannot create accounts or sign in."),
+                    ("TMDB_API_KEY", "Movie sync is unavailable. The database cannot be populated with new films."),
+                    ("OMDB_API_KEY", "OMDb enrichment is unavailable. IMDb ratings and RT scores will not be fetched."),
+                ];
+                let warnings: Vec<_> = [
+                    (smtp_warn.get(), items[0]),
+                    (tmdb_warn.get(), items[1]),
+                    (omdb_warn.get(), items[2]),
+                ]
+                .into_iter()
+                .filter(|(active, _)| *active)
+                .map(|(_, (var, msg))| view! {
+                    <div class="flex gap-3 text-sm">
+                        <span class="text-yellow-500 flex-shrink-0">"⚠"</span>
+                        <div>
+                            <span class="font-mono text-yellow-400 text-xs">{var}</span>
+                            <span class="text-stone-400 text-xs ml-2">{msg}</span>
+                        </div>
+                    </div>
+                })
+                .collect();
+                view! {
+                    <div class="mb-6 p-4 bg-yellow-950 border border-yellow-800 rounded-lg space-y-2">
+                        {warnings}
+                    </div>
+                }.into_any()
+            }}
 
             <div class="mb-6 p-4 bg-sc-panel rounded border border-sc-accent-border">
                 <div class="flex items-start justify-between gap-4">

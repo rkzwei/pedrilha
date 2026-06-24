@@ -411,6 +411,21 @@ pub async fn get_movies_needing_enrichment(
 /// Returns the number of rows newly inserted.
 pub async fn classify_acclaimed_films(conn: &Connection) -> Result<i64> {
     use gem_finder_shared::constants::{ACCLAIMED_MIN_IMDB, ACCLAIMED_MIN_RT};
+    // Remove stale entries: films whose scores have dropped below the threshold
+    // (e.g. re-enriched data revised an IMDb rating downward).
+    conn.execute(
+        &format!(
+            "DELETE FROM acclaimed
+             WHERE movie_id NOT IN (
+                 SELECT id FROM movies
+                 WHERE imdb_rating >= {}
+                   AND rt_critic_score >= {}
+             )",
+            ACCLAIMED_MIN_IMDB, ACCLAIMED_MIN_RT
+        ),
+        turso::params![],
+    )
+    .await?;
     conn.execute(
         &format!(
             "INSERT OR IGNORE INTO acclaimed (movie_id)
@@ -487,8 +502,21 @@ pub async fn get_acclaimed_count(conn: &Connection) -> Result<i64> {
 
 /// Insert films into the wildcards table post-scoring.
 /// Wildcards: gem_score IS NOT NULL and rt_critic_score < 50%.
-/// Uses INSERT OR IGNORE — safe to call after every scoring run.
+/// Deletes stale entries (films re-enriched to RT ≥ 50%) before re-inserting.
 pub async fn classify_wildcards(conn: &Connection) -> Result<i64> {
+    // Remove stale entries: films whose RT score was updated to ≥ 50%
+    // or whose gem_score was removed.
+    conn.execute(
+        "DELETE FROM wildcards
+         WHERE movie_id NOT IN (
+             SELECT id FROM movies
+             WHERE gem_score IS NOT NULL
+               AND rt_critic_score IS NOT NULL
+               AND rt_critic_score < 50
+         )",
+        turso::params![],
+    )
+    .await?;
     conn.execute(
         "INSERT OR IGNORE INTO wildcards (movie_id)
          SELECT id FROM movies

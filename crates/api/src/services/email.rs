@@ -21,7 +21,7 @@ pub async fn send_magic_link(to_email: &str, token: &str) -> Result<()> {
     let from = std::env::var("SMTP_FROM").unwrap_or_else(|_| user.clone());
     let app_url = std::env::var("APP_URL").unwrap_or_else(|_| "http://localhost:3000".into());
 
-    let magic_url = format!("{}/auth?token={}", app_url.trim_end_matches('/'), token);
+    let magic_url = format!("{}/auth/verify?token={}", app_url.trim_end_matches('/'), token);
 
     let body = format!(
         "Click the link below to sign in to Gem Finder.\n\

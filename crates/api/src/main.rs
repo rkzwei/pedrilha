@@ -78,6 +78,9 @@ struct AppState {
     db: Arc<Database>,
     tmdb_api_key: String,
     omdb_api_key: String,
+    /// True when SMTP_HOST and SMTP_USER are present at startup.
+    /// Used by the status endpoint so the frontend can hide sign-in if email is unconfigured.
+    smtp_configured: bool,
     /// Prevents concurrent admin operations (sync, enrich, score, seed).
     admin_busy: Arc<AtomicBool>,
     /// In-memory TTL cache for the three public movie list endpoints.
@@ -202,6 +205,13 @@ async fn main() {
         tracing::warn!("OMDB_API_KEY not set — enrichment will be unavailable");
     }
 
+    // SMTP — required for magic-link auth. Non-fatal: server starts, sign-in just won't work.
+    let smtp_configured = !std::env::var("SMTP_HOST").unwrap_or_default().is_empty()
+        && !std::env::var("SMTP_USER").unwrap_or_default().is_empty();
+    if !smtp_configured {
+        tracing::warn!("SMTP_HOST/SMTP_USER not set — magic-link email will be unavailable");
+    }
+
     // JWT secret — required for auth to function.
     let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| {
         tracing::warn!("JWT_SECRET not set — using insecure default (set this in production!)");
@@ -226,6 +236,7 @@ async fn main() {
         db: Arc::new(db),
         tmdb_api_key,
         omdb_api_key,
+        smtp_configured,
         admin_busy: Arc::new(AtomicBool::new(false)),
         movie_cache: Arc::new(RwLock::new(MovieCache::default())),
         jwt_secret,
@@ -285,9 +296,18 @@ async fn main() {
         .route("/api/admin/score", post(routes::admin::trigger_score))
         .route("/api/admin/seed", post(routes::admin::trigger_seed))
         .route("/api/admin/logs", get(routes::admin::get_run_logs))
+        .route("/api/admin/status", get(routes::admin::get_status))
         .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive())
-        .with_state(state);
+        .layer(CorsLayer::permissive());
+
+    // Clone state fields needed by the scheduled sync task BEFORE state is moved into the router.
+    let sched_db_pre    = state.db.clone();
+    let sched_tmdb_pre  = state.tmdb_api_key.clone();
+    let sched_omdb_pre  = state.omdb_api_key.clone();
+    let sched_busy_pre  = state.admin_busy.clone();
+    let sched_cache_pre = state.movie_cache.clone();
+
+    let router = router.with_state(state);
 
     // In production (SERVE_FRONTEND=1), serve the compiled WASM frontend from dist/.
     // trunk build writes index.html + wasm assets there. The fallback serves index.html
@@ -308,6 +328,99 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .expect("Failed to bind address");
+
+    // Scheduled sync — runs every SYNC_INTERVAL_HOURS (default 24).
+    // Skipped silently if TMDB_API_KEY is absent or another admin op is already running.
+    {
+        let sched_db     = sched_db_pre.clone();
+        let sched_tmdb   = sched_tmdb_pre.clone();
+        let sched_omdb   = sched_omdb_pre.clone();
+        let sched_busy   = sched_busy_pre.clone();
+        let sched_cache  = sched_cache_pre.clone();
+
+        let interval_hours: u64 = std::env::var("SYNC_INTERVAL_HOURS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(24);
+
+        if interval_hours > 0 && !sched_tmdb.is_empty() {
+            tokio::spawn(async move {
+                let period = std::time::Duration::from_secs(interval_hours * 3600);
+                loop {
+                    tokio::time::sleep(period).await;
+
+                    // Skip if another admin operation is in progress.
+                    use std::sync::atomic::Ordering;
+                    if sched_busy
+                        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                        .is_err()
+                    {
+                        tracing::info!("scheduled_sync: skipped — admin op in progress");
+                        continue;
+                    }
+                    let _guard = crate::routes::admin::BusyGuard(sched_busy.clone());
+
+                    tracing::info!("scheduled_sync: starting");
+                    let conn = match sched_db.connect().await {
+                        Ok(c) => c,
+                        Err(e) => {
+                            tracing::error!("scheduled_sync: db connect failed: {}", e);
+                            continue;
+                        }
+                    };
+
+                    let mut svc = crate::services::tmdb_sync::TmdbSyncService::new(sched_tmdb.clone());
+                    if let Err(e) = svc.init_config().await {
+                        tracing::error!("scheduled_sync: init_config failed: {}", e);
+                        continue;
+                    }
+
+                    let era_windows: &[(i32, Option<i32>)] = &[
+                        (1960, Some(1984)),
+                        (1984, Some(1999)),
+                        (1999, Some(2012)),
+                        (2012, None),
+                    ];
+                    for (start, end) in era_windows {
+                        if let Err(e) = svc.sync_movies(&conn, *start, *end).await {
+                            tracing::warn!("scheduled_sync: era window failed: {}", e);
+                        }
+                    }
+                    if let Err(e) = svc.sync_blockbusters(&conn).await {
+                        tracing::warn!("scheduled_sync: blockbusters failed: {}", e);
+                    }
+                    if let Err(e) = svc.sync_acclaimed_candidates(&conn).await {
+                        tracing::warn!("scheduled_sync: acclaimed candidates failed: {}", e);
+                    }
+
+                    if !sched_omdb.is_empty() {
+                        let omdb = crate::services::omdb_sync::OmdbEnrichmentService::new(sched_omdb.clone());
+                        if let Err(e) = omdb.enrich_movies(&conn, i64::MAX).await {
+                            tracing::warn!("scheduled_sync: enrich failed: {}", e);
+                        }
+                    }
+
+                    if let Err(e) = crate::services::gem_score::run_batch_scoring(&conn).await {
+                        tracing::warn!("scheduled_sync: scoring failed: {}", e);
+                    }
+                    if let Err(e) = gem_finder_db::models::classify_acclaimed_films(&conn).await {
+                        tracing::warn!("scheduled_sync: classify acclaimed failed: {}", e);
+                    }
+                    if let Err(e) = gem_finder_db::models::classify_wildcards(&conn).await {
+                        tracing::warn!("scheduled_sync: classify wildcards failed: {}", e);
+                    }
+
+                    sched_cache.write().await.invalidate();
+                    tracing::info!("scheduled_sync: complete, cache invalidated");
+                    let _ = gem_finder_db::models::insert_run_log(
+                        &conn, "info", "scheduled_sync_complete",
+                        &format!("Scheduled sync complete (interval: {}h)", interval_hours),
+                    ).await;
+                }
+            });
+            tracing::info!("Scheduled sync enabled — interval: {}h", interval_hours);
+        }
+    }
 
     axum::serve(listener, app).await.expect("Server failed");
 }
@@ -713,9 +826,16 @@ async fn get_acclaimed(
                 if m.year.map_or(true, |y| y < min_y) { return false; }
             }
             if let Some(ref g) = query.genres {
-                let g_lower = g.to_lowercase();
-                if !m.genre.as_deref().map_or(false, |mg| mg.to_lowercase().contains(&g_lower)) {
-                    return false;
+                let selected: Vec<String> = g
+                    .split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.trim().to_lowercase())
+                    .collect();
+                if !selected.is_empty() {
+                    let movie_genres = m.genre.as_deref().unwrap_or("").to_lowercase();
+                    if !selected.iter().any(|sel| movie_genres.contains(sel.as_str())) {
+                        return false;
+                    }
                 }
             }
             if let Some(ref q) = query.q {
@@ -785,9 +905,16 @@ async fn get_wildcards(
                 if m.year.map_or(true, |y| y < min_y) { return false; }
             }
             if let Some(ref g) = query.genres {
-                let g_lower = g.to_lowercase();
-                if !m.genre.as_deref().map_or(false, |mg| mg.to_lowercase().contains(&g_lower)) {
-                    return false;
+                let selected: Vec<String> = g
+                    .split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.trim().to_lowercase())
+                    .collect();
+                if !selected.is_empty() {
+                    let movie_genres = m.genre.as_deref().unwrap_or("").to_lowercase();
+                    if !selected.iter().any(|sel| movie_genres.contains(sel.as_str())) {
+                        return false;
+                    }
                 }
             }
             if let Some(ref q) = query.q {
