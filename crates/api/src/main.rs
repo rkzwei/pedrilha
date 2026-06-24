@@ -265,7 +265,7 @@ async fn main() {
             get(routes::watchlist::get_watchlist).post(routes::watchlist::upsert_watchlist),
         )
         .route(
-            "/api/watchlist/movie/:movie_id",
+            "/api/watchlist/movie/{movie_id}",
             get(routes::watchlist::get_watchlist_movie)
                 .delete(routes::watchlist::delete_watchlist_movie),
         )
