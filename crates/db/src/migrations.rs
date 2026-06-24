@@ -7,6 +7,7 @@ pub async fn run(conn: &Connection) -> Result<()> {
     create_watchlist_table(conn).await?;
     create_big_hits_table(conn).await?;
     create_acclaimed_table(conn).await?;
+    create_wildcards_table(conn).await?;
     create_run_logs_table(conn).await?;
     create_indexes(conn).await?;
     Ok(())
@@ -74,6 +75,20 @@ async fn create_big_hits_table(conn: &Connection) -> Result<()> {
 async fn create_acclaimed_table(conn: &Connection) -> Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS acclaimed (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            movie_id INTEGER NOT NULL REFERENCES movies(id) ON DELETE CASCADE,
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(movie_id)
+        )",
+        turso::params![],
+    )
+    .await?;
+    Ok(())
+}
+
+async fn create_wildcards_table(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS wildcards (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             movie_id INTEGER NOT NULL REFERENCES movies(id) ON DELETE CASCADE,
             created_at TEXT DEFAULT (datetime('now')),

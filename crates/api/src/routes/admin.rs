@@ -9,6 +9,27 @@ use axum::{
 use gem_finder_db::models;
 use serde::Deserialize;
 use std::env;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+
+/// RAII guard that clears the admin_busy flag on drop.
+/// Ensures the flag is always released even if the background task panics.
+struct BusyGuard(Arc<AtomicBool>);
+impl Drop for BusyGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+/// Try to acquire the admin busy flag.
+/// Returns `Ok(BusyGuard)` if acquired, `Err(409)` if another operation is running.
+fn acquire_busy(flag: &Arc<AtomicBool>) -> Result<BusyGuard, StatusCode> {
+    flag.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .map(|_| BusyGuard(flag.clone()))
+        .map_err(|_| StatusCode::CONFLICT)
+}
 
 #[derive(Deserialize)]
 pub struct EnrichQuery {
@@ -16,12 +37,9 @@ pub struct EnrichQuery {
 }
 
 /// Minimal bearer-token guard.
-/// Reads ADMIN_TOKEN from the environment; rejects requests that don't match.
-/// Returns Err(UNAUTHORIZED) if the token is missing or wrong.
 fn check_admin_token(headers: &HeaderMap) -> Result<(), StatusCode> {
     let expected = env::var("ADMIN_TOKEN").unwrap_or_default();
     if expected.is_empty() {
-        // ADMIN_TOKEN not configured — open access (dev mode). Log a warning.
         tracing::warn!("ADMIN_TOKEN is not set; admin endpoints are unprotected");
         return Ok(());
     }
@@ -40,144 +58,91 @@ fn check_admin_token(headers: &HeaderMap) -> Result<(), StatusCode> {
     Ok(())
 }
 
-/// Log a run event to the database (best-effort, non-fatal on error).
-async fn log_event(conn: &turso::Connection, level: &str, event_type: &str, message: &str) {
-    if let Err(e) = models::insert_run_log(conn, level, event_type, message).await {
-        tracing::warn!("Failed to write run log: {}", e);
-    }
-}
-
 /// POST /api/admin/sync
 ///
-/// Triggers a three-phase sync:
-/// 1. Hidden gem candidates (rated 6.0–8.0, ≥500 votes)
-/// 2. Blockbusters (top by popularity, ≥100k votes) → written to big_hits table
-///    so the "obscured by big hit" signal has real data to work with.
-/// 3. Seed known gems (The Sorcerer, Dinner in America, The Hurt Locker)
+/// Spawns a background task and returns 202 immediately.
+/// The sync runs on the server regardless of whether the client stays connected.
 pub async fn trigger_sync(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     check_admin_token(&headers)?;
 
-    let mut sync_service = TmdbSyncService::new().map_err(|e| {
-        tracing::error!("Failed to create TMDB sync service: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let conn = state
-        .db
-        .connect()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    // Log sync start
-    log_event(&conn, "info", "sync_started", "TMDB sync pipeline starting").await;
-
-    sync_service.init_config().await.map_err(|e| {
-        tracing::error!("Failed to init TMDB config: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    // Phase A: gem candidates — 4 era windows, sorted by vote_count.desc so each
-    // window returns the most-notable films across ALL years in the range (not just
-    // the newest 100). start_year param is ignored in favour of fixed era windows for
-    // consistent temporal coverage.
-    let phase_a_start = std::time::Instant::now();
-    let era_windows: &[(i32, Option<i32>, &str)] = &[
-        (1960, Some(1984), "classics 1960–1984"),
-        (1984, Some(1999), "modern classics 1984–1999"),
-        (1999, Some(2012), "2000s 1999–2012"),
-        (2012, None, "recent 2012–present"),
-    ];
-    for (start, end, label) in era_windows {
-        sync_service
-            .sync_movies(&conn, *start, *end)
-            .await
-            .map_err(|e| {
-                tracing::error!("Gem candidate sync ({}) failed: {}", label, e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
+    if state.tmdb_api_key.is_empty() {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
     }
-    let phase_a_duration = phase_a_start.elapsed();
-    log_event(
-        &conn,
-        "info",
-        "sync_phase_a_complete",
-        &format!(
-            "Gem candidate sync ({} era windows) completed in {:?}",
-            era_windows.len(),
-            phase_a_duration
-        ),
-    )
-    .await;
 
-    // Phase B: blockbusters → big_hits
-    let phase_b_start = std::time::Instant::now();
-    let blockbusters_synced = sync_service.sync_blockbusters(&conn).await.map_err(|e| {
-        tracing::error!("Blockbuster sync failed: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-    let phase_b_duration = phase_b_start.elapsed();
-    log_event(
-        &conn,
-        "info",
-        "sync_phase_b_complete",
-        &format!(
-            "Blockbuster sync complete: {} records, took {:?}",
-            blockbusters_synced, phase_b_duration
-        ),
-    )
-    .await;
+    let guard = acquire_busy(&state.admin_busy)?;
+    let db = state.db.clone();
+    let tmdb_key = state.tmdb_api_key.clone();
 
-    // Phase C: ensure the algorithm's ground-truth validation set is in the DB
-    let phase_c_start = std::time::Instant::now();
-    let (gems_seeded, gems_total, gem_results) =
-        sync_service.seed_known_gems(&conn).await.map_err(|e| {
-            tracing::error!("Seeding known gems failed: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let phase_c_duration = phase_c_start.elapsed();
-    log_event(
-        &conn,
-        "info",
-        "sync_phase_c_complete",
-        &format!(
-            "Seeded {}/{} known gems in {:?}",
-            gems_seeded, gems_total, phase_c_duration
-        ),
-    )
-    .await;
+    tokio::spawn(async move {
+        let _guard = guard; // released when this task ends (or panics)
+        let conn = match db.connect().await {
+            Ok(c) => c,
+            Err(e) => { tracing::error!("sync: db connect failed: {}", e); return; }
+        };
 
-    // Log sync complete
-    log_event(
-        &conn,
-        "info",
-        "sync_complete",
-        &format!(
-            "TMDB sync complete: phase_a={:?}, phase_b={:?}, phase_c={:?}",
-            phase_a_duration, phase_b_duration, phase_c_duration
-        ),
-    )
-    .await;
+        let log = |level: &'static str, event: &'static str, msg: String| {
+            let conn_ref = &conn;
+            async move {
+                if let Err(e) = models::insert_run_log(conn_ref, level, event, &msg).await {
+                    tracing::warn!("Failed to write run log: {}", e);
+                }
+            }
+        };
+
+        log("info", "sync_started", "TMDB sync pipeline starting".into()).await;
+
+        let mut svc = TmdbSyncService::new(tmdb_key);
+        if let Err(e) = svc.init_config().await {
+            tracing::error!("sync: init_config failed: {}", e);
+            log("error", "sync_failed", format!("init_config: {}", e)).await;
+            return;
+        }
+
+        let era_windows: &[(i32, Option<i32>, &str)] = &[
+            (1960, Some(1984), "classics 1960–1984"),
+            (1984, Some(1999), "modern classics 1984–1999"),
+            (1999, Some(2012), "2000s 1999–2012"),
+            (2012, None,       "recent 2012–present"),
+        ];
+
+        let t0 = std::time::Instant::now();
+        for (start, end, label) in era_windows {
+            if let Err(e) = svc.sync_movies(&conn, *start, *end).await {
+                tracing::error!("sync era window {} failed: {}", label, e);
+                log("error", "sync_era_failed", format!("{}: {}", label, e)).await;
+                return;
+            }
+        }
+        log("info", "sync_phase_a_complete",
+            format!("{} era windows in {:?}", era_windows.len(), t0.elapsed())).await;
+
+        let t1 = std::time::Instant::now();
+        match svc.sync_blockbusters(&conn).await {
+            Ok(n) => log("info", "sync_phase_b_complete",
+                format!("{} blockbusters in {:?}", n, t1.elapsed())).await,
+            Err(e) => { log("error", "sync_failed", format!("blockbusters: {}", e)).await; return; }
+        }
+
+        let t2 = std::time::Instant::now();
+        match svc.seed_known_gems(&conn).await {
+            Ok((seeded, total, _)) => log("info", "sync_complete",
+                format!("done — seeded {}/{} known gems in {:?}", seeded, total, t2.elapsed())).await,
+            Err(e) => log("error", "sync_failed", format!("known gems: {}", e)).await,
+        }
+    });
 
     Ok(Json(serde_json::json!({
-        "status": "success",
-        "message": "Sync completed",
-        "era_windows": era_windows.len(),
-        "blockbusters_synced": blockbusters_synced,
-        "known_gems_seeded": gems_seeded,
-        "known_gems_total": gems_total,
-        "gem_results": gem_results.into_iter().map(|(title, result)| {
-            serde_json::json!({ "title": title, "result": result })
-        }).collect::<Vec<_>>(),
+        "status": "started",
+        "message": "Sync started in background — watch logs for progress",
     })))
 }
 
 /// POST /api/admin/enrich
 ///
-/// Enriches movies with IMDb ratings and Rotten Tomatoes scores via OMDb API.
-/// Requires OMDB_API_KEY env var to be set.
+/// Spawns a background task and returns 202 immediately.
 pub async fn trigger_enrich(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -185,111 +150,273 @@ pub async fn trigger_enrich(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     check_admin_token(&headers)?;
 
-    let enrich_service = OmdbEnrichmentService::new().map_err(|e| {
-        tracing::error!("Failed to create OMDb enrichment service: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    if state.omdb_api_key.is_empty() {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
 
-    let conn = state
-        .db
-        .connect()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let guard = acquire_busy(&state.admin_busy)?;
+    let db = state.db.clone();
+    let omdb_key = state.omdb_api_key.clone();
+    let limit = payload.limit.unwrap_or(i64::MAX);
+    let limit_display = if limit == i64::MAX { "unlimited".to_string() } else { limit.to_string() };
+    let limit_display_inner = limit_display.clone();
 
-    let limit = payload.limit.unwrap_or(100);
-    log_event(
-        &conn,
-        "info",
-        "enrich_started",
-        &format!("OMDb enrichment starting (limit: {})", limit),
-    )
-    .await;
+    tokio::spawn(async move {
+        let _guard = guard;
+        let conn = match db.connect().await {
+            Ok(c) => c,
+            Err(e) => { tracing::error!("enrich: db connect failed: {}", e); return; }
+        };
 
-    let start = std::time::Instant::now();
-    let (enriched, total, errors) =
-        enrich_service
-            .enrich_movies(&conn, limit)
-            .await
-            .map_err(|e| {
-                tracing::error!("OMDb enrichment failed: {}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
-    let duration = start.elapsed();
+        if let Err(e) = models::insert_run_log(&conn, "info", "enrich_started",
+            &format!("OMDb enrichment starting (limit: {})", limit_display_inner)).await
+        {
+            tracing::warn!("log write failed: {}", e);
+        }
 
-    log_event(
-        &conn,
-        "info",
-        "enrich_complete",
-        &format!(
-            "OMDb enrichment: {}/{} enriched, {} errors, took {:?}",
-            enriched,
-            total,
-            errors.len(),
-            duration
-        ),
-    )
-    .await;
-
-    let error_details: Vec<String> = errors.into_iter().take(10).collect(); // show first 10 errors
+        let svc = OmdbEnrichmentService::new(omdb_key);
+        let t = std::time::Instant::now();
+        match svc.enrich_movies(&conn, limit).await {
+            Ok((enriched, total, errors)) => {
+                let msg = format!(
+                    "{}/{} enriched, {} errors in {:?}",
+                    enriched, total, errors.len(), t.elapsed()
+                );
+                let _ = models::insert_run_log(&conn, "info", "enrich_complete", &msg).await;
+            }
+            Err(e) => {
+                tracing::error!("enrich failed: {}", e);
+                let _ = models::insert_run_log(&conn, "error", "enrich_failed",
+                    &format!("{}", e)).await;
+            }
+        }
+    });
 
     Ok(Json(serde_json::json!({
-        "status": "success",
-        "message": "Enrichment completed",
-        "enriched": enriched,
-        "total_candidates": total,
-        "errors_count": error_details.len(),
-        "errors": error_details,
-        "duration_secs": duration.as_secs_f64(),
+        "status": "started",
+        "limit": limit_display,
+        "message": "Enrichment started in background — watch logs for progress",
     })))
 }
 
 /// POST /api/admin/score
 ///
-/// Runs the gem scoring algorithm over all movies in the DB.
+/// Spawns a background task and returns 202 immediately.
 pub async fn trigger_score(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     check_admin_token(&headers)?;
 
-    let conn = state
-        .db
-        .connect()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let guard = acquire_busy(&state.admin_busy)?;
+    let db = state.db.clone();
 
-    log_event(&conn, "info", "score_started", "Gem scoring run starting").await;
+    tokio::spawn(async move {
+        let _guard = guard;
+        let conn = match db.connect().await {
+            Ok(c) => c,
+            Err(e) => { tracing::error!("score: db connect failed: {}", e); return; }
+        };
 
-    let start = std::time::Instant::now();
-    let scored = crate::services::gem_score::run_batch_scoring(&conn)
-        .await
-        .map_err(|e| {
-            tracing::error!("Scoring failed: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let duration = start.elapsed();
+        let _ = models::insert_run_log(&conn, "info", "score_started",
+            "Gem scoring run starting").await;
 
-    log_event(
-        &conn,
-        "info",
-        "score_complete",
-        &format!(
-            "Scoring complete: {} movies scored in {:?}",
-            scored, duration
-        ),
-    )
-    .await;
+        let t = std::time::Instant::now();
+        match crate::services::gem_score::run_batch_scoring(&conn).await {
+            Ok(scored) => {
+                let msg = format!("{} movies scored in {:?}", scored, t.elapsed());
+                let _ = models::insert_run_log(&conn, "info", "score_complete", &msg).await;
+            }
+            Err(e) => {
+                tracing::error!("scoring failed: {}", e);
+                let _ = models::insert_run_log(&conn, "error", "score_failed",
+                    &format!("{}", e)).await;
+                return;
+            }
+        }
+
+        match models::classify_wildcards(&conn).await {
+            Ok(n) => {
+                let _ = models::insert_run_log(&conn, "info", "wildcards_classified",
+                    &format!("{} films in wildcards table", n)).await;
+            }
+            Err(e) => {
+                let _ = models::insert_run_log(&conn, "warn", "wildcards_failed",
+                    &format!("{}", e)).await;
+            }
+        }
+    });
 
     Ok(Json(serde_json::json!({
-        "status": "success",
-        "movies_scored": scored,
-        "duration_secs": duration.as_secs_f64(),
+        "status": "started",
+        "message": "Scoring started in background — watch logs for progress",
+    })))
+}
+
+/// POST /api/admin/seed
+///
+/// Runs the full seed pipeline as a background task and returns 202 immediately.
+/// Equivalent to the `seed-test-data` CLI subcommand but triggerable from the UI.
+///
+/// Steps:
+///   1. Seed known gems (Sorcerer, Hurt Locker, Dinner in America, The Messenger)
+///   2. Sync blockbusters → big_hits table
+///   3. Sync gem candidates across 4 era windows (vote_count.desc)
+///   4. Sync acclaimed candidates (vote_avg ≥ 7.5, vote_count ≥ 10k)
+///   5. OMDb enrichment (limit: 2000 to drain unenriched queue)
+///   6. Batch scoring
+///   7. Classify acclaimed films
+pub async fn trigger_seed(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    check_admin_token(&headers)?;
+
+    if state.tmdb_api_key.is_empty() {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    let guard = acquire_busy(&state.admin_busy)?;
+    let db = state.db.clone();
+    let tmdb_key = state.tmdb_api_key.clone();
+    let omdb_key = state.omdb_api_key.clone();
+
+    tokio::spawn(async move {
+        let _guard = guard;
+        let conn = match db.connect().await {
+            Ok(c) => c,
+            Err(e) => { tracing::error!("seed: db connect failed: {}", e); return; }
+        };
+
+        let _ = models::insert_run_log(&conn, "info", "seed_started",
+            "Full seed pipeline starting").await;
+
+        // Step 1: Init TMDB
+        let mut svc = TmdbSyncService::new(tmdb_key);
+        if let Err(e) = svc.init_config().await {
+            let _ = models::insert_run_log(&conn, "error", "seed_failed",
+                &format!("init_config: {}", e)).await;
+            return;
+        }
+
+        // Step 2: Seed known gems
+        match svc.seed_known_gems(&conn).await {
+            Ok((seeded, total, _)) => {
+                let _ = models::insert_run_log(&conn, "info", "seed_gems",
+                    &format!("Seeded {}/{} known gems", seeded, total)).await;
+            }
+            Err(e) => {
+                let _ = models::insert_run_log(&conn, "warn", "seed_gems_warn",
+                    &format!("{}", e)).await;
+            }
+        }
+
+        // Step 3: Blockbusters
+        match svc.sync_blockbusters(&conn).await {
+            Ok(n) => {
+                let _ = models::insert_run_log(&conn, "info", "seed_blockbusters",
+                    &format!("{} blockbusters synced", n)).await;
+            }
+            Err(e) => {
+                let _ = models::insert_run_log(&conn, "warn", "seed_blockbusters_warn",
+                    &format!("{}", e)).await;
+            }
+        }
+
+        // Step 4: Era windows
+        let era_windows: &[(i32, Option<i32>, &str)] = &[
+            (1960, Some(1984), "classics 1960–1984"),
+            (1984, Some(1999), "modern classics 1984–1999"),
+            (1999, Some(2012), "2000s 1999–2012"),
+            (2012, None,       "recent 2012–present"),
+        ];
+        for (start, end, label) in era_windows {
+            match svc.sync_movies(&conn, *start, *end).await {
+                Ok(()) => {
+                    let _ = models::insert_run_log(&conn, "info", "seed_era",
+                        &format!("Era window complete: {}", label)).await;
+                }
+                Err(e) => {
+                    let _ = models::insert_run_log(&conn, "warn", "seed_era_warn",
+                        &format!("{}: {}", label, e)).await;
+                }
+            }
+        }
+
+        // Step 5: Acclaimed candidates
+        match svc.sync_acclaimed_candidates(&conn).await {
+            Ok(n) => {
+                let _ = models::insert_run_log(&conn, "info", "seed_acclaimed_candidates",
+                    &format!("{} acclaimed candidates synced", n)).await;
+            }
+            Err(e) => {
+                let _ = models::insert_run_log(&conn, "warn", "seed_acclaimed_warn",
+                    &format!("{}", e)).await;
+            }
+        }
+
+        // Step 6: OMDb enrichment — no limit, drain the entire unenriched queue.
+        if !omdb_key.is_empty() {
+            let omdb = OmdbEnrichmentService::new(omdb_key);
+            match omdb.enrich_movies(&conn, i64::MAX).await {
+                Ok((enriched, total, errors)) => {
+                    let _ = models::insert_run_log(&conn, "info", "seed_enrich",
+                        &format!("{}/{} enriched, {} errors", enriched, total, errors.len())).await;
+                }
+                Err(e) => {
+                    let _ = models::insert_run_log(&conn, "warn", "seed_enrich_warn",
+                        &format!("{}", e)).await;
+                }
+            }
+        } else {
+            let _ = models::insert_run_log(&conn, "warn", "seed_enrich_skip",
+                "OMDB_API_KEY not set — enrichment skipped").await;
+        }
+
+        // Step 7: Scoring
+        match crate::services::gem_score::run_batch_scoring(&conn).await {
+            Ok(n) => {
+                let _ = models::insert_run_log(&conn, "info", "seed_scoring",
+                    &format!("{} movies scored", n)).await;
+            }
+            Err(e) => {
+                let _ = models::insert_run_log(&conn, "error", "seed_scoring_failed",
+                    &format!("{}", e)).await;
+            }
+        }
+
+        // Step 8: Classify acclaimed
+        match models::classify_acclaimed_films(&conn).await {
+            Ok(n) => {
+                let _ = models::insert_run_log(&conn, "info", "seed_acclaimed",
+                    &format!("{} films in acclaimed table", n)).await;
+            }
+            Err(e) => {
+                let _ = models::insert_run_log(&conn, "warn", "seed_acclaimed_warn",
+                    &format!("{}", e)).await;
+            }
+        }
+
+        // Step 9: Classify wildcards
+        match models::classify_wildcards(&conn).await {
+            Ok(n) => {
+                let _ = models::insert_run_log(&conn, "info", "seed_complete",
+                    &format!("Done — {} films in wildcards table", n)).await;
+            }
+            Err(e) => {
+                let _ = models::insert_run_log(&conn, "warn", "seed_wildcards_warn",
+                    &format!("{}", e)).await;
+            }
+        }
+    });
+
+    Ok(Json(serde_json::json!({
+        "status": "started",
+        "message": "Full seed pipeline started in background — watch logs for progress",
     })))
 }
 
 /// GET /api/admin/logs
-///
-/// Returns the most recent run log entries.
 pub async fn get_run_logs(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -308,14 +435,12 @@ pub async fn get_run_logs(
 
     Ok(Json(serde_json::json!({
         "status": "success",
-        "logs": logs.into_iter().map(|entry| {
-            serde_json::json!({
-                "id": entry.id,
-                "level": entry.level,
-                "event_type": entry.event_type,
-                "message": entry.message,
-                "created_at": entry.created_at,
-            })
-        }).collect::<Vec<_>>(),
+        "logs": logs.into_iter().map(|entry| serde_json::json!({
+            "id": entry.id,
+            "level": entry.level,
+            "event_type": entry.event_type,
+            "message": entry.message,
+            "created_at": entry.created_at,
+        })).collect::<Vec<_>>(),
     })))
 }

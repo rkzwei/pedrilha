@@ -94,9 +94,15 @@ pub async fn get_top_gems(
 
     // Build query with optional filters. year and limit/offset are integers — safe to inline.
     // genre is user-supplied text and is bound as a parameter to avoid injection.
+    //
+    // Exclude wildcards from the gems listing: films with rt_critic_score < 50 are divisive
+    // (low votes may reflect critical rejection, not undiscovery) and are listed separately
+    // at /wildcards. Films with no RT data (rt_critic_score IS NULL) are included — benefit
+    // of doubt, especially for old films that predate Rotten Tomatoes.
     let mut sql = String::from(
         "SELECT id, title, year, genre, director, poster_url, imdb_rating, rt_critic_score, gem_score, gem_rank
-         FROM movies WHERE gem_score IS NOT NULL",
+         FROM movies WHERE gem_score IS NOT NULL
+           AND (rt_critic_score IS NULL OR rt_critic_score >= 50)",
     );
 
     if let Some(y) = min_year {
@@ -211,6 +217,21 @@ pub async fn get_all_movies_for_scoring(conn: &Connection) -> Result<Vec<Movie>>
     Ok(results)
 }
 
+/// Clear gem_score and gem_rank on every movie.
+///
+/// Called at the start of each batch scoring run so that films which no longer
+/// pass the scoring filters (e.g. RT data arrived and they're now outside the
+/// sweet spot, or vote counts changed) don't keep stale scores from a prior run.
+pub async fn clear_all_gem_scores(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "UPDATE movies SET gem_score = NULL, gem_rank = NULL, updated_at = datetime('now')
+         WHERE gem_score IS NOT NULL OR gem_rank IS NOT NULL",
+        turso::params![],
+    )
+    .await?;
+    Ok(())
+}
+
 /// Update a movie's gem score and rank in the database.
 pub async fn update_movie_gem_score(
     conn: &Connection,
@@ -232,7 +253,10 @@ pub async fn get_gems_count(
     min_year: Option<i32>,
     genre: Option<&str>,
 ) -> Result<i64> {
-    let mut sql = String::from("SELECT COUNT(*) FROM movies WHERE gem_score IS NOT NULL");
+    let mut sql = String::from(
+        "SELECT COUNT(*) FROM movies WHERE gem_score IS NOT NULL
+           AND (rt_critic_score IS NULL OR rt_critic_score >= 50)",
+    );
     if let Some(y) = min_year {
         sql.push_str(&format!(" AND year >= {}", y));
     }
@@ -453,6 +477,94 @@ pub async fn get_acclaimed_films(
 /// Total number of acclaimed films in the table.
 pub async fn get_acclaimed_count(conn: &Connection) -> Result<i64> {
     let mut stmt = conn.prepare("SELECT COUNT(*) FROM acclaimed").await?;
+    let mut rows = stmt.query(turso::params![]).await?;
+    if let Some(row) = rows.next().await? {
+        Ok(value_to_opt_i64(row.get_value(0)?).unwrap_or(0))
+    } else {
+        Ok(0)
+    }
+}
+
+// Wildcard Films Functions
+// ──────────────────────────────────────────────
+
+/// Populate the `wildcards` table from movies that scored algorithmically but have
+/// rt_critic_score < WILDCARD_RT_THRESHOLD (50%).
+///
+/// These are films critics disagreed on — they score well on year_decay and IMDb
+/// (hence the gem_score) but had low enough RT that audiences may have avoided them
+/// based on critical reception rather than genuine undiscovery. They are listed
+/// separately from hidden gems as a "wildcards" category.
+///
+/// INSERT OR IGNORE is idempotent — safe to call repeatedly.
+/// Returns the number of total entries in the wildcards table (not just new ones).
+pub async fn classify_wildcards(conn: &Connection) -> Result<i64> {
+    use gem_finder_shared::constants::WILDCARD_RT_THRESHOLD;
+    conn.execute(
+        &format!(
+            "INSERT OR IGNORE INTO wildcards (movie_id)
+             SELECT id FROM movies
+             WHERE gem_score IS NOT NULL
+               AND rt_critic_score IS NOT NULL
+               AND rt_critic_score < {}",
+            WILDCARD_RT_THRESHOLD
+        ),
+        turso::params![],
+    )
+    .await?;
+
+    let mut stmt = conn.prepare("SELECT COUNT(*) FROM wildcards").await?;
+    let mut rows = stmt.query(turso::params![]).await?;
+    if let Some(row) = rows.next().await? {
+        Ok(value_to_opt_i64(row.get_value(0)?).unwrap_or(0))
+    } else {
+        Ok(0)
+    }
+}
+
+/// Get a paginated list of wildcard films ordered by gem_score desc.
+pub async fn get_wildcards(
+    conn: &Connection,
+    page: i32,
+    per_page: i32,
+) -> Result<Vec<MovieSummary>> {
+    let offset = ((page - 1) * per_page) as i64;
+    let limit = per_page as i64;
+
+    let sql = format!(
+        "SELECT m.id, m.title, m.year, m.genre, m.director,
+                m.poster_url, m.imdb_rating, m.rt_critic_score,
+                m.gem_score, m.gem_rank
+         FROM wildcards w
+         JOIN movies m ON m.id = w.movie_id
+         ORDER BY m.gem_score DESC
+         LIMIT {} OFFSET {}",
+        limit, offset
+    );
+
+    let mut stmt = conn.prepare(&sql).await?;
+    let mut rows = stmt.query(turso::params![]).await?;
+    let mut results = Vec::new();
+    while let Some(row) = rows.next().await? {
+        results.push(MovieSummary {
+            id: value_to_opt_i64(row.get_value(0)?).unwrap_or(0),
+            title: value_to_opt_string(row.get_value(1)?).unwrap_or_default(),
+            year: value_to_opt_i32(row.get_value(2)?),
+            genre: value_to_opt_string(row.get_value(3)?),
+            director: value_to_opt_string(row.get_value(4)?),
+            poster_url: value_to_opt_string(row.get_value(5)?),
+            imdb_rating: value_to_opt_f64(row.get_value(6)?),
+            rt_critic_score: value_to_opt_i32(row.get_value(7)?),
+            gem_score: value_to_opt_f64(row.get_value(8)?),
+            gem_rank: value_to_opt_i64(row.get_value(9)?),
+        });
+    }
+    Ok(results)
+}
+
+/// Total number of wildcard films in the table.
+pub async fn get_wildcards_count(conn: &Connection) -> Result<i64> {
+    let mut stmt = conn.prepare("SELECT COUNT(*) FROM wildcards").await?;
     let mut rows = stmt.query(turso::params![]).await?;
     if let Some(row) = rows.next().await? {
         Ok(value_to_opt_i64(row.get_value(0)?).unwrap_or(0))

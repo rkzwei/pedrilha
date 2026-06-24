@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use gem_finder_db::models;
 use gem_finder_shared::{
     constants::{tmdb_rate_limit, SEEDED_GEMS},
@@ -7,7 +7,6 @@ use gem_finder_shared::{
     },
 };
 use reqwest::Client;
-use std::env;
 use turso::Connection;
 
 pub struct TmdbSyncService {
@@ -18,14 +17,13 @@ pub struct TmdbSyncService {
 }
 
 impl TmdbSyncService {
-    pub fn new() -> Result<Self> {
-        let api_key = env::var("TMDB_API_KEY").context("TMDB_API_KEY must be set")?;
-        Ok(Self {
+    pub fn new(api_key: String) -> Self {
+        Self {
             client: Client::new(),
             api_key,
             base_url: "https://api.themoviedb.org/3".to_string(),
             image_base_url: None,
-        })
+        }
     }
 
     pub async fn init_config(&mut self) -> Result<()> {

@@ -39,14 +39,16 @@ pub struct GemScore {
 pub struct GemScoreComponents {
     /// Score from IMDb rating being in the hidden gem sweet spot (6.5–7.9)
     pub imdb_rating_score: f64,
-    /// Score from high rating relative to low vote count (undiscovered factor)
+    /// Raw score from high rating relative to low vote count (before RT multiplier)
     pub vote_ratio_score: f64,
     /// Score from year recency/forgotten status
     pub year_decay_score: f64,
     /// Score from being released near a major blockbuster (obscured factor)
     pub obscured_by_big_hit_score: f64,
-    /// Score from disparity between critic and audience scores
-    pub critic_disparity_score: f64,
+    /// RT credibility multiplier applied to vote_ratio (0.0–1.0).
+    /// High RT + low votes = critics endorsed, audiences missed (true hidden gem signal).
+    /// Low RT + low votes = informed avoidance, not undiscovery.
+    pub rt_credibility_multiplier: f64,
     /// Genre-based multiplier
     pub genre_boost: f64,
 }

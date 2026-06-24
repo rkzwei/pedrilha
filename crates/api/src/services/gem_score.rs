@@ -2,7 +2,10 @@ use anyhow::Result;
 use chrono::Datelike;
 use gem_finder_db::models;
 use gem_finder_shared::{
-    constants::{self, weights, IMDB_GEM_MAX, IMDB_GEM_MIN, MIN_GEM_AGE_YEARS, MIN_IMDB_VOTES},
+    constants::{
+        self, weights, IMDB_GEM_MAX, IMDB_GEM_MIN, MIN_GEM_AGE_YEARS, MIN_IMDB_VOTES,
+        RT_CREDIBILITY_FLOOR, RT_CREDIBILITY_HIGH,
+    },
     types::{GemScore, GemScoreComponents, Movie},
 };
 use turso::Connection;
@@ -46,24 +49,14 @@ impl GemScoreCalculator {
             return None;
         }
 
-        // Minimum age filter: exclude films released too recently.
-        // Streaming-era films accumulate very few TMDB votes regardless of popularity,
-        // so a 2024 film with 600 votes looks "undiscovered" to the algorithm but is
-        // actually just a new release. Only films at least MIN_GEM_AGE_YEARS old qualify.
+        // Minimum age filter: exclude films released this calendar year.
+        // A film from the current year hasn't had time to be overlooked.
+        // Films from last year onwards are eligible; year_decay naturally
+        // scores them low relative to older films, so they'll only rank high
+        // if other signals (votes, RT) are genuinely strong.
         let current_year = chrono::Utc::now().year();
         if let Some(year) = movie.year {
             if current_year - year < MIN_GEM_AGE_YEARS {
-                return None;
-            }
-        }
-
-        // Hard RT quality gate: critics rated it below 65% → not a hidden gem.
-        // Films without RT data (common for older or less prominent films) are allowed
-        // through and scored on the other signals. The enrichment pipeline ensures all
-        // movies in the pool have RT data fetched; the enrichment limit must be set high
-        // enough that no unenriched movie slips into the scored pool.
-        if let Some(rt) = movie.rt_critic_score {
-            if rt < 65 {
                 return None;
             }
         }
@@ -73,14 +66,24 @@ impl GemScoreCalculator {
         let year_decay_score = self.calc_year_decay_score(movie.year);
         let obscured_by_big_hit_score =
             self.calc_obscured_score(movie.release_date.as_deref(), big_hit_dates);
-        let critic_disparity_score = self.calc_critic_disparity_score(movie);
+        let rt_credibility_multiplier = self.calc_rt_credibility_multiplier(movie.rt_critic_score);
         let genre_boost = self.calc_genre_boost(movie.genre.as_deref());
 
+        // RT acts as a credibility multiplier on vote_ratio, not an additive component.
+        //
+        // True hidden gem = critics endorsed it + audiences missed it (high RT, low votes).
+        // Wildcard / divisive = critics panned it + audiences stayed away (low RT, low votes).
+        //
+        // Without this multiplier, both patterns produce identical vote_ratio scores —
+        // the algorithm cannot distinguish genuine undiscovery from informed avoidance.
+        // Films with rt < WILDCARD_RT_THRESHOLD are scored (not filtered) but classified
+        // as wildcards post-scoring and excluded from the main gems listing.
+        let vote_ratio_adjusted = vote_ratio_score * rt_credibility_multiplier;
+
         let weighted_sum = imdb_rating_score * weights::IMDB_RATING
-            + vote_ratio_score * weights::VOTE_RATIO
+            + vote_ratio_adjusted * weights::VOTE_RATIO
             + year_decay_score * weights::YEAR_DECAY
-            + obscured_by_big_hit_score * weights::OBSCURED
-            + critic_disparity_score * weights::CRITIC_DISPARITY;
+            + obscured_by_big_hit_score * weights::OBSCURED;
 
         let raw_score = weighted_sum * genre_boost;
         let normalized_score = raw_score.clamp(0.0, 1.0);
@@ -94,7 +97,7 @@ impl GemScoreCalculator {
                 vote_ratio_score,
                 year_decay_score,
                 obscured_by_big_hit_score,
-                critic_disparity_score,
+                rt_credibility_multiplier,
                 genre_boost,
             },
         })
@@ -178,33 +181,31 @@ impl GemScoreCalculator {
         0.0
     }
 
-    /// Score from RT critic quality (replaces the original critic-vs-audience disparity).
+    /// RT credibility multiplier for the vote_ratio component.
     ///
-    /// OMDb provides only a single RT score (critic), never the audience score, so the
-    /// original "audience loved it, critics didn't" disparity signal was always dead.
+    /// A high vote_ratio (high rating + low vote count) is only a reliable hidden-gem
+    /// signal when critics also endorsed the film. Without critic endorsement, low vote
+    /// counts reflect audiences actively avoiding a panned film ("informed avoidance"),
+    /// not genuine undiscovery.
     ///
-    /// New logic:
-    /// 1. If rt_critic_score is available: linearly map [65, 100] → [0.0, 1.0].
-    ///    Films already filtered to ≥ 65 at the calculate() gate, so this rewards
-    ///    increasingly acclaimed films up to a perfect 100%.
-    ///    - 65% → 0.00 (barely above the gate)
-    ///    - 80% → 0.43
-    ///    - 90% → 0.71
-    ///    - 100% → 1.00
-    /// 2. If no RT data: fall back to TMDB/IMDb rating discrepancy as a mild signal.
-    ///    A large gap between the two sources suggests the film is controversial —
-    ///    a weak but still directionally useful proxy.
-    /// 3. No data at all → 0.0 (neutral, no false signal).
-    fn calc_critic_disparity_score(&self, movie: &Movie) -> f64 {
-        if let Some(rt) = movie.rt_critic_score {
-            // rt is guaranteed ≥ 65 at this point (hard filter in calculate()).
-            ((rt as f64 - 65.0) / 35.0).clamp(0.0, 1.0)
-        } else if let (Some(tmdb), Some(imdb)) = (movie.tmdb_rating, movie.imdb_rating) {
-            // Mild TMDB/IMDb discrepancy signal when RT is unavailable.
-            let gap = (imdb - tmdb).abs();
-            (gap / 2.0).clamp(0.0, 1.0)
-        } else {
-            0.0
+    /// Mapping:
+    ///   - rt >= 70%  → 1.0  (critics endorsed it — full trust in vote_ratio signal)
+    ///   - rt in [40, 70) → linear 0.0 → 1.0  (partial trust)
+    ///   - rt < 40%   → 0.0  (critics panned it — vote_ratio is misleading)
+    ///   - rt = None  → 0.8  (benefit of doubt; old films often lack RT data)
+    ///
+    /// Films with rt < WILDCARD_RT_THRESHOLD (50%) are post-scored into the wildcards
+    /// table — they still receive a gem_score for ranking purposes but are listed
+    /// separately from hidden gems.
+    pub(crate) fn calc_rt_credibility_multiplier(&self, rt_critic: Option<i32>) -> f64 {
+        match rt_critic {
+            None => 0.8, // Benefit of doubt — old/obscure films often lack RT data
+            Some(rt) if rt >= RT_CREDIBILITY_HIGH => 1.0,
+            Some(rt) if rt >= RT_CREDIBILITY_FLOOR => {
+                (rt as f64 - RT_CREDIBILITY_FLOOR as f64)
+                    / (RT_CREDIBILITY_HIGH as f64 - RT_CREDIBILITY_FLOOR as f64)
+            }
+            Some(_) => 0.0, // RT < 40% — informed avoidance, not undiscovery
         }
     }
 
@@ -254,6 +255,16 @@ pub async fn run_batch_scoring(conn: &Connection) -> Result<usize> {
     }
 
     tracing::info!("Scoring {} movies", total);
+
+    // 1b. Clear all existing gem scores before re-scoring.
+    //
+    // Without this, films that no longer pass the scoring filters (e.g., their RT data
+    // arrived since last run and they now fail the sweet-spot check, or a vote count
+    // changed) keep their stale gem_score and rank indefinitely.
+    //
+    // Clearing first means the scored set is always exactly the films that qualify
+    // under the current algorithm and data — no survivors from previous runs.
+    models::clear_all_gem_scores(conn).await?;
 
     // 2. Load blockbuster release dates from the big_hits table.
     //    These are populated by TmdbSyncService::sync_blockbusters(), which fetches
@@ -443,7 +454,7 @@ mod tests {
                 vec![],
             ),
             (
-                "RT critic=45% — filtered out (below RT threshold)",
+                "RT critic=45% — wildcard (dampened vote_ratio, still scores)",
                 {
                     let mut m = make_movie(6, 7.2, None, 8_000, 2015, "Drama", "2015-03-01");
                     m.rt_critic_score = Some(45);
@@ -452,31 +463,31 @@ mod tests {
                 vec![],
             ),
             (
-                "No RT data — disparity falls back to tmdb/imdb gap (0.0 when imdb=None)",
+                "No RT data — multiplier=0.8 (benefit of doubt for old films)",
                 make_movie(7, 7.2, None, 8_000, 2015, "Drama", "2015-03-01"),
                 vec![],
             ),
         ];
 
-        eprintln!("\n{:-<90}", "");
+        eprintln!("\n{:-<96}", "");
         eprintln!(
-            "{:<50} {:>6} {:>6} {:>6} {:>6} {:>6} {:>6} {:>7}",
-            "Movie", "imdb", "vote_r", "yr_dec", "obscrd", "rt_dis", "boost", "TOTAL%"
+            "{:<50} {:>6} {:>6} {:>6} {:>6} {:>7} {:>6} {:>7}",
+            "Movie", "imdb", "vote_r", "yr_dec", "obscrd", "rt_mult", "boost", "TOTAL%"
         );
-        eprintln!("{:-<90}", "");
+        eprintln!("{:-<96}", "");
 
         for (label, movie, big_hits) in &cases {
             match calc.calculate(movie, big_hits) {
                 Some(s) => {
                     let c = &s.components;
                     eprintln!(
-                        "{:<50} {:>6.3} {:>6.3} {:>6.3} {:>6.3} {:>6.3} {:>6.3} {:>6.1}%",
+                        "{:<50} {:>6.3} {:>6.3} {:>6.3} {:>6.3} {:>7.3} {:>6.3} {:>6.1}%",
                         &label[..label.len().min(49)],
                         c.imdb_rating_score,
                         c.vote_ratio_score,
                         c.year_decay_score,
                         c.obscured_by_big_hit_score,
-                        c.critic_disparity_score,
+                        c.rt_credibility_multiplier,
                         c.genre_boost,
                         s.normalized_score * 100.0
                     );
@@ -489,7 +500,7 @@ mod tests {
                 }
             }
         }
-        eprintln!("{:-<90}\n", "");
+        eprintln!("{:-<96}\n", "");
 
         // Assertions — Sorcerer-profile should score highest, blockbuster lower than it.
         let sorcerer = calc.calculate(&cases[0].1, &cases[0].2).unwrap();
@@ -647,48 +658,86 @@ mod tests {
         );
     }
 
-    // ── Unit: RT disparity scoring ───────────────────────────────────────────
+    // ── Unit: RT credibility multiplier ─────────────────────────────────────
 
     #[test]
-    fn test_rt_critic_score_drives_disparity() {
-        // calc_critic_disparity_score maps RT critic score [65, 100] → [0.0, 1.0].
-        // Higher RT = higher disparity component (critics loved it = more signal it's a gem).
+    fn test_rt_credibility_multiplier_higher_rt_gives_higher_multiplier() {
+        // Higher RT = higher credibility multiplier on vote_ratio.
+        // RT=98% (critics loved it) → multiplier=1.0
+        // RT=55% (critics lukewarm) → multiplier=0.5
+        // RT=30% (critics panned it) → multiplier=0.0
         let calc = GemScoreCalculator::new();
-        let mut high_rt = make_movie(1, 7.2, None, 10_000, 2010, "Drama", "2010-05-01");
-        high_rt.rt_critic_score = Some(98);
 
-        let mut low_rt = make_movie(2, 7.2, None, 10_000, 2010, "Drama", "2010-05-01");
-        low_rt.rt_critic_score = Some(67);
+        let mult_98 = calc.calc_rt_credibility_multiplier(Some(98));
+        let mult_55 = calc.calc_rt_credibility_multiplier(Some(55));
+        let mult_30 = calc.calc_rt_credibility_multiplier(Some(30));
+        let mult_none = calc.calc_rt_credibility_multiplier(None);
+
+        eprintln!(
+            "rt_multiplier: 98%={:.3}, 55%={:.3}, 30%={:.3}, None={:.3}",
+            mult_98, mult_55, mult_30, mult_none
+        );
+
+        assert_eq!(mult_98, 1.0, "RT 98% should give multiplier 1.0");
+        assert!(mult_55 > 0.0 && mult_55 < 1.0, "RT 55% should give partial multiplier");
+        assert_eq!(mult_30, 0.0, "RT 30% should give multiplier 0.0 (below credibility floor)");
+        assert!(
+            mult_none > 0.5 && mult_none < 1.0,
+            "No RT data should give benefit-of-doubt multiplier (0.8)"
+        );
+        assert!(mult_98 > mult_55 && mult_55 > mult_30, "Multiplier must increase with RT");
+    }
+
+    #[test]
+    fn test_low_rt_dampens_vote_ratio_contribution() {
+        // Same film, same votes — but high RT vs low RT.
+        // High RT: critics endorsed + audiences missed = true hidden gem signal.
+        // Low RT: critics panned + audiences stayed away = informed avoidance.
+        // The low-RT film should score lower overall because vote_ratio is dampened.
+        let calc = GemScoreCalculator::new();
+
+        let mut high_rt = make_movie(1, 7.2, None, 5_000, 2010, "Drama", "2010-05-01");
+        high_rt.rt_critic_score = Some(90);
+
+        let mut low_rt = make_movie(2, 7.2, None, 5_000, 2010, "Drama", "2010-05-01");
+        low_rt.rt_critic_score = Some(35); // below credibility floor → multiplier = 0.0
 
         let s_high = calc.calculate(&high_rt, &[]).unwrap();
         let s_low = calc.calculate(&low_rt, &[]).unwrap();
 
         eprintln!(
-            "rt_disparity: high_rt(98%)={:.3}, low_rt(67%)={:.3}",
-            s_high.components.critic_disparity_score, s_low.components.critic_disparity_score
+            "rt_dampening: high_rt(90%, mult={:.3})={:.1}%, low_rt(35%, mult={:.3})={:.1}%",
+            s_high.components.rt_credibility_multiplier,
+            s_high.normalized_score * 100.0,
+            s_low.components.rt_credibility_multiplier,
+            s_low.normalized_score * 100.0,
         );
 
+        assert_eq!(
+            s_low.components.rt_credibility_multiplier, 0.0,
+            "RT 35% should produce 0.0 credibility multiplier"
+        );
         assert!(
-            s_high.components.critic_disparity_score > s_low.components.critic_disparity_score,
-            "Higher RT score should produce higher disparity component: {:.3} vs {:.3}",
-            s_high.components.critic_disparity_score,
-            s_low.components.critic_disparity_score
+            s_high.normalized_score > s_low.normalized_score,
+            "High-RT film should outscore low-RT film with same votes: {:.1}% vs {:.1}%",
+            s_high.normalized_score * 100.0,
+            s_low.normalized_score * 100.0
         );
     }
 
     #[test]
-    fn test_no_rt_data_gives_zero_disparity() {
+    fn test_no_rt_data_uses_benefit_of_doubt() {
         let calc = GemScoreCalculator::new();
         let movie = make_movie(1, 7.2, None, 10_000, 2010, "Drama", "2010-05-01");
-        // No rt_critic_score, no rt_audience_score, imdb_rating is None (TMDB-only).
         let score = calc.calculate(&movie, &[]).unwrap();
         eprintln!(
-            "no_rt_disparity: score={:.3} (should be 0.0)",
-            score.components.critic_disparity_score
+            "no_rt_multiplier: {:.3} (expected ~0.8)",
+            score.components.rt_credibility_multiplier
         );
-        assert_eq!(
-            score.components.critic_disparity_score, 0.0,
-            "No RT data and no IMDb/TMDB divergence should give 0.0 disparity, not a flat bias"
+        assert!(
+            (score.components.rt_credibility_multiplier - 0.8).abs() < 0.001,
+            "No RT data should give 0.8 benefit-of-doubt multiplier, got {:.3}",
+            score.components.rt_credibility_multiplier
         );
     }
 }
@@ -863,10 +912,10 @@ mod db_tests {
         // Component breakdown for known gems
         eprintln!("\n── Known Gem Component Breakdown ───────────────────────────────────────────");
         eprintln!(
-            "{:<35} {:>6} {:>6} {:>6} {:>6} {:>6} {:>6} {:>7}",
-            "Movie", "imdb", "vote_r", "yr_dec", "obscrd", "rt_dis", "boost", "TOTAL%"
+            "{:<35} {:>6} {:>6} {:>6} {:>6} {:>7} {:>6} {:>7}",
+            "Movie", "imdb", "vote_r", "yr_dec", "obscrd", "rt_mult", "boost", "TOTAL%"
         );
-        eprintln!("{:-<85}", "");
+        eprintln!("{:-<91}", "");
         for m in &scored {
             let is_gem = m
                 .imdb_id
@@ -875,19 +924,19 @@ mod db_tests {
             if is_gem {
                 let c = &m.components;
                 eprintln!(
-                    "{:<35} {:>6.3} {:>6.3} {:>6.3} {:>6.3} {:>6.3} {:>6.3} {:>6.1}%",
+                    "{:<35} {:>6.3} {:>6.3} {:>6.3} {:>6.3} {:>7.3} {:>6.3} {:>6.1}%",
                     &m.title[..m.title.len().min(34)],
                     c.imdb_rating_score,
                     c.vote_ratio_score,
                     c.year_decay_score,
                     c.obscured_by_big_hit_score,
-                    c.critic_disparity_score,
+                    c.rt_credibility_multiplier,
                     c.genre_boost,
                     m.score * 100.0,
                 );
             }
         }
-        eprintln!("{:-<85}\n", "");
+        eprintln!("{:-<91}\n", "");
     }
 
     /// Assert the three known gems are present in the DB and score above a

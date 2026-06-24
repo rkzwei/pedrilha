@@ -8,13 +8,11 @@ pub const MIN_IMDB_VOTES: i64 = 500;
 
 /// Minimum age (in years) for a movie to qualify as a hidden gem.
 ///
-/// Films released within this window have artificially low vote counts because
-/// streaming-platform audiences rarely rate on TMDB/IMDb. A 2024 film with
-/// 800 votes is not "forgotten" — it just hasn't had time to accumulate them.
-/// Set to 3 so that only films from (current_year - 3) and earlier are eligible.
-/// Note: recent foreign/indie films with legitimately low votes (e.g. Oscar-nominated
-/// foreign-language films) are correctly included — age alone is not a quality filter.
-pub const MIN_GEM_AGE_YEARS: i32 = 3;
+/// Set to 1 so that films from the previous calendar year and earlier are eligible.
+/// Films released in the current year are excluded — vote counts have not yet settled
+/// and the film hasn't had time to be overlooked. Films from last year onwards are
+/// fair game; year_decay naturally gives them a low score relative to older films.
+pub const MIN_GEM_AGE_YEARS: i32 = 1;
 
 /// The ideal IMDb vote count for a "pure" hidden gem (low votes = undiscovered).
 pub const IDEAL_VOTE_COUNT: f64 = 10_000.0;
@@ -40,6 +38,24 @@ pub const ACCLAIMED_MIN_IMDB: f64 = 8.0;
 /// films like The Godfather, Schindler's List, Parasite, etc.
 pub const ACCLAIMED_MIN_RT: i32 = 80;
 
+/// RT critic score thresholds for the credibility multiplier applied to vote_ratio.
+///
+/// True hidden gems = critics endorsed it + audiences missed it.
+/// Films where critics panned it + audiences stayed away are "informed avoidance" —
+/// low vote counts there reflect critical rejection, not genuine undiscovery.
+/// The RT credibility multiplier on vote_ratio distinguishes the two cases:
+///
+/// - rt >= RT_CREDIBILITY_HIGH (70%): multiplier = 1.0 — critics endorsed it fully
+/// - rt in [RT_CREDIBILITY_FLOOR, RT_CREDIBILITY_HIGH): linear 0.0 → 1.0
+/// - rt < RT_CREDIBILITY_FLOOR (40%): multiplier = 0.0 — informed avoidance, not undiscovery
+/// - rt = None: multiplier = 0.8 — benefit of doubt (old films often lack RT data)
+///
+/// Films that score but have rt < WILDCARD_RT_THRESHOLD are classified as "wildcards":
+/// listed separately as divisive films critics disagreed on, not hidden gems.
+pub const RT_CREDIBILITY_HIGH: i32 = 70;
+pub const RT_CREDIBILITY_FLOOR: i32 = 40;
+pub const WILDCARD_RT_THRESHOLD: i32 = 50;
+
 /// Weight coefficients for the gem score algorithm.
 ///
 /// Design rationale:
@@ -48,25 +64,23 @@ pub const ACCLAIMED_MIN_RT: i32 = 80;
 ///   this component alone. This prevents recent acclaimed films (good RT, decent IMDb)
 ///   from flooding the top rankings.
 /// - IMDB_RATING (0.30): primary quality signal — sweet spot 6.5–7.9 required.
-/// - VOTE_RATIO (0.20): "undiscovered right now" signal, independent of age. A 1985 film
-///   with 500 votes is genuinely more hidden than one with 200k votes. Keeps obscure
-///   films ahead of cult classics that got streaming-era rediscovery boosts.
+/// - VOTE_RATIO (0.25): "undiscovered right now" signal, modulated by the RT credibility
+///   multiplier. High RT + low votes = critics endorsed, audiences missed (true gem).
+///   Low RT + low votes = audiences stayed away because critics warned them off (wildcard).
+///   The multiplier is applied to vote_ratio before weighting, not as an additive component.
 /// - OBSCURED (0.05): data sparsity (~100 blockbusters) limits coverage; preserves
 ///   the Sorcerer/Star Wars signal without overfitting to the thin data.
-/// - CRITIC_DISPARITY (0.05): RT is primarily a hard gate (< 65 → excluded). Residual
-///   5% means a 2023 film with RT=97% gains only 0.047 here — it cannot compensate
-///   for the 0.36 gap it loses to a 1977 film on year_decay.
+///
+/// Total: 0.30 + 0.25 + 0.40 + 0.05 = 1.00
 pub mod weights {
     /// Weight for the IMDb rating being in the sweet spot.
     pub const IMDB_RATING: f64 = 0.30;
-    /// Weight for high rating relative to low vote count.
-    pub const VOTE_RATIO: f64 = 0.20;
+    /// Weight for high rating relative to low vote count (modulated by RT credibility multiplier).
+    pub const VOTE_RATIO: f64 = 0.25;
     /// Weight for year decay (older = more forgotten). Dominant component.
     pub const YEAR_DECAY: f64 = 0.40;
     /// Weight for being obscured by a big hit.
     pub const OBSCURED: f64 = 0.05;
-    /// Weight for critic score signal (RT is primarily a hard gate, not a scorer).
-    pub const CRITIC_DISPARITY: f64 = 0.05;
 }
 
 /// Genre boost multipliers for hidden gem probability.

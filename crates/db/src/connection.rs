@@ -63,9 +63,12 @@ impl Database {
     /// for remote connections. Falls back to a local SQLite file if neither
     /// is set (defaults to `gem_finder.db`).
     pub async fn from_env() -> Result<Self> {
+        // Filter out empty strings so setting a variable to "" in docker-compose
+        // (to override a SECRETS.env value) is treated as "not set".
         let url = std::env::var("TURSO_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .ok();
+            .ok()
+            .filter(|s| !s.is_empty());
 
         match url {
             Some(remote_url) if remote_url.starts_with("libsql://") => {

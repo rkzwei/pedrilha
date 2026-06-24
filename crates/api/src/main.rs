@@ -9,7 +9,10 @@ mod services;
 use gem_finder_db::{migrations, models, Database};
 use gem_finder_shared::types::{HealthResponse, Movie, MovieSummary, PaginatedResponse};
 use serde::Deserialize;
-use std::sync::Arc;
+use std::sync::{
+    atomic::AtomicBool,
+    Arc,
+};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -18,6 +21,11 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 #[derive(Clone)]
 struct AppState {
     db: Arc<Database>,
+    tmdb_api_key: String,
+    omdb_api_key: String,
+    /// Prevents concurrent admin operations (sync, enrich, score, seed).
+    /// Set to `true` while any admin task is running; cleared by the task's RAII guard.
+    admin_busy: Arc<AtomicBool>,
 }
 
 #[derive(Deserialize)]
@@ -30,6 +38,12 @@ struct GemsQuery {
 
 #[derive(Deserialize)]
 struct AclaimedQuery {
+    page: Option<i32>,
+    per_page: Option<i32>,
+}
+
+#[derive(Deserialize)]
+struct WildcardsQuery {
     page: Option<i32>,
     per_page: Option<i32>,
 }
@@ -106,17 +120,35 @@ async fn main() {
         tracing::warn!("Failed to write startup log: {}", e);
     }
 
-    let state = AppState { db: Arc::new(db) };
+    // Read API keys at startup — warn if missing (server still starts; admin ops will fail).
+    let tmdb_api_key = std::env::var("TMDB_API_KEY").unwrap_or_default();
+    let omdb_api_key = std::env::var("OMDB_API_KEY").unwrap_or_default();
+
+    if tmdb_api_key.is_empty() {
+        tracing::warn!("TMDB_API_KEY not set — sync will be unavailable");
+    }
+    if omdb_api_key.is_empty() {
+        tracing::warn!("OMDB_API_KEY not set — enrichment will be unavailable");
+    }
+
+    let state = AppState {
+        db: Arc::new(db),
+        tmdb_api_key,
+        omdb_api_key,
+        admin_busy: Arc::new(AtomicBool::new(false)),
+    };
 
     let router = Router::new()
         .route("/health", get(health_check))
         .route("/api/gems", get(get_gems))
         .route("/api/acclaimed", get(get_acclaimed))
+        .route("/api/wildcards", get(get_wildcards))
         .route("/api/movies/{id}", get(get_movie))
         .route("/api/score", post(run_scoring))
         .route("/api/admin/sync", post(routes::admin::trigger_sync))
         .route("/api/admin/enrich", post(routes::admin::trigger_enrich))
         .route("/api/admin/score", post(routes::admin::trigger_score))
+        .route("/api/admin/seed", post(routes::admin::trigger_seed))
         .route("/api/admin/logs", get(routes::admin::get_run_logs))
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
@@ -184,13 +216,14 @@ async fn run_seed_test_data() {
     let _ = models::insert_run_log(&conn, "info", "seed_started", "seed-test-data starting").await;
 
     // Step 1: Init TMDB
-    let mut tmdb = match services::tmdb_sync::TmdbSyncService::new() {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("TMDB init failed: {}. Set TMDB_API_KEY env var.", e);
+    let tmdb_key = match std::env::var("TMDB_API_KEY") {
+        Ok(k) if !k.is_empty() => k,
+        _ => {
+            eprintln!("TMDB_API_KEY must be set. Add it to SECRETS.env.");
             std::process::exit(1);
         }
     };
+    let mut tmdb = services::tmdb_sync::TmdbSyncService::new(tmdb_key);
     if let Err(e) = tmdb.init_config().await {
         eprintln!("TMDB config init failed: {}", e);
         std::process::exit(1);
@@ -292,9 +325,11 @@ async fn run_seed_test_data() {
     // Step 4: OMDb enrichment — drain the entire unenriched queue.
     // Limit must be high enough that no unenriched movie reaches the scoring pipeline,
     // since missing RT data means the RT quality gate can't fire and bad films slip through.
-    if let Ok(omdb) = services::omdb_sync::OmdbEnrichmentService::new() {
+    let omdb_key = std::env::var("OMDB_API_KEY").unwrap_or_default();
+    if !omdb_key.is_empty() {
+        let omdb = services::omdb_sync::OmdbEnrichmentService::new(omdb_key);
         tracing::info!("Running OMDb enrichment...");
-        match omdb.enrich_movies(&conn, 2000).await {
+        match omdb.enrich_movies(&conn, i64::MAX).await {
             Ok((enriched, total, errors)) => {
                 println!("--- OMDb Enrichment ---");
                 println!("  {}/{} movies enriched", enriched, total);
@@ -357,6 +392,25 @@ async fn run_seed_test_data() {
         }
         Err(e) => {
             eprintln!("Acclaimed classification failed: {}", e);
+        }
+    }
+
+    // Step 5c: Classify wildcards (divisive films: scored but RT < 50%)
+    tracing::info!("Classifying wildcards...");
+    match models::classify_wildcards(&conn).await {
+        Ok(count) => {
+            println!("--- Wildcard Classification ---");
+            println!("  {} films in wildcards table\n", count);
+            let _ = models::insert_run_log(
+                &conn,
+                "info",
+                "seed_wildcards",
+                &format!("Classified {} wildcard films", count),
+            )
+            .await;
+        }
+        Err(e) => {
+            eprintln!("Wildcard classification failed: {}", e);
         }
     }
 
@@ -467,6 +521,38 @@ async fn get_acclaimed(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let total = models::get_acclaimed_count(&conn)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(PaginatedResponse {
+        data: movies,
+        page,
+        per_page,
+        total,
+    }))
+}
+
+/// Get a paginated list of wildcard films (scored but RT < 50%).
+/// These are divisive films — critics disagreed on them. Listed separately from hidden gems.
+/// GET /api/wildcards
+async fn get_wildcards(
+    State(state): State<AppState>,
+    Query(query): Query<WildcardsQuery>,
+) -> Result<Json<PaginatedResponse<MovieSummary>>, StatusCode> {
+    let page = query.page.unwrap_or(1).max(1);
+    let per_page = query.per_page.unwrap_or(20).clamp(1, 100);
+
+    let conn = state
+        .db
+        .connect()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let movies = models::get_wildcards(&conn, page, per_page)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let total = models::get_wildcards_count(&conn)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

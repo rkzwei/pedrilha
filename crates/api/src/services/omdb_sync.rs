@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 use gem_finder_db::models;
 use gem_finder_shared::types::OmdbResponse;
 use reqwest::Client;
-use std::env;
 use turso::Connection;
 
 /// Service for enriching movie data via the OMDb API.
@@ -17,13 +16,12 @@ pub struct OmdbEnrichmentService {
 }
 
 impl OmdbEnrichmentService {
-    pub fn new() -> Result<Self> {
-        let api_key = env::var("OMDB_API_KEY").context("OMDB_API_KEY must be set")?;
-        Ok(Self {
+    pub fn new(api_key: String) -> Self {
+        Self {
             client: Client::new(),
             api_key,
             base_url: "https://www.omdbapi.com".to_string(),
-        })
+        }
     }
 
     /// Enrich all movies that are missing IMDb ratings or RT scores.
@@ -42,7 +40,11 @@ impl OmdbEnrichmentService {
         let mut enriched = 0usize;
         let mut errors: Vec<String> = Vec::new();
 
-        for (movie_id, title, imdb_id) in &candidates {
+        tracing::info!("OMDb enrichment: {} movies to process", total);
+
+        const CHUNK: usize = 50;
+
+        for (i, (movie_id, title, imdb_id)) in candidates.iter().enumerate() {
             match self
                 .enrich_single_movie(conn, *movie_id, title, imdb_id)
                 .await
@@ -54,6 +56,23 @@ impl OmdbEnrichmentService {
                     tracing::warn!("{}", msg);
                     errors.push(msg);
                 }
+            }
+
+            // Progress log every CHUNK movies
+            let processed = i + 1;
+            if processed % CHUNK == 0 || processed == total {
+                tracing::info!(
+                    "OMDb enrichment: {}/{} processed, {} enriched, {} errors so far",
+                    processed, total, enriched, errors.len()
+                );
+                // Also write to run_logs so the admin panel shows live progress
+                let _ = models::insert_run_log(
+                    conn,
+                    "info",
+                    "enrich_progress",
+                    &format!("{}/{} processed, {} enriched, {} errors",
+                        processed, total, enriched, errors.len()),
+                ).await;
             }
         }
 
@@ -68,7 +87,10 @@ impl OmdbEnrichmentService {
     }
 
     /// Enrich a single movie by calling OMDb with its IMDb ID.
-    /// Returns `Ok(true)` if new data was written, `Ok(false)` if no update needed.
+    /// Returns `Ok(true)` if new data was written, `Ok(false)` if OMDb responded
+    /// successfully but all fields were already present (genuine no-op).
+    /// Returns `Err` for both network/parse failures AND OMDb `Response: False`
+    /// (OMDb has no record for this IMDb ID — the movie will not be enriched).
     async fn enrich_single_movie(
         &self,
         conn: &Connection,
@@ -88,19 +110,14 @@ impl OmdbEnrichmentService {
             .await
             .context("OMDb response parse failed")?;
 
-        // Check for OMDb error (e.g. "Movie not found!" or "Invalid API key!").
+        // Check for OMDb error (e.g. "Movie not found!", "Error getting data.", "Invalid API key!").
         // OMDb returns {"Response": "False", "Error": "reason"} on failure.
-        // With rename_all = "PascalCase", response maps to "Response" and error to "Error".
         let is_ok = response.response.as_deref() == Some("True");
         if !is_ok {
             let err_msg = response.error.as_deref().unwrap_or("unknown error");
-            tracing::warn!(
-                "OMDb error for '{}' (imdb: {}): {}",
-                title,
-                imdb_id,
-                err_msg
-            );
-            return Ok(false);
+            // Return Err so the caller counts this in the error tally.
+            // The movie stays in the unenriched queue; the error count reflects reality.
+            return Err(anyhow::anyhow!("OMDb no data: {}", err_msg));
         }
 
         // Extract IMDb rating
