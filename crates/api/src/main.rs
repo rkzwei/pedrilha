@@ -124,6 +124,7 @@ struct WildcardsQuery {
 
 #[tokio::main]
 async fn main() {
+    dotenvy::dotenv().ok();
     // Initialize tracing: write to BOTH stdout and gem_finder.log.
     // Two separate fmt layers share the same filter via registry().
     let log_file = tracing_appender::rolling::never(".", "gem_finder.log");
@@ -281,6 +282,7 @@ async fn main() {
                 .delete(routes::watchlist::delete_watchlist_movie),
         )
         // User — JWT protected
+        .route("/api/user/me", get(routes::auth::get_me))
         .route(
             "/api/user/username",
             axum::routing::patch(routes::auth::set_username),
@@ -306,6 +308,7 @@ async fn main() {
     let sched_omdb_pre  = state.omdb_api_key.clone();
     let sched_busy_pre  = state.admin_busy.clone();
     let sched_cache_pre = state.movie_cache.clone();
+    let cleanup_db_pre  = state.db.clone();
 
     let router = router.with_state(state);
 
@@ -420,6 +423,43 @@ async fn main() {
             });
             tracing::info!("Scheduled sync enabled — interval: {}h", interval_hours);
         }
+    }
+
+    // Scheduled cleanup — runs every CLEANUP_INTERVAL_HOURS (default 24).
+    // Independent of TMDB key; purges unverified ghost accounts and stale tokens.
+    {
+        let cleanup_db = cleanup_db_pre;
+        let cleanup_interval_hours: u64 = std::env::var("CLEANUP_INTERVAL_HOURS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(24);
+
+        tokio::spawn(async move {
+            let period = std::time::Duration::from_secs(cleanup_interval_hours * 3600);
+            loop {
+                tokio::time::sleep(period).await;
+
+                let conn = match cleanup_db.connect().await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        tracing::error!("scheduled_cleanup: db connect failed: {}", e);
+                        continue;
+                    }
+                };
+
+                if let Err(e) = gem_finder_db::models::delete_unverified_users(&conn).await {
+                    tracing::warn!("scheduled_cleanup: delete_unverified_users failed: {}", e);
+                } else {
+                    tracing::info!("scheduled_cleanup: unverified user sweep complete");
+                }
+                if let Err(e) = gem_finder_db::models::delete_expired_tokens(&conn).await {
+                    tracing::warn!("scheduled_cleanup: delete_expired_tokens failed: {}", e);
+                } else {
+                    tracing::info!("scheduled_cleanup: expired token sweep complete");
+                }
+            }
+        });
+        tracing::info!("Scheduled cleanup enabled — interval: {}h", cleanup_interval_hours);
     }
 
     axum::serve(listener, app).await.expect("Server failed");

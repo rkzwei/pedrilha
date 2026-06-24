@@ -112,8 +112,9 @@ pub async fn magic_link_request(
         );
     }
 
+    let next = body.next.clone();
     tokio::spawn(async move {
-        if let Err(e) = crate::services::email::send_magic_link(&email, &token).await {
+        if let Err(e) = crate::services::email::send_magic_link(&email, &token, next.as_deref()).await {
             tracing::warn!("magic link email failed to send: {}", e);
         }
     });
@@ -246,6 +247,15 @@ pub async fn check_username(
             Json(json!({ "error": "database error" })),
         ),
     }
+}
+
+/// GET /api/user/me — return the authenticated user's profile from JWT claims.
+pub async fn get_me(auth: AuthUser) -> Json<Value> {
+    Json(json!({
+        "user_id":  auth.0.sub,
+        "email":    auth.0.email,
+        "username": auth.0.username,
+    }))
 }
 
 /// PATCH /api/user/username

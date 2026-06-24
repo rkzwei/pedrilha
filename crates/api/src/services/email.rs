@@ -10,7 +10,7 @@ use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 ///
 /// Required env vars: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM
 /// Optional: APP_URL (defaults to http://localhost:3000)
-pub async fn send_magic_link(to_email: &str, token: &str) -> Result<()> {
+pub async fn send_magic_link(to_email: &str, token: &str, next: Option<&str>) -> Result<()> {
     let host = std::env::var("SMTP_HOST").context("SMTP_HOST not set")?;
     let port: u16 = std::env::var("SMTP_PORT")
         .unwrap_or_else(|_| "587".into())
@@ -19,9 +19,17 @@ pub async fn send_magic_link(to_email: &str, token: &str) -> Result<()> {
     let user = std::env::var("SMTP_USER").context("SMTP_USER not set")?;
     let password = std::env::var("SMTP_PASSWORD").context("SMTP_PASSWORD not set")?;
     let from = std::env::var("SMTP_FROM").unwrap_or_else(|_| user.clone());
-    let app_url = std::env::var("APP_URL").unwrap_or_else(|_| "http://localhost:3000".into());
+    let app_url = std::env::var("APP_URL").unwrap_or_else(|_| "http://localhost:8080".into());
 
-    let magic_url = format!("{}/auth/verify?token={}", app_url.trim_end_matches('/'), token);
+    let magic_url = match next.filter(|n| !n.is_empty()) {
+        Some(n) => format!(
+            "{}/auth/verify?token={}&next={}",
+            app_url.trim_end_matches('/'),
+            token,
+            n
+        ),
+        None => format!("{}/auth/verify?token={}", app_url.trim_end_matches('/'), token),
+    };
 
     let body = format!(
         "Click the link below to sign in to Gem Finder.\n\

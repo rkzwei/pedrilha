@@ -16,6 +16,10 @@ pub async fn run(conn: &Connection) -> Result<()> {
         migrate_v2(conn).await?;
         record_version(conn, 2).await?;
     }
+    if !applied.contains(&3) {
+        migrate_v3(conn).await?;
+        record_version(conn, 3).await?;
+    }
 
     Ok(())
 }
@@ -226,5 +230,19 @@ async fn migrate_v2(conn: &Connection) -> Result<()> {
         conn.execute(ddl, turso::params![]).await?;
     }
 
+    Ok(())
+}
+
+// ── Migration v3: cleanup indexes ─────────────────────────────────────────────
+
+async fn migrate_v3(conn: &Connection) -> Result<()> {
+    for ddl in [
+        // Used by delete_unverified_users to find old unverified accounts efficiently.
+        "CREATE INDEX IF NOT EXISTS idx_users_created_at    ON users(created_at)",
+        // Used by delete_expired_tokens to purge stale tokens efficiently.
+        "CREATE INDEX IF NOT EXISTS idx_magic_tokens_expires ON magic_tokens(expires_at)",
+    ] {
+        conn.execute(ddl, turso::params![]).await?;
+    }
     Ok(())
 }

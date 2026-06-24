@@ -1,7 +1,7 @@
 use crate::api;
 use crate::{save_auth_to_storage, AuthState};
 use gem_finder_shared::id_encode::encode_movie_id;
-use gem_finder_shared::types::{MovieSummary, WatchState};
+use gem_finder_shared::types::{Movie, MovieSummary, WatchState};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::{
@@ -37,7 +37,6 @@ const DECADE_OPTIONS: &[(i32, &str)] = &[
 const PER_PAGE: i32 = 20;
 
 // ── URL builder ───────────────────────────────────────────────────────────────
-// `genres` is comma-separated when multiple are selected (e.g. "Action,Drama").
 fn build_url(
     path: &str,
     page: i32,
@@ -62,8 +61,6 @@ fn is_valid_email_client(email: &str) -> bool {
 }
 
 // ── Filter bar ────────────────────────────────────────────────────────────────
-// Overlay panel — does not displace the movie grid.
-// Genres are multi-select (OR logic). Era is single-select.
 #[component]
 fn FilterBar(
     genres: Signal<Vec<String>>,
@@ -81,7 +78,6 @@ fn FilterBar(
     view! {
         <div class="relative mb-6">
 
-            // ── Search + filter toggle ────────────────────────────────────────
             <div class="flex gap-3 items-center">
                 <input
                     type="text"
@@ -105,7 +101,6 @@ fn FilterBar(
                 </button>
             </div>
 
-            // ── Active filter chips ───────────────────────────────────────────
             {move || {
                 let gs = genres.get();
                 let yr = year.get();
@@ -144,9 +139,6 @@ fn FilterBar(
                 }
             }}
 
-            // ── Backdrop + floating panel ─────────────────────────────────────
-            // Backdrop: fixed, covers viewport, blocks all pointer events.
-            // Panel: absolute inside the relative container, z above backdrop.
             {move || if panel_open.get() {
                 view! {
                     <div
@@ -159,7 +151,6 @@ fn FilterBar(
                         style="background-color: var(--sc-panel, #1c1917)"
                     >
                         <div class="flex flex-col sm:flex-row gap-6">
-                            // ERA — single-select
                             <div class="flex-shrink-0">
                                 <p class="text-xs uppercase tracking-widest text-stone-500 mb-2">"Era"</p>
                                 <div class="flex sm:flex-col flex-wrap gap-1">
@@ -186,7 +177,6 @@ fn FilterBar(
                                     }).collect::<Vec<_>>()}
                                 </div>
                             </div>
-                            // GENRE — multi-select
                             <div class="flex-1 min-w-0">
                                 <p class="text-xs uppercase tracking-widest text-stone-500 mb-2">"Genre"</p>
                                 <div class="flex flex-wrap gap-1.5">
@@ -209,7 +199,6 @@ fn FilterBar(
                                                         cur.push(gs_click.clone());
                                                     }
                                                     on_genres.run(cur);
-                                                    // Panel stays open — user may pick multiple genres
                                                 }
                                             >{*g}</button>
                                         }
@@ -217,7 +206,6 @@ fn FilterBar(
                                 </div>
                             </div>
                         </div>
-                        // Footer: film count + clear
                         <div class="flex items-center justify-between mt-4 pt-3 border-t border-sc-border">
                             <p class="text-xs text-stone-600">
                                 {move || { let t = total.get(); if t > 0 { format!("{} films", t) } else { String::new() } }}
@@ -248,7 +236,7 @@ fn PaginationBar(
     on_prev: Callback<()>,
     on_next: Callback<()>,
 ) -> impl IntoView {
-    let _ = &on_next; // used inside view! — rustc doesn't see through the macro
+    let _ = &on_next;
     if total_pages <= 1 {
         return view! { <div /> }.into_any();
     }
@@ -494,7 +482,6 @@ pub fn SignInPage() -> impl IntoView {
     let (error,   set_error)   = signal(Option::<String>::None);
     let (loading, set_loading) = signal(false);
 
-    // If already signed in, skip to home
     Effect::new(move |_| {
         if auth.get().is_some() {
             navigate("/", NavigateOptions::default());
@@ -987,6 +974,7 @@ pub fn VerifyPage() -> impl IntoView {
 
 #[component]
 pub fn AdminPage() -> impl IntoView {
+    let (admin_token,  set_admin_token)  = signal(String::new());
     let (seed_state,   set_seed_state)   = signal(ActionState::Idle);
     let (sync_state,   set_sync_state)   = signal(ActionState::Idle);
     let (enrich_state, set_enrich_state) = signal(ActionState::Idle);
@@ -995,15 +983,15 @@ pub fn AdminPage() -> impl IntoView {
     let (logs,         set_logs)         = signal(Vec::<serde_json::Value>::new());
     let (logs_loading, set_logs_loading) = signal(false);
 
-    // Service capability flags — fetched from /api/admin/status.
     let (smtp_warn,  set_smtp_warn)  = signal(false);
     let (tmdb_warn,  set_tmdb_warn)  = signal(false);
     let (omdb_warn,  set_omdb_warn)  = signal(false);
 
     let fetch_logs = move || {
+        let tok = admin_token.get_untracked();
         set_logs_loading.set(true);
         spawn_local(async move {
-            if let Ok(resp) = api::admin_logs().await {
+            if let Ok(resp) = api::admin_logs(&tok).await {
                 if let Some(arr) = resp.get("logs").and_then(|v| v.as_array()) {
                     set_logs.set(arr.clone());
                 }
@@ -1027,18 +1015,20 @@ pub fn AdminPage() -> impl IntoView {
     });
 
     let run_seed = move |_| {
+        let tok = admin_token.get_untracked();
         set_seed_state.set(ActionState::Running);
         spawn_local(async move {
-            match api::admin_seed().await {
+            match api::admin_seed(&tok).await {
                 Ok(_)  => set_seed_state.set(ActionState::Done("Started — watch logs below".into())),
                 Err(e) => set_seed_state.set(ActionState::Failed(e)),
             }
         });
     };
     let run_sync = move |_| {
+        let tok = admin_token.get_untracked();
         set_sync_state.set(ActionState::Running);
         spawn_local(async move {
-            match api::admin_sync().await {
+            match api::admin_sync(&tok).await {
                 Ok(_)  => set_sync_state.set(ActionState::Done("Started — watch logs below".into())),
                 Err(e) => set_sync_state.set(ActionState::Failed(e)),
             }
@@ -1046,18 +1036,20 @@ pub fn AdminPage() -> impl IntoView {
     };
     let run_enrich = move |_| {
         let limit = enrich_limit.get();
+        let tok = admin_token.get_untracked();
         set_enrich_state.set(ActionState::Running);
         spawn_local(async move {
-            match api::admin_enrich(limit).await {
+            match api::admin_enrich(limit, &tok).await {
                 Ok(_)  => set_enrich_state.set(ActionState::Done("Started — watch logs below".into())),
                 Err(e) => set_enrich_state.set(ActionState::Failed(e)),
             }
         });
     };
     let run_score = move |_| {
+        let tok = admin_token.get_untracked();
         set_score_state.set(ActionState::Running);
         spawn_local(async move {
-            match api::admin_score().await {
+            match api::admin_score(&tok).await {
                 Ok(_)  => set_score_state.set(ActionState::Done("Started — watch logs below".into())),
                 Err(e) => set_score_state.set(ActionState::Failed(e)),
             }
@@ -1067,9 +1059,18 @@ pub fn AdminPage() -> impl IntoView {
     view! {
         <div class="max-w-3xl mx-auto px-4 py-8">
             <h1 class="text-3xl font-bold text-stone-100 mb-2">"Admin"</h1>
-            <p class="text-stone-400 mb-6">"Operations run on the server — you can close this page. Check logs below for progress."</p>
+            <p class="text-stone-400 mb-3">"Operations run on the server — you can close this page. Check logs below for progress."</p>
+            <div class="mb-6 flex items-center gap-3">
+                <label class="text-xs text-stone-500 uppercase tracking-widest shrink-0">"Admin token"</label>
+                <input
+                    type="password"
+                    placeholder="Bearer token"
+                    class="flex-1 bg-sc-card text-stone-200 border border-sc-border-input rounded-md px-3 py-1.5 text-sm placeholder-stone-600 focus:outline-none focus:border-sc-accent-border"
+                    prop:value=move || admin_token.get()
+                    on:input=move |ev| set_admin_token.set(event_target_value(&ev))
+                />
+            </div>
 
-            // Service warnings
             {move || {
                 let has_warn = smtp_warn.get() || tmdb_warn.get() || omdb_warn.get();
                 if !has_warn { return view!{ <div /> }.into_any(); }
@@ -1231,5 +1232,158 @@ fn AdminStatus(state: Signal<ActionState>) -> impl IntoView {
                 ActionState::Failed(e) => format!("✗ {}", e),
             }}
         </span>
+    }
+}
+
+// ── Watchlist page ────────────────────────────────────────────────────────────
+
+#[derive(Clone)]
+struct WatchlistItem {
+    movie: Movie,
+    state: WatchState,
+}
+
+#[component]
+pub fn WatchlistPage() -> impl IntoView {
+    let auth = use_context::<RwSignal<Option<AuthState>>>().expect("auth context missing");
+
+    let (items,   set_items)   = signal(Vec::<WatchlistItem>::new());
+    let (loading, set_loading) = signal(false);
+    let (error,   set_error)   = signal(Option::<String>::None);
+
+    Effect::new(move |_| {
+        match auth.get() {
+            None => { set_items.set(vec![]); set_loading.set(false); }
+            Some(a) => {
+                let token = a.token.clone();
+                set_loading.set(true);
+                set_error.set(None);
+                spawn_local(async move {
+                    match api::get_watchlist(&token).await {
+                        Err(e) => { set_error.set(Some(e)); set_loading.set(false); }
+                        Ok(entries) => {
+                            let mut results = Vec::new();
+                            for entry in entries {
+                                if entry.state == WatchState::NotInterested { continue; }
+                                let encoded = encode_movie_id(entry.movie_id);
+                                if let Ok(movie) = api::fetch_movie(&encoded).await {
+                                    results.push(WatchlistItem { movie, state: entry.state });
+                                }
+                            }
+                            set_items.set(results);
+                            set_loading.set(false);
+                        }
+                    }
+                });
+            }
+        }
+    });
+
+    view! {
+        <div class="max-w-7xl mx-auto px-4 py-8">
+            <div class="mb-6">
+                <h1 class="text-4xl font-bold text-stone-100 mb-1">"Watchlist"</h1>
+                <p class="text-stone-400">"Films you're tracking."</p>
+            </div>
+
+            {move || {
+                if auth.get().is_none() {
+                    return view! {
+                        <div class="py-16 text-center">
+                            <p class="text-stone-400 mb-4">"Sign in to see your watchlist."</p>
+                            <A href="/signin"
+                                attr:class="text-sc-accent hover:text-sc-accent-hover border border-sc-accent-border rounded px-4 py-2 text-sm">
+                                "Sign in"
+                            </A>
+                        </div>
+                    }.into_any();
+                }
+                if loading.get() {
+                    return view! {
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                            {(0..10).map(|_| view!{ <SkeletonCard /> }).collect::<Vec<_>>()}
+                        </div>
+                    }.into_any();
+                }
+                if let Some(err) = error.get() {
+                    return view! {
+                        <div class="py-16 text-center"><p class="text-red-400">{err}</p></div>
+                    }.into_any();
+                }
+                let its = items.get();
+                if its.is_empty() {
+                    return view! {
+                        <div class="py-16 text-center text-stone-500">
+                            "Nothing here yet — find a film and add it to your watchlist."
+                        </div>
+                    }.into_any();
+                }
+                view! {
+                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                        {its.into_iter().map(|item| view!{ <WatchlistCard item=item /> }).collect::<Vec<_>>()}
+                    </div>
+                }.into_any()
+            }}
+        </div>
+    }
+}
+
+// ── Watchlist card ────────────────────────────────────────────────────────────
+#[component]
+fn WatchlistCard(item: WatchlistItem) -> impl IntoView {
+    let navigate   = use_navigate();
+    let href       = format!("/movie/{}", encode_movie_id(item.movie.id.unwrap_or(0)));
+    let href_nav   = href.clone();
+    let poster     = item.movie.poster_url.clone().unwrap_or_default();
+    let has_poster = !poster.is_empty();
+    let title      = item.movie.title.clone();
+    let year       = item.movie.year.map(|y| y.to_string()).unwrap_or_default();
+    let director   = item.movie.director.clone().unwrap_or_default();
+    let imdb       = item.movie.imdb_rating.map(|r| format!("{:.1}", r));
+    let gem_score  = item.movie.gem_score.map(|s| format!("{:.0}%", s * 100.0));
+
+    let (badge_label, badge_class) = match item.state {
+        WatchState::WantToWatch   => ("🔖 Want to watch", "bg-sc-accent-deep border-sc-accent text-sc-accent"),
+        WatchState::Watched       => ("✓ Watched",        "bg-green-950 border-green-700 text-green-400"),
+        WatchState::NotInterested => ("✗ Not interested", "bg-stone-800 border-stone-600 text-stone-400"),
+    };
+
+    view! {
+        <a
+            href=href
+            class="group block bg-sc-card rounded overflow-hidden hover:ring-1 hover:ring-sc-accent-bg transition-all duration-200 cursor-pointer relative"
+            on:click=move |ev: web_sys::MouseEvent| {
+                if !ev.meta_key() && !ev.ctrl_key() && !ev.shift_key() && ev.button() == 0 {
+                    ev.prevent_default();
+                    navigate(&href_nav, Default::default());
+                }
+            }
+        >
+            <div class="overflow-hidden relative" style="aspect-ratio:2/3">
+                {if has_poster {
+                    view!{ <img src=poster alt=title.clone() loading="lazy"
+                        class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" /> }.into_any()
+                } else {
+                    view!{ <div class="w-full h-full bg-sc-border flex items-center justify-center">
+                        <span class="text-5xl">"🎬"</span></div> }.into_any()
+                }}
+                <div class={format!("absolute bottom-1.5 left-1.5 px-1.5 py-0.5 text-xs rounded border {}", badge_class)}>
+                    {badge_label}
+                </div>
+            </div>
+            <div class="p-3">
+                <h3 class="text-stone-100 font-medium text-sm leading-snug line-clamp-2 mb-1">{title}</h3>
+                <div class="flex items-center justify-between text-xs mb-0.5">
+                    <span class="text-stone-400">{year}</span>
+                    <div class="flex gap-2 items-center">
+                        {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold">"💎 "{s}</span> })}
+                        {imdb.map(|r| view!{ <span class="text-yellow-400">"★ "{r}</span> })}
+                    </div>
+                </div>
+                {if !director.is_empty() {
+                    view!{ <p class="text-xs text-stone-500 mt-0.5 truncate">{director}</p> }.into_any()
+                } else { view!{ <span /> }.into_any() }}
+            </div>
+        </a>
     }
 }

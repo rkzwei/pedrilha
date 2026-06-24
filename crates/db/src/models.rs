@@ -801,6 +801,38 @@ pub async fn username_available(conn: &Connection, username: &str) -> Result<boo
     Ok(rows.next().await?.is_none())
 }
 
+// ── Phase 8: Cleanup ──────────────────────────────────────────────────────────
+
+/// Delete users who requested a magic link but never verified (no `last_login`)
+/// and whose account is older than 24 hours.
+///
+/// Because `magic_tokens` has `ON DELETE CASCADE` referencing `users`, the
+/// dangling tokens are removed automatically by SQLite.
+pub async fn delete_unverified_users(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "DELETE FROM users
+         WHERE last_login IS NULL
+           AND created_at < datetime('now', '-24 hours')",
+        params![],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Delete magic tokens that have passed their `expires_at` timestamp and were
+/// never consumed. Handles tokens whose owner *has* verified (last_login set)
+/// so they aren't caught by `delete_unverified_users`.
+pub async fn delete_expired_tokens(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "DELETE FROM magic_tokens
+         WHERE expires_at < datetime('now')
+           AND used_at IS NULL",
+        params![],
+    )
+    .await?;
+    Ok(())
+}
+
 // ── Phase 8: Magic tokens ─────────────────────────────────────────────────────
 
 /// Insert a new magic token for a user.

@@ -4,7 +4,7 @@ use axum::{
     Json,
 };
 use gem_finder_db::models;
-use gem_finder_shared::types::{WatchlistEntry, WatchlistUpsert};
+use gem_finder_shared::types::{WatchlistEntry, WatchlistUpsert, WatchState};
 
 use crate::middleware::auth::AuthUser;
 use crate::AppState;
@@ -22,7 +22,14 @@ pub async fn get_watchlist(
 
     models::get_user_watchlist(&conn, &auth.0.sub)
         .await
-        .map(Json)
+        .map(|entries| {
+            Json(
+                entries
+                    .into_iter()
+                    .filter(|e| e.state != WatchState::NotInterested)
+                    .collect::<Vec<_>>(),
+            )
+        })
         .map_err(|e| {
             tracing::error!("get_user_watchlist failed: {e}");
             StatusCode::INTERNAL_SERVER_ERROR

@@ -46,8 +46,6 @@ pub struct GemScoreComponents {
     /// Score from being released near a major blockbuster (obscured factor)
     pub obscured_by_big_hit_score: f64,
     /// RT credibility multiplier applied to vote_ratio (0.0–1.0).
-    /// High RT + low votes = critics endorsed, audiences missed (true hidden gem signal).
-    /// Low RT + low votes = informed avoidance, not undiscovery.
     pub rt_credibility_multiplier: f64,
     /// Genre-based multiplier
     pub genre_boost: f64,
@@ -72,7 +70,7 @@ pub struct BigHit {
 pub struct User {
     pub id: String, // UUID v4
     pub email: String,
-    pub username: Option<String>, // user-chosen; NULL until set during onboarding
+    pub username: Option<String>,
     pub created_at: Option<String>,
     pub last_login: Option<String>,
 }
@@ -80,9 +78,9 @@ pub struct User {
 /// A one-time magic-link auth token.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MagicToken {
-    pub token: String, // UUID v4, unguessable
+    pub token: String,
     pub user_id: String,
-    pub expires_at: String, // ISO-8601 UTC
+    pub expires_at: String,
     pub used_at: Option<String>,
     pub created_at: Option<String>,
 }
@@ -110,7 +108,6 @@ pub enum WatchState {
 }
 
 impl WatchState {
-    /// Canonical DB string value (matches the CHECK constraint in migrations).
     pub fn as_str(&self) -> &'static str {
         match self {
             WatchState::WantToWatch => "want_to_watch",
@@ -143,50 +140,32 @@ impl TryFrom<&str> for WatchState {
 pub struct UserPasskey {
     pub id: Option<i64>,
     pub user_id: String,
-    pub credential_id: String, // base64url
-    pub public_key: String,    // webauthn-rs serialized JSON
+    pub credential_id: String,
+    pub public_key: String,
     pub sign_count: i64,
-    pub name: Option<String>, // user-given label
+    pub name: Option<String>,
     pub created_at: Option<String>,
 }
 
 // ── Auth request / response DTOs ─────────────────────────────────────────────
 
-/// Request body for `PATCH /api/user/username` — set or update username after first login.
-///
-/// **Validation (enforced in the API handler before any DB call):**
-/// - 3–30 characters
-/// - Only `[a-zA-Z0-9_]` — the regex rejects SQL metacharacters (`'`, `;`, `--`, spaces, etc.)
-///   before the value ever reaches a query, providing defence-in-depth on top of the
-///   parameterized queries (`turso::params![]`) used throughout the DB layer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsernameUpdate {
     pub username: String,
 }
 
 impl UsernameUpdate {
-    /// Returns `Ok(())` if the username passes all constraints, or a human-readable
-    /// error string if not. Call this in the API handler before touching the DB.
     pub fn validate(&self) -> Result<(), &'static str> {
         let len = self.username.len();
-        if len < 3 {
-            return Err("Username must be at least 3 characters");
-        }
-        if len > 30 {
-            return Err("Username must be 30 characters or fewer");
-        }
-        if !self
-            .username
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
-        {
+        if len < 3 { return Err("Username must be at least 3 characters"); }
+        if len > 30 { return Err("Username must be 30 characters or fewer"); }
+        if !self.username.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
             return Err("Username may only contain letters, numbers, and underscores");
         }
         Ok(())
     }
 }
 
-/// Response from `GET /api/user/username/check?username=` — availability check.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsernameAvailability {
     pub username: String,
@@ -197,15 +176,16 @@ pub struct UsernameAvailability {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MagicLinkRequest {
     pub email: String,
+    /// Optional path to redirect to after successful verification (e.g. "/movie/mv123").
+    #[serde(default)]
+    pub next: Option<String>,
 }
 
-/// Request body for `POST /api/auth/verify` — exchanges token for JWT.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MagicLinkVerify {
     pub token: String,
 }
 
-/// Response from a successful auth verify — contains the session JWT.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthResponse {
     pub token: String,
@@ -220,7 +200,6 @@ pub struct AuthResponse {
 pub struct WatchlistUpsert {
     pub movie_id: i64,
     pub state: WatchState,
-    /// Optional 1–10 rating; required when state == Watched, ignored otherwise.
     pub user_rating: Option<i32>,
 }
 
@@ -262,7 +241,6 @@ pub struct TmdbMovie {
     pub poster_path: Option<String>,
 }
 
-/// Paginated response from TMDB discovery.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TmdbDiscoverResponse {
     pub page: i32,
@@ -271,13 +249,11 @@ pub struct TmdbDiscoverResponse {
     pub total_results: i32,
 }
 
-/// Response from TMDB's `/find/{external_id}` endpoint (lookup by IMDb ID, etc.).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TmdbFindResponse {
     pub movie_results: Vec<TmdbMovie>,
 }
 
-/// Detailed movie info from TMDB.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TmdbMovieDetail {
     pub id: i64,
@@ -298,7 +274,6 @@ pub struct TmdbGenre {
     pub name: String,
 }
 
-/// Credits for a movie from TMDB.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TmdbCredits {
     pub id: i64,
@@ -321,7 +296,6 @@ pub struct TmdbCrewMember {
     pub department: String,
 }
 
-/// TMDB configuration for images.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TmdbConfig {
     pub images: TmdbImageConfig,
@@ -334,7 +308,6 @@ pub struct TmdbImageConfig {
     pub poster_sizes: Vec<String>,
 }
 
-/// Health check response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthResponse {
     pub status: String,
@@ -342,11 +315,8 @@ pub struct HealthResponse {
     pub database: String,
 }
 
-// ──────────────────────────────────────────────
-// Run Logging Types
-// ──────────────────────────────────────────────
+// ── Run Logging ───────────────────────────────────────────────────────────────
 
-/// Severity level for a run-log event.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LogLevel {
     Info,
@@ -354,7 +324,6 @@ pub enum LogLevel {
     Error,
 }
 
-/// A single run-log entry recorded every time the app runs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunLogEntry {
     pub id: Option<i64>,
@@ -364,15 +333,8 @@ pub struct RunLogEntry {
     pub created_at: Option<String>,
 }
 
-// ──────────────────────────────────────────────
-// OMDb API Types
-// ──────────────────────────────────────────────
+// ── OMDb API Types ────────────────────────────────────────────────────────────
 
-/// Response from the OMDb API by IMDb ID.
-///
-/// OMDb returns PascalCase JSON fields. serde(rename_all = "PascalCase") handles most
-/// fields, but a few (imdbRating, imdbVotes, imdbID) start with lowercase "imdb" so they
-/// need individual overrides.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct OmdbResponse {
@@ -408,7 +370,6 @@ pub struct OmdbResponse {
     pub error: Option<String>,
 }
 
-/// A single rating entry in the OMDb response (e.g. Internet Movie Database, Rotten Tomatoes, Metacritic).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct OmdbRating {

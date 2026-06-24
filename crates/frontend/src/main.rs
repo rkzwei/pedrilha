@@ -10,9 +10,6 @@ mod api;
 mod components;
 mod pages;
 
-// ── Auth state ────────────────────────────────────────────────────────────────
-
-/// Session state stored in context and mirrored to localStorage.
 #[derive(Clone, Debug)]
 pub struct AuthState {
     pub token: String,
@@ -21,20 +18,17 @@ pub struct AuthState {
     pub username: Option<String>,
 }
 
-// localStorage key constants
 const LS_TOKEN:    &str = "gf_token";
 const LS_USER_ID:  &str = "gf_user_id";
 const LS_EMAIL:    &str = "gf_email";
 const LS_USERNAME: &str = "gf_username";
 
-/// Get the browser's localStorage, or None in non-browser environments.
 pub fn local_storage() -> Option<web_sys::Storage> {
     web_sys::window()
         .and_then(|w| w.local_storage().ok())
         .and_then(|s| s)
 }
 
-/// Persist auth credentials to localStorage.
 pub fn save_auth_to_storage(token: &str, user_id: &str, email: &str, username: Option<&str>) {
     if let Some(ls) = local_storage() {
         let _ = ls.set_item(LS_TOKEN, token);
@@ -48,7 +42,6 @@ pub fn save_auth_to_storage(token: &str, user_id: &str, email: &str, username: O
     }
 }
 
-/// Load auth state from localStorage. Returns None if no session is stored.
 pub fn load_auth_from_storage() -> Option<AuthState> {
     let ls = local_storage()?;
     let token   = ls.get_item(LS_TOKEN).ok()??;
@@ -59,7 +52,6 @@ pub fn load_auth_from_storage() -> Option<AuthState> {
     Some(AuthState { token, user_id, email, username })
 }
 
-/// Clear auth from localStorage and reset the auth signal.
 pub fn logout(auth: RwSignal<Option<AuthState>>) {
     if let Some(ls) = local_storage() {
         let _ = ls.remove_item(LS_TOKEN);
@@ -70,24 +62,17 @@ pub fn logout(auth: RwSignal<Option<AuthState>>) {
     auth.set(None);
 }
 
-// ── Entry point ───────────────────────────────────────────────────────────────
-
 fn main() {
     mount_to_body(|| view! { <App /> })
 }
-
-// ── App root ──────────────────────────────────────────────────────────────────
 
 #[component]
 fn App() -> impl IntoView {
     provide_meta_context();
 
-    // Auth context — load persisted session on startup.
     let auth: RwSignal<Option<AuthState>> = RwSignal::new(load_auth_from_storage());
     provide_context(auth);
 
-    // SMTP availability — fetched once at startup. Defaults to true (show sign-in)
-    // until the status endpoint responds, so there's no flicker on first render.
     let smtp_ok: RwSignal<bool> = RwSignal::new(true);
     provide_context(smtp_ok);
 
@@ -125,7 +110,6 @@ fn App() -> impl IntoView {
                             <A href="/admin" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide">
                                 "ADMIN"
                             </A>
-                            // Auth section — hidden when SMTP is not configured
                             {move || match auth.get() {
                                 Some(a) => {
                                     let display = a.username.clone()
@@ -133,6 +117,9 @@ fn App() -> impl IntoView {
                                             a.email.split('@').next().unwrap_or("user").to_string()
                                         });
                                     view! {
+                                        <A href="/watchlist" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide">
+                                            "WATCHLIST"
+                                        </A>
                                         <span class="text-stone-500 text-sm">{display}</span>
                                         <button
                                             class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide"
@@ -163,7 +150,7 @@ fn App() -> impl IntoView {
                         <div class="max-w-7xl mx-auto px-4 py-16 text-center">
                             <p class="text-4xl mb-4">"404"</p>
                             <p class="text-stone-400 mb-8">"Page not found"</p>
-                            <A href="/" attr:class="text-sc-accent hover:text-sc-accent-hover">"← Back to Gems"</A>
+                            <A href="/" attr:class="text-sc-accent hover:text-sc-accent-hover">"Back to Gems"</A>
                         </div>
                     }>
                         <Route path=path!("/") view=pages::HomePage />
@@ -171,6 +158,7 @@ fn App() -> impl IntoView {
                         <Route path=path!("/wildcards") view=pages::WildcardsPage />
                         <Route path=path!("/movie/:id") view=pages::MovieDetail />
                         <Route path=path!("/admin") view=pages::AdminPage />
+                        <Route path=path!("/watchlist") view=pages::WatchlistPage />
                         <Route path=path!("/signin") view=pages::SignInPage />
                         <Route path=path!("/auth/verify") view=pages::VerifyPage />
                     </Routes>
