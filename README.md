@@ -1,63 +1,79 @@
-# Gem Finder 💎
+# Gem Finder
 
 Discover hidden gem movies — incredible films buried under blockbusters and wrongly-rated movies.
 
-## What It Does
+## How It Works
 
-Many fantastic movies sit at a mid-7 IMDb rating and never get discovered.
-Gem Finder uses a weighted algorithm to surface these hidden gems based on:
-- IMDb rating sweet spot (6.5–7.9)
-- High rating + low vote count (undiscovered factor)
-- Movies obscured by nearby blockbusters
-- Critic vs. audience score disparity
+Gem Finder surfaces films sitting in the IMDb 6.5–7.9 sweet spot that most people never see. The scoring algorithm weighs:
+
+- **Year decay** — older undiscovered films score higher (dominant factor, 40% weight)
+- **Vote ratio** — high rating + low vote count = genuinely undiscovered
+- **IMDb sweet spot** — not a crowd favourite, not a dud
+- **RT quality gate** — films with RT critic score < 65% are excluded entirely
+- **Obscured by blockbuster** — released within 6 weeks of a cultural juggernaut
+
+Films are scored against the whole population; the top-ranked gem in any run = 100%.
 
 ## Quick Start
 
-### Prerequisites
-- Rust (via rustup)
-- Docker (optional, for containerized deployment)
-
-### Running Locally
+### Docker (recommended)
 
 ```bash
-# Start the API server (uses local SQLite by default)
+# 1. Add API keys to SECRETS.env (copy from SECRETS.env.example if provided)
+#    TMDB_API_KEY=...
+#    OMDB_API_KEY=...
+#    ADMIN_TOKEN=...   (optional — leave unset to skip auth on admin endpoints)
+
+# 2. Copy to .env for Docker Compose variable substitution
+cp SECRETS.env .env          # Linux/macOS
+Copy-Item SECRETS.env .env   # Windows PowerShell
+
+# 3. Build and run
+docker compose build && docker compose up
+```
+
+Open `http://localhost:3000`.
+
+The database lives in Docker volume `gem-data` and survives rebuilds. It's only wiped by `docker compose down -v`.
+
+### Local Dev
+
+```bash
+# Backend (uses local SQLite gem_finder.db by default)
+export TMDB_API_KEY=...
+export OMDB_API_KEY=...
 cargo run --package gem-finder-api
+
+# Frontend (separate terminal, proxied to :3000)
+cd crates/frontend && trunk serve
 ```
 
-Open `http://localhost:3000` in your browser.
-
-### With Turso Remote
+Or as a single production build:
 
 ```bash
-export TURSO_DATABASE_URL=libsql://your-db.turso.io
-export TURSO_AUTH_TOKEN=your-token
-cargo run --package gem-finder-api
+make run          # Linux/macOS
+.\scripts\run.ps1 # Windows
 ```
 
-### With Docker
+## Admin Panel
 
-```bash
-export TURSO_DATABASE_URL=libsql://your-db.turso.io
-export TURSO_AUTH_TOKEN=your-token
-docker compose -f docker/docker-compose.yml up
-```
+Visit `/admin` to populate the database. Operations run entirely on the server — closing the browser tab does not cancel them.
+
+1. **Sync** — pulls movies from TMDB across 4 era windows (1960–present). ~5–15 min.
+2. **Enrich** — fetches IMDb ratings and Rotten Tomatoes scores from OMDb. ~10–30 min. User-configurable limit (default 10,000, max 50,000).
+3. **Score** — runs the gem scoring algorithm and ranks all movies. < 1 min.
+
+Run them in order: Sync → Enrich → Score.
 
 ## Tech Stack
 
-- **Rust** — both backend and frontend (Leptos WASM)
-- **Axum** — web framework
-- **Turso** — SQLite-compatible edge database
-- **Tailwind CSS** — styling
-
-## Project Structure
-
-```
-crates/
-├── shared/   # Domain types & constants
-├── db/       # Turso database layer
-├── api/      # Axum backend
-└── frontend/ # Leptos frontend
-```
+| | |
+|---|---|
+| Frontend | Leptos 0.7 (Rust → WASM, CSR mode) |
+| Backend | Axum 0.8 (Tokio-native) |
+| Database | Turso/libSQL (local SQLite; optional cloud sync in dev) |
+| Styling | Tailwind CSS 3.4 |
+| Build | Trunk (WASM bundler), Cargo workspace monorepo |
 
 ## License
 

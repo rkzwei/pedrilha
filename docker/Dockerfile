@@ -1,5 +1,5 @@
 # ─── Stage 1: Frontend (Tailwind CSS + Leptos WASM) ──────────────────────────
-FROM rust:1.78-slim-bookworm AS frontend-builder
+FROM rust:1.90-slim-bookworm AS frontend-builder
 
 RUN apt-get update && apt-get install -y \
     curl ca-certificates pkg-config libssl-dev \
@@ -15,18 +15,21 @@ RUN curl -fsSL \
     https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz \
     | tar -xzC /usr/local/bin
 
-# wasm-bindgen-cli: required by trunk
-RUN cargo install wasm-bindgen-cli
+# wasm-bindgen-cli: pre-built binary (avoids rustc version chain issues)
+RUN curl -fsSL \
+    https://github.com/rustwasm/wasm-bindgen/releases/download/0.2.125/wasm-bindgen-0.2.125-x86_64-unknown-linux-musl.tar.gz \
+    | tar -xzC /usr/local/bin --strip-components=1 \
+    && chmod +x /usr/local/bin/wasm-bindgen
 
 WORKDIR /app
 COPY . .
 
-# Build Tailwind CSS then WASM frontend
-RUN cd crates/frontend && npm install && npm run build:css
-RUN trunk build --release
+# Build Tailwind CSS + WASM frontend from crates/frontend/ — matches CI working-directory
+# Running trunk from the crate dir avoids "could not find root package" in workspace builds
+RUN cd crates/frontend && npm install && npm run build:css && trunk build --release
 
 # ─── Stage 2: API binary ─────────────────────────────────────────────────────
-FROM rust:1.78-slim-bookworm AS api-builder
+FROM rust:1.90-slim-bookworm AS api-builder
 
 RUN apt-get update && apt-get install -y pkg-config libssl-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -45,15 +48,17 @@ RUN mkdir -p crates/shared/src crates/db/src crates/api/src crates/frontend/src 
     && echo "fn main() {}" > crates/frontend/src/main.rs \
     && echo "" > crates/shared/src/lib.rs \
     && echo "" > crates/db/src/lib.rs \
-    && SKIP_TRUNK_BUILD=1 cargo build --package gem-finder-api --release 2>/dev/null || true
+    && cargo build --package gem-finder-api --release 2>/dev/null || true
 
 # Copy real source
 COPY crates/shared/src crates/shared/src/
 COPY crates/db/src     crates/db/src/
 COPY crates/api/src    crates/api/src/
 
-# SKIP_TRUNK_BUILD: frontend is already built in stage 1
-RUN SKIP_TRUNK_BUILD=1 cargo build --package gem-finder-api --release
+# Touch forces mtime newer than the dep-cache layer so cargo doesn't
+# skip recompile thinking the dummy binary is still current.
+RUN find crates/api/src crates/db/src crates/shared/src -name "*.rs" -exec touch {} + \
+    && cargo build --package gem-finder-api --release
 
 # ─── Stage 3: Runtime image ───────────────────────────────────────────────────
 FROM debian:bookworm-slim
@@ -64,7 +69,7 @@ RUN apt-get update && apt-get install -y ca-certificates libssl3 \
 WORKDIR /app
 
 COPY --from=api-builder   /app/target/release/gem-finder-api ./gem-finder-api
-COPY --from=frontend-builder /app/dist ./dist
+COPY --from=frontend-builder /app/crates/frontend/dist ./dist
 
 ENV SERVE_FRONTEND=1
 EXPOSE 3000

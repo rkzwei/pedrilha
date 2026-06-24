@@ -1,16 +1,2 @@
-version: "3.8"
-
-services:
-  app:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    ports:
-      - "3000:3000"
-    env_file:
-      # Populate TMDB_API_KEY, OMDB_API_KEY, DATABASE_URL, ADMIN_TOKEN
-      - ../SECRETS.env
-    environment:
-      - SERVE_FRONTEND=1
-      - RUST_LOG=${RUST_LOG:-info}
-    restart: unless-stopped
+# docker-compose.yml has moved to the repo root.
+# Run from the root: docker compose build && docker compose up

@@ -13,7 +13,7 @@ and get hidden under piles of blockbusters and wrongly-rated movies.
 |---|---|---|
 | **Frontend** | Leptos (0.7.x) | Rust WASM frontend with fine-grained reactivity |
 | **Backend** | Axum | Rust web framework (Tokio-native) |
-| **Database** | Turso | SQLite-compatible edge database with cloud sync |
+| **Database** | Turso/libSQL | SQLite-compatible embedded database (local only in Docker; optional Turso cloud sync in dev) |
 | **CSS** | Tailwind CSS | Utility-first styling |
 | **Package Mgr** | Cargo workspace | Monorepo with shared types |
 
@@ -22,22 +22,28 @@ and get hidden under piles of blockbusters and wrongly-rated movies.
 ```
 gem-finder/
 ├── Cargo.toml              # Workspace root
+├── docker-compose.yml      # Docker orchestration (run from repo root)
+├── Makefile                # `make run` — build CSS + trunk + cargo run (Linux/macOS)
+├── scripts/
+│   └── run.ps1             # Same as Makefile but for Windows PowerShell
 ├── docker/
-│   ├── Dockerfile          # Debian-based multi-stage build (stable for RPi)
-│   └── docker-compose.yml  # Local dev orchestration
+│   ├── Dockerfile          # Multi-stage build: frontend-builder + api-builder + runtime
+│   └── docker-compose.yml  # Stub — main file is at repo root
+├── .dockerignore           # Excludes target/, SECRETS.env, .git/, *.db from build context
 ├── crates/
 │   ├── shared/             # Domain types, constants, scoring weights
-│   ├── db/                 # Turso client, migrations, CRUD models
+│   ├── db/                 # Turso/libSQL client, migrations, CRUD models
 │   ├── api/                # Axum HTTP server
 │   └── frontend/           # Leptos WASM app
 ├── assets/
 │   ├── input.css           # Tailwind source (with custom scrollbar, base styles)
-│   └── tailwind.css        # Generated output
+│   └── tailwind.css        # Generated output (from npm run build:css)
 ├── tailwind.config.js
-├── package.json            # Tailwind CLI only
+├── package.json            # Tailwind CLI + build scripts
+├── SECRETS.env             # API keys — gitignored, never committed
 ├── .github/
 │   └── workflows/
-│       └── ci.yml          # Build, clippy, test pipeline
+│       └── ci.yml          # backend + frontend CI jobs
 ├── ARCHITECTURE.md         # This file
 ├── README.md
 └── .gitignore
@@ -65,16 +71,18 @@ Turso/libSQL database layer:
 
 ### `api`
 Axum backend:
-- Routes: `/health`, `/api/gems`, `/api/acclaimed`, `/api/movies/{id}`, `/api/score`, `/api/admin/sync`, `/api/admin/enrich`, `/api/admin/logs`
-- Middleware: CORS, tracing, Tower HTTP
-- Uses Turso for persistence
+- Routes: `/health`, `/api/gems`, `/api/acclaimed`, `/api/movies/{id}`, `/api/score`, `/api/admin/sync`, `/api/admin/enrich`, `/api/admin/score`, `/api/admin/logs`
+- `AppState` carries `db: Arc<Database>`, `tmdb_api_key: String`, `omdb_api_key: String`
+- API keys read at startup from env; `tracing::warn!` if missing (server still starts)
+- Admin endpoints spawn `tokio::spawn` background tasks, return 202 immediately
+- Middleware: CORS, tracing, Tower HTTP, `ServeDir` (gated on `SERVE_FRONTEND=1`)
 
 ### `frontend`
 Leptos WASM frontend:
 - `main.rs` — Router, layout shell, navigation
-- `pages.rs` — HomePage (gem grid), MovieDetail, AboutPage
-- `api.rs` — HTTP client to backend (reqwest)
-- `components.rs` — Future shared components
+- `pages.rs` — `HomePage` (gem grid + pagination + filters), `MovieDetail`, `AcclaimedPage`, `AdminPage`, `AboutPage`
+- `api.rs` — HTTP client functions: `fetch_gems`, `fetch_movie`, `fetch_acclaimed`, `admin_sync`, `admin_enrich`, `admin_score`, `admin_logs`
+- `components.rs` — Shared components
 
 ## Database Schema
 
@@ -132,7 +140,7 @@ Films with IMDb ≥ 8.0 AND RT critic ≥ 80%. Populated by `classify_acclaimed_
 Hard filters (return None):
   - IMDb < 6.5 or > 7.9 (outside sweet spot)
   - vote_count < 500
-  - age < MIN_GEM_AGE_YEARS (3)
+  - released in the current calendar year (year >= current_year)
   - rt_critic_score present AND < 65 (critics disliked it)
 
 GemScore = weighted_sum(
@@ -162,34 +170,56 @@ Separate browsable category at `/api/acclaimed`. Not hidden gems — films every
 - **Sync**: `sync_acclaimed_candidates` discovers films with TMDB vote_avg ≥ 7.5 and vote_count ≥ 10,000
 - **Classification**: `classify_acclaimed_films` INSERT OR IGNORE into `acclaimed` from enriched movies
 
+## Environment Variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `TMDB_API_KEY` | Yes (for sync) | TMDB API key — server warns at startup if missing |
+| `OMDB_API_KEY` | Yes (for enrich) | OMDb API key — server warns at startup if missing |
+| `ADMIN_TOKEN` | Optional | Bearer token for admin endpoints; unprotected if unset |
+| `SERVE_FRONTEND` | Yes in Docker | Set to `1` to enable ServeDir for WASM assets |
+| `RUST_LOG` | Optional | Log level, e.g. `info`, `debug` (default: `info`) |
+| `TURSO_DATABASE_URL` | Optional | Turso remote URL — if empty, uses local SQLite |
+| `DATABASE_URL` | Optional | SQLite path override, e.g. `file:gem_finder.db` |
+
+Store API keys in `SECRETS.env` (gitignored):
+```
+TMDB_API_KEY=...
+OMDB_API_KEY=...
+ADMIN_TOKEN=...
+```
+
 ## Deployment
 
-### Local Development
+### Local Development (two processes)
 ```bash
-cargo run --package gem-finder-api    # Start API server on :3000
-```
-
-### Docker
-```bash
-# If you have Turso remote configured
-export TURSO_DATABASE_URL=libsql://your-db.turso.io
-export TURSO_AUTH_TOKEN=your-token
-
-docker compose -f docker/docker-compose.yml up
-```
-
-### Local SQLite (no Turso)
-```bash
-export DATABASE_URL=file:gem_finder.db
+# Terminal 1 — API
 cargo run --package gem-finder-api
+
+# Terminal 2 — Frontend (proxied to :3000)
+cd crates/frontend && trunk serve
 ```
 
-### Remote (Turso Cloud)
+### Local Development (single process, production build)
 ```bash
-export TURSO_DATABASE_URL=libsql://your-db.turso.io
-export TURSO_AUTH_TOKEN=your-token
-cargo run --package gem-finder-api
+# Linux/macOS
+make run
+
+# Windows
+.\scripts\run.ps1
 ```
+
+### Docker (recommended)
+```bash
+# Copy API keys for Docker Compose variable substitution
+cp SECRETS.env .env          # Linux/macOS
+Copy-Item SECRETS.env .env   # Windows PowerShell
+
+docker compose build && docker compose up
+# App at http://localhost:3000
+```
+
+Docker always uses local SQLite. The named volume `gem-data` mounts to `/app` and persists `gem_finder.db` across image rebuilds. Only deleted by `docker compose down -v`.
 
 ## Merge Rules
 
@@ -204,11 +234,9 @@ See `.github/CODEOWNERS` for per-crate review assignments.
 4. `cargo fmt` applied
 
 ## Future Enhancements
-- [ ] Data ingestion: TMDB sync pipeline
-- [ ] Authentication (when going public)
-- [ ] Watchlist per user
-- [ ] Genre/year filtering in UI
-- [ ] Advanced search
-- [ ] Sorted by gem score, year, rating
-- [ ] API keys for public access
-- [ ] Frontend WASM to its own Docker image
+- [ ] Authentication (magic link or password for public access)
+- [ ] Watchlist per user (requires auth)
+- [ ] Rate limiting on API endpoints
+- [ ] Multi-arch Docker image (amd64 + arm64 for Raspberry Pi)
+- [ ] GitHub Actions deploy workflow
+- [ ] Automated sync scheduling (FIX-19)
