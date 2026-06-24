@@ -47,6 +47,11 @@ crates/frontend/assets/tailwind.css
 temp/
 tmp/
 
+# Scratch scripts and captured output (CI tooling workarounds)
+*.bat
+*_out.txt
+*_err.txt
+
 # Scraped documentation (not project source)
 turso_docs.html
 
