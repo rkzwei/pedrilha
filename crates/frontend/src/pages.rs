@@ -67,7 +67,7 @@ pub fn HomePage() -> impl IntoView {
         <div class="max-w-7xl mx-auto px-4 py-8">
             <div class="mb-8">
                 <h1 class="text-4xl font-bold text-stone-100 mb-2">"Hidden Gems"</h1>
-                <p class="text-stone-400 text-lg">"Movies rated 6.5–7.9 on IMDb that deserve your attention."</p>
+                <p class="text-stone-400 text-lg">"Films in the 6.5–7.9 rating sweet spot — seen by few, worth seeing by many."</p>
             </div>
 
             <div class="flex flex-wrap gap-4 mb-6 p-4 bg-sc-panel rounded border border-sc-border">
@@ -172,7 +172,7 @@ pub fn AcclaimedPage() -> impl IntoView {
         <div class="max-w-7xl mx-auto px-4 py-8">
             <div class="mb-8">
                 <h1 class="text-4xl font-bold text-stone-100 mb-2">"Acclaimed"</h1>
-                <p class="text-stone-400 text-lg">"IMDb 8.0+ and RT 80%+ — films everyone should see."</p>
+                <p class="text-stone-400 text-lg">"8.0+ community rating and 80%+ critic score — films everyone should see."</p>
             </div>
             {move || if loading.get() {
                 view!{ <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
@@ -362,13 +362,13 @@ pub fn MovieDetail() -> impl IntoView {
                                     })}
                                     {imdb_str.map(|r| view!{
                                         <div class="flex flex-col items-center bg-yellow-900 border border-yellow-700 rounded px-4 py-2">
-                                            <span class="text-xs text-yellow-400 uppercase tracking-wide">"IMDb"</span>
+                                            <span class="text-xs text-yellow-400 uppercase tracking-wide">"Rating"</span>
                                             <span class="text-2xl font-bold text-yellow-300">{r}</span>
                                         </div>
                                     })}
                                     {rt_str.map(|r| view!{
                                         <div class="flex flex-col items-center bg-red-900 border border-red-700 rounded px-4 py-2">
-                                            <span class="text-xs text-red-400 uppercase tracking-wide">"RT"</span>
+                                            <span class="text-xs text-red-400 uppercase tracking-wide">"Critics"</span>
                                             <span class="text-2xl font-bold text-red-300">{r}</span>
                                         </div>
                                     })}
@@ -611,7 +611,7 @@ pub fn AdminPage() -> impl IntoView {
                 <div class="flex items-start justify-between gap-4">
                     <div class="flex-1 min-w-0">
                         <p class="text-stone-200 font-semibold text-sm">"Enrich via OMDb"</p>
-                        <p class="text-xs text-stone-400 mt-0.5">"Fetch IMDb ratings and RT scores. 10–30 min for large batches."</p>
+                        <p class="text-xs text-stone-400 mt-0.5">"Fetch community ratings and critic scores. 10–30 min for large batches."</p>
                         <div class="flex items-center gap-2 mt-2">
                             <label class="text-xs text-stone-500">"Limit:"</label>
                             <input type="number" min="1" max="50000"

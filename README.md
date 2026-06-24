@@ -4,12 +4,12 @@ Discover hidden gem movies — incredible films buried under blockbusters and wr
 
 ## How It Works
 
-Gem Finder surfaces films sitting in the IMDb 6.5–7.9 sweet spot that most people never see. The scoring algorithm weighs:
+Gem Finder surfaces films sitting in the 6.5–7.9 community rating sweet spot that most people never see. The scoring algorithm weighs:
 
 - **Year decay** — older undiscovered films score higher (dominant factor, 40% weight)
 - **Vote ratio** — high rating + low vote count = genuinely undiscovered
-- **IMDb sweet spot** — not a crowd favourite, not a dud
-- **RT quality gate** — films with RT critic score < 65% are excluded entirely
+- **Rating sweet spot** — not a crowd favourite, not a dud
+- **Critic quality gate** — films with critic score < 65% are excluded entirely
 - **Obscured by blockbuster** — released within 6 weeks of a cultural juggernaut
 
 Films are scored against the whole population; the top-ranked gem in any run = 100%.
@@ -60,7 +60,7 @@ make run          # Linux/macOS
 Visit `/admin` to populate the database. Operations run entirely on the server — closing the browser tab does not cancel them.
 
 1. **Sync** — pulls movies from TMDB across 4 era windows (1960–present). ~5–15 min.
-2. **Enrich** — fetches IMDb ratings and Rotten Tomatoes scores from OMDb. ~10–30 min. User-configurable limit (default 10,000, max 50,000).
+2. **Enrich** — fetches community ratings and critic scores via an external enrichment service. ~10–30 min. User-configurable limit (default 10,000, max 50,000).
 3. **Score** — runs the gem scoring algorithm and ranks all movies. < 1 min.
 
 Run them in order: Sync → Enrich → Score.

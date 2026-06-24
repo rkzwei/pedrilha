@@ -52,3 +52,6 @@ turso_docs.html
 
 # Environment files (secrets)
 SECRETS.env
+
+# Private legal and business notes (not for repo)
+LEGAL_NOTES.md

@@ -242,11 +242,11 @@ William Friedkin's *Sorcerer* (1977) — warm amber headlights in rain, 35mm gra
 
 ### Architectural Decisions (confirmed 2026-06-23)
 
-#### 8a — URL Identity: IMDB-style prefixed IDs ✅ DECIDED
-Format: `/movie/gf0000042` — `gf` prefix + zero-padded integer.
-- No DB schema change — router strips prefix, underlying integer PK unchanged
+#### 8a — URL Identity: Opaque prefixed movie IDs ✅ DECIDED
+Format: `/movie/mv16` — `mv` prefix + base36 integer (e.g. ID 42 → `mv16`).
+- No DB schema change — router decodes prefix, underlying integer PK unchanged
 - Chosen over slugs (collision logic + backfill cost) and UUIDs (ugly)
-- Mirrors IMDB's `tt` prefix pattern: opaque but not random
+- Opaque but not random — short prefix + encoded integer
 
 #### 8b — Authentication: Magic link via Hostinger SMTP ✅ DECIDED
 - Passwordless email auth using `lettre` crate + user's Hostinger SMTP server
@@ -267,7 +267,7 @@ Format: `/movie/gf0000042` — `gf` prefix + zero-padded integer.
 
 ### Implementation Order
 1. [x] CSS variable refactor (foundation — blocks all UI work)
-2. [ ] IMDB-style ID routing (`gf` prefix in router + all link hrefs)
+2. [x] Opaque prefixed ID routing (`mv` prefix + base36 in router + all link hrefs)
 3. [ ] DB migrations: `users`, `magic_tokens`, `watchlist` tables
 4. [ ] API: magic link send/verify endpoints, JWT session middleware
 5. [ ] API: `GET/POST /api/watchlist`, `GET /api/movies/:id` with `avg_user_rating`
