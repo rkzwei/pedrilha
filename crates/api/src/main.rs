@@ -9,10 +9,7 @@ mod services;
 use gem_finder_db::{migrations, models, Database};
 use gem_finder_shared::types::{HealthResponse, Movie, MovieSummary, PaginatedResponse};
 use serde::Deserialize;
-use std::sync::{
-    atomic::AtomicBool,
-    Arc,
-};
+use std::sync::{atomic::AtomicBool, Arc};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -443,7 +440,7 @@ async fn health_check(State(state): State<AppState>) -> Json<HealthResponse> {
     })
 }
 
-/// Get a paginated list of hidden gems.
+/// GET /api/gems — paginated hidden gems with optional year/genre filters.
 async fn get_gems(
     State(state): State<AppState>,
     Query(query): Query<GemsQuery>,
@@ -473,36 +470,13 @@ async fn get_gems(
 
     Ok(Json(PaginatedResponse {
         data: movies,
+        total,
         page,
         per_page,
-        total,
     }))
 }
 
-/// Trigger the batch gem scoring pipeline.
-/// POST /api/score
-async fn run_scoring(State(state): State<AppState>) -> Result<Json<serde_json::Value>, StatusCode> {
-    let conn = state
-        .db
-        .connect()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let scored_count = services::gem_score::run_batch_scoring(&conn)
-        .await
-        .map_err(|e| {
-            tracing::error!("Batch scoring failed: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    Ok(Json(serde_json::json!({
-        "status": "success",
-        "movies_scored": scored_count,
-    })))
-}
-
-/// Get a paginated list of acclaimed films (IMDb ≥ 8.0, RT ≥ 80%).
-/// GET /api/acclaimed
+/// GET /api/acclaimed — paginated acclaimed films (IMDb ≥ 8.0, RT ≥ 80%).
 async fn get_acclaimed(
     State(state): State<AppState>,
     Query(query): Query<AclaimedQuery>,
@@ -526,15 +500,13 @@ async fn get_acclaimed(
 
     Ok(Json(PaginatedResponse {
         data: movies,
+        total,
         page,
         per_page,
-        total,
     }))
 }
 
-/// Get a paginated list of wildcard films (scored but RT < 50%).
-/// These are divisive films — critics disagreed on them. Listed separately from hidden gems.
-/// GET /api/wildcards
+/// GET /api/wildcards — paginated wildcard films (scored but RT < 50%).
 async fn get_wildcards(
     State(state): State<AppState>,
     Query(query): Query<WildcardsQuery>,
@@ -558,17 +530,23 @@ async fn get_wildcards(
 
     Ok(Json(PaginatedResponse {
         data: movies,
+        total,
         page,
         per_page,
-        total,
     }))
 }
 
-/// Get a single movie by ID.
+/// GET /api/movies/:id — single movie by mv+base36 encoded ID.
+///
+/// Accepts: `/api/movies/mv16` (ID 42), `/api/movies/mvrs` (ID 1000).
+/// Returns 400 for malformed IDs, 404 for unknown IDs.
 async fn get_movie(
     State(state): State<AppState>,
-    Path(id): Path<i64>,
+    Path(encoded_id): Path<String>,
 ) -> Result<Json<Movie>, StatusCode> {
+    let id = gem_finder_shared::id_encode::decode_movie_id(&encoded_id)
+        .ok_or(StatusCode::BAD_REQUEST)?;
+
     let conn = state
         .db
         .connect()
@@ -577,8 +555,22 @@ async fn get_movie(
 
     let movie = models::get_movie_by_id(&conn, id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Ok(Json(movie))
+    movie.map(Json).ok_or(StatusCode::NOT_FOUND)
+}
+
+/// POST /api/score — run batch scoring synchronously (used from admin UI).
+async fn run_scoring(State(state): State<AppState>) -> Result<Json<serde_json::Value>, StatusCode> {
+    let conn = state
+        .db
+        .connect()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let scored = crate::services::gem_score::run_batch_scoring(&conn)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(serde_json::json!({ "scored": scored })))
 }

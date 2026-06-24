@@ -63,16 +63,25 @@ impl OmdbEnrichmentService {
             if processed % CHUNK == 0 || processed == total {
                 tracing::info!(
                     "OMDb enrichment: {}/{} processed, {} enriched, {} errors so far",
-                    processed, total, enriched, errors.len()
+                    processed,
+                    total,
+                    enriched,
+                    errors.len()
                 );
                 // Also write to run_logs so the admin panel shows live progress
                 let _ = models::insert_run_log(
                     conn,
                     "info",
                     "enrich_progress",
-                    &format!("{}/{} processed, {} enriched, {} errors",
-                        processed, total, enriched, errors.len()),
-                ).await;
+                    &format!(
+                        "{}/{} processed, {} enriched, {} errors",
+                        processed,
+                        total,
+                        enriched,
+                        errors.len()
+                    ),
+                )
+                .await;
             }
         }
 

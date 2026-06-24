@@ -679,13 +679,22 @@ mod tests {
         );
 
         assert_eq!(mult_98, 1.0, "RT 98% should give multiplier 1.0");
-        assert!(mult_55 > 0.0 && mult_55 < 1.0, "RT 55% should give partial multiplier");
-        assert_eq!(mult_30, 0.0, "RT 30% should give multiplier 0.0 (below credibility floor)");
+        assert!(
+            mult_55 > 0.0 && mult_55 < 1.0,
+            "RT 55% should give partial multiplier"
+        );
+        assert_eq!(
+            mult_30, 0.0,
+            "RT 30% should give multiplier 0.0 (below credibility floor)"
+        );
         assert!(
             mult_none > 0.5 && mult_none < 1.0,
             "No RT data should give benefit-of-doubt multiplier (0.8)"
         );
-        assert!(mult_98 > mult_55 && mult_55 > mult_30, "Multiplier must increase with RT");
+        assert!(
+            mult_98 > mult_55 && mult_55 > mult_30,
+            "Multiplier must increase with RT"
+        );
     }
 
     #[test]

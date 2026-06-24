@@ -236,52 +236,97 @@ William Friedkin's *Sorcerer* (1977) — warm amber headlights in rain, 35mm gra
 
 ---
 
-## Phase 8: User Features 📋 PLANNED
+## Phase 8: User Features 🔨 IN PROGRESS
 
-**Goal:** Add authenticated user accounts with personal watchlists, ratings, and preferences.
+**Goal:** Add authenticated user accounts with personal watchlists, public ratings, and theme switching.
 
-### Why This Phase Requires Early Architectural Decisions
+### Architectural Decisions (confirmed 2026-06-23)
 
-Before implementation begins, confirm the following design choices (they affect the database schema, API shape, and migration strategy):
+#### 8a — URL Identity: IMDB-style prefixed IDs ✅ DECIDED
+Format: `/movie/gf0000042` — `gf` prefix + zero-padded integer.
+- No DB schema change — router strips prefix, underlying integer PK unchanged
+- Chosen over slugs (collision logic + backfill cost) and UUIDs (ugly)
+- Mirrors IMDB's `tt` prefix pattern: opaque but not random
 
-#### 8a — URL Identity (Movie Slugs)
-**Current:** `/movie/{db_integer_id}` — sequential IDs are IDOR risk when user data is attached.
-**Proposed:** `/movie/{slug}` e.g. `/movie/sorcerer-1977`
-- Slug format: `{title-kebab-case}-{year}`, with disambiguation suffix for collisions (e.g. `-2`)
-- Requires: `slug TEXT UNIQUE NOT NULL` column in `movies` table, generated on upsert
-- Migration: one-time backfill on existing rows; all new upserts generate slug automatically
-- **Decision needed:** slug-only URLs, or support both integer ID and slug during transition?
+#### 8b — Authentication: Magic link via Hostinger SMTP ✅ DECIDED
+- Passwordless email auth using `lettre` crate + user's Hostinger SMTP server
+- No external email service needed — domain already hosted on Hostinger (port 465/587)
+- Magic link = short-lived JWT (15min), one-time-use token stored in `magic_tokens` table
+- `users` table: id (UUID), email, created_at, last_login
 
-#### 8b — Authentication Strategy
-Options:
-1. **Magic link** (email) — no passwords, passwordless flow, requires email sending infrastructure
-2. **Password + bcrypt** — simpler server-side, more traditional
-3. **OAuth only** (GitHub/Google) — no credentials stored, but external dependency
-4. **No auth (public features only)** — watchlist stored locally in browser (localStorage), no server sync
-- **Decision needed:** which auth strategy, and is user data server-synced or client-only?
+#### 8c — Watchlist & Ratings: States + public user rating ✅ DECIDED
+- States: `want_to_watch | watched | not_interested`
+- User rating: 1–10 integer (nullable) — **public aggregate** exposed on movie cards and detail
+- User ratings are a future scoring signal: high community avg → candidate for "Gem Finder Acclaimed"
+- No freetext notes in v1
 
-#### 8c — Watchlist & Ratings Model
-- Watchlist: per-user list of movie IDs; states = `want_to_watch | watched | not_interested`
-- Ratings: user-supplied 1–10 score (separate from gem score)
-- Notes: optional freetext per movie
-- **Decision needed:** all three features, or start with watchlist-only?
+#### 8d — Style Picker: Phase 8, CSS vars first ✅ DECIDED
+- CSS variable refactor is **prerequisite** — do before any other Phase 8 code
+- All hardcoded hex → `:root` CSS vars. All Tailwind `bg-[#hex]` → `bg-sc-*` custom tokens.
+- Eliminates hex debt compounding on every new frontend component
 
-#### 8d — Style Picker Persistence
-- Theme choice must survive page refresh → CSS custom properties + localStorage
-- Requires: refactor all hardcoded hex values in frontend to CSS vars (`--sc-bg`, `--sc-panel`, etc.)
-- Leptos component writes to `document.documentElement.style` on change
-- Accessibility case: higher-contrast mode for dim-environment browsing
-- **Decision needed:** implement in Phase 8 or defer to Phase 9?
+### Implementation Order
+1. [x] CSS variable refactor (foundation — blocks all UI work)
+2. [ ] IMDB-style ID routing (`gf` prefix in router + all link hrefs)
+3. [ ] DB migrations: `users`, `magic_tokens`, `watchlist` tables
+4. [ ] API: magic link send/verify endpoints, JWT session middleware
+5. [ ] API: `GET/POST /api/watchlist`, `GET /api/movies/:id` with `avg_user_rating`
+6. [ ] Frontend: auth flow (email input → magic link sent → token verify → session)
+7. [ ] Frontend: watchlist toggle on MovieCard + WatchlistPage
+8. [ ] Frontend: style picker component (CSS var swap + localStorage persistence)
 
-### Deliverables (pending architectural decisions)
+### Deliverables
 - [ ] `users` table — id (UUID), email, created_at, last_login
-- [ ] `watchlist` table — user_id FK, movie_id FK, state, rating, notes, timestamps
-- [ ] `slug` column on `movies` — backfill migration + generation on upsert
-- [ ] Auth middleware (JWT or session cookie)
-- [ ] `GET/POST /api/watchlist` endpoints
-- [ ] Frontend: watchlist toggle on MovieCard, WatchlistPage, auth flow
-- [ ] Style picker component + CSS variable refactor
-- [ ] Update router: `/movie/:id` → `/movie/:slug`
+- [ ] `magic_tokens` table — token (UUID), user_id FK, expires_at, used_at
+- [ ] `watchlist` table — user_id FK, movie_id FK, state, user_rating (1–10 nullable), created_at, updated_at
+- [ ] `avg_user_rating` + `rating_count` on movie API responses
+- [ ] Auth middleware (JWT Bearer token, 30-day session)
+- [ ] `POST /api/auth/magic` — send magic link
+- [ ] `GET /api/auth/verify?token=` — verify token, return JWT
+- [ ] `GET/POST/DELETE /api/watchlist`
+- [ ] Frontend auth flow + watchlist UI
+- [ ] Style picker with CSS var switching
+
+---
+
+## Vendor Lock-in Policy
+
+**Goal:** Ship fast, stay portable. One intentional lock, everything else abstracted.
+
+### Intentional Lock
+- **Turso/libSQL** — accepted. Turso's edge replication and offline-first concurrency model is worth the dependency. The `turso` crate wraps libSQL which is SQLite-compatible; migrating later is possible but not planned.
+
+### Current Lock-ins to Watch
+
+| Dependency | Lock-in Type | Mitigation |
+|---|---|---|
+| TMDB API | Movie data source | `MovieDataSource` trait (see below) |
+| OMDb API | RT scores + IMDb ratings | Same trait |
+| Hostinger SMTP | Email sending | `SMTP_HOST/PORT/USER/PASS` in env — any provider works |
+| Turso/libSQL | Database | Intentional — accepted |
+| Leptos 0.7 | Frontend framework | No abstraction needed — it's Rust, not a SaaS |
+| Axum 0.8 | HTTP server | No abstraction needed |
+
+### Rule for Future Features
+**No hardcoded external service calls.** Every external dependency gets:
+1. Credentials/endpoints from env vars (already done for TMDB, OMDb, SMTP)
+2. A trait interface if the service could realistically be swapped (data sources)
+3. A note in PHASES.md if it introduces new lock-in
+
+### Planned: `MovieDataSource` Trait (Phase 9 or when a second source is needed)
+```rust
+// crates/api/src/services/movie_source.rs
+#[async_trait]
+pub trait MovieDataSource: Send + Sync {
+    async fn discover_movies(&self, start_year: i32, end_year: Option<i32>) -> Result<Vec<Movie>>;
+    async fn fetch_ratings(&self, imdb_id: &str) -> Result<Option<ExternalRatings>>;
+    async fn poster_base_url(&self) -> Result<String>;
+}
+// TmdbSource implements MovieDataSource
+// OmdbSource implements MovieDataSource
+// Future: LetterboxdSource, local JSON seed, etc.
+```
+Until a second source is actually needed, keep the concrete implementations — the abstraction boundary is the trait definition, not the refactor.
 
 ---
 

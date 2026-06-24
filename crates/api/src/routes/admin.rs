@@ -80,7 +80,10 @@ pub async fn trigger_sync(
         let _guard = guard; // released when this task ends (or panics)
         let conn = match db.connect().await {
             Ok(c) => c,
-            Err(e) => { tracing::error!("sync: db connect failed: {}", e); return; }
+            Err(e) => {
+                tracing::error!("sync: db connect failed: {}", e);
+                return;
+            }
         };
 
         let log = |level: &'static str, event: &'static str, msg: String| {
@@ -105,7 +108,7 @@ pub async fn trigger_sync(
             (1960, Some(1984), "classics 1960–1984"),
             (1984, Some(1999), "modern classics 1984–1999"),
             (1999, Some(2012), "2000s 1999–2012"),
-            (2012, None,       "recent 2012–present"),
+            (2012, None, "recent 2012–present"),
         ];
 
         let t0 = std::time::Instant::now();
@@ -116,20 +119,44 @@ pub async fn trigger_sync(
                 return;
             }
         }
-        log("info", "sync_phase_a_complete",
-            format!("{} era windows in {:?}", era_windows.len(), t0.elapsed())).await;
+        log(
+            "info",
+            "sync_phase_a_complete",
+            format!("{} era windows in {:?}", era_windows.len(), t0.elapsed()),
+        )
+        .await;
 
         let t1 = std::time::Instant::now();
         match svc.sync_blockbusters(&conn).await {
-            Ok(n) => log("info", "sync_phase_b_complete",
-                format!("{} blockbusters in {:?}", n, t1.elapsed())).await,
-            Err(e) => { log("error", "sync_failed", format!("blockbusters: {}", e)).await; return; }
+            Ok(n) => {
+                log(
+                    "info",
+                    "sync_phase_b_complete",
+                    format!("{} blockbusters in {:?}", n, t1.elapsed()),
+                )
+                .await
+            }
+            Err(e) => {
+                log("error", "sync_failed", format!("blockbusters: {}", e)).await;
+                return;
+            }
         }
 
         let t2 = std::time::Instant::now();
         match svc.seed_known_gems(&conn).await {
-            Ok((seeded, total, _)) => log("info", "sync_complete",
-                format!("done — seeded {}/{} known gems in {:?}", seeded, total, t2.elapsed())).await,
+            Ok((seeded, total, _)) => {
+                log(
+                    "info",
+                    "sync_complete",
+                    format!(
+                        "done — seeded {}/{} known gems in {:?}",
+                        seeded,
+                        total,
+                        t2.elapsed()
+                    ),
+                )
+                .await
+            }
             Err(e) => log("error", "sync_failed", format!("known gems: {}", e)).await,
         }
     });
@@ -158,18 +185,30 @@ pub async fn trigger_enrich(
     let db = state.db.clone();
     let omdb_key = state.omdb_api_key.clone();
     let limit = payload.limit.unwrap_or(i64::MAX);
-    let limit_display = if limit == i64::MAX { "unlimited".to_string() } else { limit.to_string() };
+    let limit_display = if limit == i64::MAX {
+        "unlimited".to_string()
+    } else {
+        limit.to_string()
+    };
     let limit_display_inner = limit_display.clone();
 
     tokio::spawn(async move {
         let _guard = guard;
         let conn = match db.connect().await {
             Ok(c) => c,
-            Err(e) => { tracing::error!("enrich: db connect failed: {}", e); return; }
+            Err(e) => {
+                tracing::error!("enrich: db connect failed: {}", e);
+                return;
+            }
         };
 
-        if let Err(e) = models::insert_run_log(&conn, "info", "enrich_started",
-            &format!("OMDb enrichment starting (limit: {})", limit_display_inner)).await
+        if let Err(e) = models::insert_run_log(
+            &conn,
+            "info",
+            "enrich_started",
+            &format!("OMDb enrichment starting (limit: {})", limit_display_inner),
+        )
+        .await
         {
             tracing::warn!("log write failed: {}", e);
         }
@@ -180,14 +219,17 @@ pub async fn trigger_enrich(
             Ok((enriched, total, errors)) => {
                 let msg = format!(
                     "{}/{} enriched, {} errors in {:?}",
-                    enriched, total, errors.len(), t.elapsed()
+                    enriched,
+                    total,
+                    errors.len(),
+                    t.elapsed()
                 );
                 let _ = models::insert_run_log(&conn, "info", "enrich_complete", &msg).await;
             }
             Err(e) => {
                 tracing::error!("enrich failed: {}", e);
-                let _ = models::insert_run_log(&conn, "error", "enrich_failed",
-                    &format!("{}", e)).await;
+                let _ = models::insert_run_log(&conn, "error", "enrich_failed", &format!("{}", e))
+                    .await;
             }
         }
     });
@@ -215,11 +257,14 @@ pub async fn trigger_score(
         let _guard = guard;
         let conn = match db.connect().await {
             Ok(c) => c,
-            Err(e) => { tracing::error!("score: db connect failed: {}", e); return; }
+            Err(e) => {
+                tracing::error!("score: db connect failed: {}", e);
+                return;
+            }
         };
 
-        let _ = models::insert_run_log(&conn, "info", "score_started",
-            "Gem scoring run starting").await;
+        let _ = models::insert_run_log(&conn, "info", "score_started", "Gem scoring run starting")
+            .await;
 
         let t = std::time::Instant::now();
         match crate::services::gem_score::run_batch_scoring(&conn).await {
@@ -229,21 +274,23 @@ pub async fn trigger_score(
             }
             Err(e) => {
                 tracing::error!("scoring failed: {}", e);
-                let _ = models::insert_run_log(&conn, "error", "score_failed",
-                    &format!("{}", e)).await;
-                return;
+                let _ =
+                    models::insert_run_log(&conn, "error", "score_failed", &format!("{}", e)).await;
             }
         }
 
+        // Classify wildcards after scoring
         match models::classify_wildcards(&conn).await {
             Ok(n) => {
-                let _ = models::insert_run_log(&conn, "info", "wildcards_classified",
-                    &format!("{} films in wildcards table", n)).await;
+                let _ = models::insert_run_log(
+                    &conn,
+                    "info",
+                    "wildcards_classified",
+                    &format!("{} wildcards", n),
+                )
+                .await;
             }
-            Err(e) => {
-                let _ = models::insert_run_log(&conn, "warn", "wildcards_failed",
-                    &format!("{}", e)).await;
-            }
+            Err(e) => tracing::warn!("wildcard classification failed: {}", e),
         }
     });
 
@@ -255,26 +302,13 @@ pub async fn trigger_score(
 
 /// POST /api/admin/seed
 ///
-/// Runs the full seed pipeline as a background task and returns 202 immediately.
-/// Equivalent to the `seed-test-data` CLI subcommand but triggerable from the UI.
-///
-/// Steps:
-///   1. Seed known gems (Sorcerer, Hurt Locker, Dinner in America, The Messenger)
-///   2. Sync blockbusters → big_hits table
-///   3. Sync gem candidates across 4 era windows (vote_count.desc)
-///   4. Sync acclaimed candidates (vote_avg ≥ 7.5, vote_count ≥ 10k)
-///   5. OMDb enrichment (limit: 2000 to drain unenriched queue)
-///   6. Batch scoring
-///   7. Classify acclaimed films
+/// Full pipeline: sync known gems → OMDb enrich → score → classify wildcards.
+/// Spawns a background task and returns 202 immediately.
 pub async fn trigger_seed(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     check_admin_token(&headers)?;
-
-    if state.tmdb_api_key.is_empty() {
-        return Err(StatusCode::SERVICE_UNAVAILABLE);
-    }
 
     let guard = acquire_busy(&state.admin_busy)?;
     let db = state.db.clone();
@@ -285,138 +319,104 @@ pub async fn trigger_seed(
         let _guard = guard;
         let conn = match db.connect().await {
             Ok(c) => c,
-            Err(e) => { tracing::error!("seed: db connect failed: {}", e); return; }
+            Err(e) => {
+                tracing::error!("seed: db connect failed: {}", e);
+                return;
+            }
         };
 
-        let _ = models::insert_run_log(&conn, "info", "seed_started",
-            "Full seed pipeline starting").await;
+        let log = |level: &'static str, event: &'static str, msg: String| {
+            let conn_ref = &conn;
+            async move {
+                if let Err(e) = models::insert_run_log(conn_ref, level, event, &msg).await {
+                    tracing::warn!("log write failed: {}", e);
+                }
+            }
+        };
 
-        // Step 1: Init TMDB
-        let mut svc = TmdbSyncService::new(tmdb_key);
-        if let Err(e) = svc.init_config().await {
-            let _ = models::insert_run_log(&conn, "error", "seed_failed",
-                &format!("init_config: {}", e)).await;
+        log("info", "seed_started", "Seed test data starting".into()).await;
+
+        // Step 1: TMDB sync for known gems
+        let mut tmdb = TmdbSyncService::new(tmdb_key);
+        if let Err(e) = tmdb.init_config().await {
+            log("error", "seed_failed", format!("init_config: {}", e)).await;
             return;
         }
-
-        // Step 2: Seed known gems
-        match svc.seed_known_gems(&conn).await {
+        match tmdb.seed_known_gems(&conn).await {
             Ok((seeded, total, _)) => {
-                let _ = models::insert_run_log(&conn, "info", "seed_gems",
-                    &format!("Seeded {}/{} known gems", seeded, total)).await;
+                log(
+                    "info",
+                    "seed_gems_done",
+                    format!("seeded {}/{} known gems", seeded, total),
+                )
+                .await
             }
             Err(e) => {
-                let _ = models::insert_run_log(&conn, "warn", "seed_gems_warn",
-                    &format!("{}", e)).await;
+                log("error", "seed_failed", format!("seed_known_gems: {}", e)).await;
+                return;
             }
         }
 
-        // Step 3: Blockbusters
-        match svc.sync_blockbusters(&conn).await {
-            Ok(n) => {
-                let _ = models::insert_run_log(&conn, "info", "seed_blockbusters",
-                    &format!("{} blockbusters synced", n)).await;
-            }
-            Err(e) => {
-                let _ = models::insert_run_log(&conn, "warn", "seed_blockbusters_warn",
-                    &format!("{}", e)).await;
-            }
-        }
-
-        // Step 4: Era windows
-        let era_windows: &[(i32, Option<i32>, &str)] = &[
-            (1960, Some(1984), "classics 1960–1984"),
-            (1984, Some(1999), "modern classics 1984–1999"),
-            (1999, Some(2012), "2000s 1999–2012"),
-            (2012, None,       "recent 2012–present"),
-        ];
-        for (start, end, label) in era_windows {
-            match svc.sync_movies(&conn, *start, *end).await {
-                Ok(()) => {
-                    let _ = models::insert_run_log(&conn, "info", "seed_era",
-                        &format!("Era window complete: {}", label)).await;
-                }
-                Err(e) => {
-                    let _ = models::insert_run_log(&conn, "warn", "seed_era_warn",
-                        &format!("{}: {}", label, e)).await;
-                }
-            }
-        }
-
-        // Step 5: Acclaimed candidates
-        match svc.sync_acclaimed_candidates(&conn).await {
-            Ok(n) => {
-                let _ = models::insert_run_log(&conn, "info", "seed_acclaimed_candidates",
-                    &format!("{} acclaimed candidates synced", n)).await;
-            }
-            Err(e) => {
-                let _ = models::insert_run_log(&conn, "warn", "seed_acclaimed_warn",
-                    &format!("{}", e)).await;
-            }
-        }
-
-        // Step 6: OMDb enrichment — no limit, drain the entire unenriched queue.
-        if !omdb_key.is_empty() {
+        // Step 2: OMDb enrichment (best-effort; log warning if key absent)
+        if omdb_key.is_empty() {
+            log("warn", "seed_enrich_skipped", "OMDB_API_KEY not set".into()).await;
+        } else {
             let omdb = OmdbEnrichmentService::new(omdb_key);
             match omdb.enrich_movies(&conn, i64::MAX).await {
-                Ok((enriched, total, errors)) => {
-                    let _ = models::insert_run_log(&conn, "info", "seed_enrich",
-                        &format!("{}/{} enriched, {} errors", enriched, total, errors.len())).await;
+                Ok((enriched, total, _)) => {
+                    log(
+                        "info",
+                        "seed_enrich_done",
+                        format!("enriched {}/{}", enriched, total),
+                    )
+                    .await
                 }
-                Err(e) => {
-                    let _ = models::insert_run_log(&conn, "warn", "seed_enrich_warn",
-                        &format!("{}", e)).await;
-                }
+                Err(e) => log("warn", "seed_enrich_failed", format!("omdb: {}", e)).await,
             }
-        } else {
-            let _ = models::insert_run_log(&conn, "warn", "seed_enrich_skip",
-                "OMDB_API_KEY not set — enrichment skipped").await;
         }
 
-        // Step 7: Scoring
+        // Step 3: Batch scoring
+        let t = std::time::Instant::now();
         match crate::services::gem_score::run_batch_scoring(&conn).await {
-            Ok(n) => {
-                let _ = models::insert_run_log(&conn, "info", "seed_scoring",
-                    &format!("{} movies scored", n)).await;
+            Ok(scored) => {
+                log(
+                    "info",
+                    "seed_score_done",
+                    format!("{} movies scored in {:?}", scored, t.elapsed()),
+                )
+                .await
             }
             Err(e) => {
-                let _ = models::insert_run_log(&conn, "error", "seed_scoring_failed",
-                    &format!("{}", e)).await;
+                log("error", "seed_score_failed", format!("{}", e)).await;
+                return;
             }
         }
 
-        // Step 8: Classify acclaimed
-        match models::classify_acclaimed_films(&conn).await {
-            Ok(n) => {
-                let _ = models::insert_run_log(&conn, "info", "seed_acclaimed",
-                    &format!("{} films in acclaimed table", n)).await;
-            }
-            Err(e) => {
-                let _ = models::insert_run_log(&conn, "warn", "seed_acclaimed_warn",
-                    &format!("{}", e)).await;
-            }
-        }
-
-        // Step 9: Classify wildcards
+        // Step 4: Classify wildcards
         match models::classify_wildcards(&conn).await {
             Ok(n) => {
-                let _ = models::insert_run_log(&conn, "info", "seed_complete",
-                    &format!("Done — {} films in wildcards table", n)).await;
+                log(
+                    "info",
+                    "seed_wildcards_done",
+                    format!("{} wildcards classified", n),
+                )
+                .await
             }
-            Err(e) => {
-                let _ = models::insert_run_log(&conn, "warn", "seed_wildcards_warn",
-                    &format!("{}", e)).await;
-            }
+            Err(e) => log("warn", "seed_wildcards_failed", format!("{}", e)).await,
         }
+
+        log("info", "seed_complete", "Seed test data complete".into()).await;
     });
 
     Ok(Json(serde_json::json!({
         "status": "started",
-        "message": "Full seed pipeline started in background — watch logs for progress",
+        "message": "Seed started in background — watch logs for progress",
     })))
 }
 
 /// GET /api/admin/logs
+///
+/// Returns the 50 most recent run log entries.
 pub async fn get_run_logs(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -433,14 +433,5 @@ pub async fn get_run_logs(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Ok(Json(serde_json::json!({
-        "status": "success",
-        "logs": logs.into_iter().map(|entry| serde_json::json!({
-            "id": entry.id,
-            "level": entry.level,
-            "event_type": entry.event_type,
-            "message": entry.message,
-            "created_at": entry.created_at,
-        })).collect::<Vec<_>>(),
-    })))
+    Ok(Json(serde_json::json!({ "logs": logs })))
 }

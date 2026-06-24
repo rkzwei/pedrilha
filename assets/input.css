@@ -2,8 +2,81 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Base — The Sorcerer palette ──────────────────────────────────────────────
-   Warm jungle dark, not cold tech navy. The darkness of the Dominican Republic
-   at 3am, not a startup dashboard.
-   Reference: William Friedkin, The Sorcerer (1977)
-   ────────────────�
+/* ── Sorcerer palette — CSS custom properties ────────────────────────────────
+   Theme switching: update these vars, all sc-* Tailwind tokens follow.
+   Reference: William Friedkin, Sorcerer (1977) — Red Latitude palette
+   ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  --sc-base:            #0d0906;  /* deepest background — jungle at 3am */
+  --sc-panel:           #17100a;  /* header, footer, filter panels */
+  --sc-card:            #201610;  /* movie cards, form inputs */
+  --sc-border:          #2b1e14;  /* standard dividers and borders */
+  --sc-border-input:    #342517;  /* select / input element borders */
+  --sc-accent:          #ea580c;  /* primary accent — orange-600 */
+  --sc-accent-hover:    #f97316;  /* lighter accent hover — orange-500 */
+  --sc-accent-dim:      #c2410c;  /* muted accent / footer hover — orange-700 */
+  --sc-accent-bg:       #c2410c;  /* button and badge fill — orange-700 */
+  --sc-accent-bg-hover: #ea580c;  /* button hover fill — orange-600 */
+  --sc-accent-deep:     #431407;  /* deep badge background — orange-950 */
+  --sc-accent-border:   #9a3412;  /* badge border, focus ring — orange-800 */
+}
+
+/* ── Typography ──────────────────────────────────────────────────────────────
+   Bebas Neue: headings. Barlow: body. Both loaded via Google Fonts.
+   ─────────────────────────────────────────────────────────────────────────── */
+h1 {
+  font-family: "Bebas Neue", sans-serif;
+  letter-spacing: 0.05em;
+}
+
+/* ── Film grain overlay ──────────────────────────────────────────────────────
+   SVG fractalNoise pseudo-element. Fixed overlay, pointer-events none.
+   Nod to 35mm practical filmmaking — 3.8% opacity keeps it subtle.
+   ─────────────────────────────────────────────────────────────────────────── */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: none;
+  opacity: 0.038;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23grain)' opacity='1'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 200px 200px;
+}
+
+/* ── Select elements — override browser native styling ───────────────────────
+   Without appearance:none, Chrome/Safari render white native dropdowns
+   regardless of bg-* Tailwind classes.
+   ─────────────────────────────────────────────────────────────────────────── */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: var(--sc-card);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23a8a29e'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 10px;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────────
+   Webkit scrollbar styled to palette. Firefox uses scrollbar-color.
+   ─────────────────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--sc-panel);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--sc-border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--sc-accent-border);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sc-border) var(--sc-panel);
+}

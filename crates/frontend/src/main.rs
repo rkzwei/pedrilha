@@ -22,10 +22,10 @@ fn App() -> impl IntoView {
             <Title text="Gem Finder" />
             <Meta name="description" content="Discover hidden gem movies" />
 
-            <div class="min-h-screen bg-[#0d0906] text-stone-200">
-                <header class="bg-[#17100a] border-b border-[#2b1e14] sticky top-0 z-10">
+            <div class="min-h-screen bg-sc-base text-stone-200">
+                <header class="bg-sc-panel border-b border-sc-border sticky top-0 z-10">
                     <nav class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-                        <A href="/" attr:class="font-display text-3xl tracking-widest text-stone-100 hover:text-orange-600 transition-colors">
+                        <A href="/" attr:class="font-display text-3xl tracking-widest text-stone-100 hover:text-sc-accent transition-colors">
                             "GEM FINDER"
                         </A>
                         <div class="flex gap-6">
@@ -50,7 +50,7 @@ fn App() -> impl IntoView {
                         <div class="max-w-7xl mx-auto px-4 py-16 text-center">
                             <p class="text-4xl mb-4">"404"</p>
                             <p class="text-stone-400 mb-8">"Page not found"</p>
-                            <A href="/" attr:class="text-orange-600 hover:text-orange-500">"← Back to Gems"</A>
+                            <A href="/" attr:class="text-sc-accent hover:text-sc-accent-hover">"← Back to Gems"</A>
                         </div>
                     }>
                         <Route path=path!("/") view=pages::HomePage />
@@ -61,13 +61,13 @@ fn App() -> impl IntoView {
                     </Routes>
                 </main>
 
-                <footer class="bg-[#17100a] border-t border-[#2b1e14] py-8 text-center text-stone-600 text-sm">
+                <footer class="bg-sc-panel border-t border-sc-border py-8 text-center text-stone-600 text-sm">
                     <p>"Gem Finder — Unearthing what the blockbusters buried."</p>
                     <p class="text-xs text-stone-700 mt-2 tracking-widest">
                         "// "
                         <a href="https://www.imdb.com/title/tt0076740/"
                            target="_blank" rel="noopener noreferrer"
-                           class="hover:text-orange-700 transition-colors">
+                           class="hover:text-sc-accent-dim transition-colors">
                             "SORCERER, 1977 — WILLIAM FRIEDKIN"
                         </a>
                     </p>

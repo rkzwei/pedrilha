@@ -485,30 +485,16 @@ pub async fn get_acclaimed_count(conn: &Connection) -> Result<i64> {
     }
 }
 
-// Wildcard Films Functions
-// ──────────────────────────────────────────────
-
-/// Populate the `wildcards` table from movies that scored algorithmically but have
-/// rt_critic_score < WILDCARD_RT_THRESHOLD (50%).
-///
-/// These are films critics disagreed on — they score well on year_decay and IMDb
-/// (hence the gem_score) but had low enough RT that audiences may have avoided them
-/// based on critical reception rather than genuine undiscovery. They are listed
-/// separately from hidden gems as a "wildcards" category.
-///
-/// INSERT OR IGNORE is idempotent — safe to call repeatedly.
-/// Returns the number of total entries in the wildcards table (not just new ones).
+/// Insert films into the wildcards table post-scoring.
+/// Wildcards: gem_score IS NOT NULL and rt_critic_score < 50%.
+/// Uses INSERT OR IGNORE — safe to call after every scoring run.
 pub async fn classify_wildcards(conn: &Connection) -> Result<i64> {
-    use gem_finder_shared::constants::WILDCARD_RT_THRESHOLD;
     conn.execute(
-        &format!(
-            "INSERT OR IGNORE INTO wildcards (movie_id)
-             SELECT id FROM movies
-             WHERE gem_score IS NOT NULL
-               AND rt_critic_score IS NOT NULL
-               AND rt_critic_score < {}",
-            WILDCARD_RT_THRESHOLD
-        ),
+        "INSERT OR IGNORE INTO wildcards (movie_id)
+         SELECT id FROM movies
+         WHERE gem_score IS NOT NULL
+           AND rt_critic_score IS NOT NULL
+           AND rt_critic_score < 50",
         turso::params![],
     )
     .await?;
@@ -522,7 +508,7 @@ pub async fn classify_wildcards(conn: &Connection) -> Result<i64> {
     }
 }
 
-/// Get a paginated list of wildcard films ordered by gem_score desc.
+/// Get a paginated list of wildcard films ordered by gem_score DESC.
 pub async fn get_wildcards(
     conn: &Connection,
     page: i32,
@@ -531,19 +517,20 @@ pub async fn get_wildcards(
     let offset = ((page - 1) * per_page) as i64;
     let limit = per_page as i64;
 
-    let sql = format!(
-        "SELECT m.id, m.title, m.year, m.genre, m.director,
-                m.poster_url, m.imdb_rating, m.rt_critic_score,
-                m.gem_score, m.gem_rank
-         FROM wildcards w
-         JOIN movies m ON m.id = w.movie_id
-         ORDER BY m.gem_score DESC
-         LIMIT {} OFFSET {}",
-        limit, offset
-    );
-
-    let mut stmt = conn.prepare(&sql).await?;
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT m.id, m.title, m.year, m.genre, m.director,
+                    m.poster_url, m.imdb_rating, m.rt_critic_score,
+                    m.gem_score, m.gem_rank
+             FROM wildcards w
+             JOIN movies m ON m.id = w.movie_id
+             ORDER BY m.gem_score DESC
+             LIMIT {} OFFSET {}",
+            limit, offset
+        ))
+        .await?;
     let mut rows = stmt.query(turso::params![]).await?;
+
     let mut results = Vec::new();
     while let Some(row) = rows.next().await? {
         results.push(MovieSummary {
@@ -562,7 +549,7 @@ pub async fn get_wildcards(
     Ok(results)
 }
 
-/// Total number of wildcard films in the table.
+/// Total number of films in the wildcards table.
 pub async fn get_wildcards_count(conn: &Connection) -> Result<i64> {
     let mut stmt = conn.prepare("SELECT COUNT(*) FROM wildcards").await?;
     let mut rows = stmt.query(turso::params![]).await?;
@@ -573,7 +560,8 @@ pub async fn get_wildcards_count(conn: &Connection) -> Result<i64> {
     }
 }
 
-/// Update enrichment data (IMDb rating, IMDb votes, RT critic, RT audience) for a movie.
+/// Update a movie's enrichment data from OMDb.
+/// Only sets fields that are Some — None values leave the existing DB column unchanged.
 pub async fn update_movie_enrichment(
     conn: &Connection,
     movie_id: i64,
@@ -584,12 +572,11 @@ pub async fn update_movie_enrichment(
 ) -> Result<()> {
     conn.execute(
         "UPDATE movies SET
-            imdb_rating = COALESCE(?1, imdb_rating),
-            imdb_vote_count = COALESCE(?2, imdb_vote_count),
-            rt_critic_score = COALESCE(?3, rt_critic_score),
-            rt_audience_score = COALESCE(?4, rt_audience_score),
-            updated_at = datetime('now')
-         WHERE id = ?5",
+            imdb_rating       = COALESCE(?, imdb_rating),
+            imdb_vote_count   = COALESCE(?, imdb_vote_count),
+            rt_critic_score   = COALESCE(?, rt_critic_score),
+            rt_audience_score = COALESCE(?, rt_audience_score)
+         WHERE id = ?",
         turso::params![
             imdb_rating,
             imdb_vote_count,
