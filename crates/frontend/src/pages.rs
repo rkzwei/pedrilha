@@ -2,6 +2,7 @@ use crate::api;
 use gem_finder_shared::types::MovieSummary;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use leptos::web_sys;
 use leptos_router::{components::A, hooks::use_params_map};
 
 const GENRES: &[&str] = &[
@@ -64,14 +65,14 @@ pub fn HomePage() -> impl IntoView {
     view! {
         <div class="max-w-7xl mx-auto px-4 py-8">
             <div class="mb-8">
-                <h1 class="text-4xl font-bold text-white mb-2">"Hidden Gems"</h1>
-                <p class="text-gray-400 text-lg">"Movies rated 6.5–7.9 on IMDb that deserve your attention."</p>
+                <h1 class="text-4xl font-bold text-stone-100 mb-2">"Hidden Gems"</h1>
+                <p class="text-stone-400 text-lg">"Movies rated 6.5–7.9 on IMDb that deserve your attention."</p>
             </div>
 
-            <div class="flex flex-wrap gap-4 mb-6 p-4 bg-gray-900 rounded-lg border border-gray-800">
+            <div class="flex flex-wrap gap-4 mb-6 p-4 bg-[#17100a] rounded border border-[#2b1e14]">
                 <div class="flex flex-col gap-1">
-                    <label class="text-xs text-gray-500 uppercase tracking-wide">"Era"</label>
-                    <select class="bg-gray-800 text-white border border-gray-700 rounded px-3 py-2 text-sm"
+                    <label class="text-xs text-stone-500 uppercase tracking-wide">"Era"</label>
+                    <select class="bg-[#201610] text-stone-200 border border-[#342517] rounded px-3 py-2 text-sm"
                         on:change=move |ev| {
                             let v = event_target_value(&ev);
                             set_page.set(1);
@@ -82,8 +83,8 @@ pub fn HomePage() -> impl IntoView {
                     </select>
                 </div>
                 <div class="flex flex-col gap-1">
-                    <label class="text-xs text-gray-500 uppercase tracking-wide">"Genre"</label>
-                    <select class="bg-gray-800 text-white border border-gray-700 rounded px-3 py-2 text-sm"
+                    <label class="text-xs text-stone-500 uppercase tracking-wide">"Genre"</label>
+                    <select class="bg-[#201610] text-stone-200 border border-[#342517] rounded px-3 py-2 text-sm"
                         on:change=move |ev| {
                             let v = event_target_value(&ev);
                             set_page.set(1);
@@ -94,7 +95,7 @@ pub fn HomePage() -> impl IntoView {
                     </select>
                 </div>
                 <div class="flex items-end ml-auto">
-                    <span class="text-sm text-gray-500">
+                    <span class="text-sm text-stone-500">
                         {move || { let t = total.get(); if t > 0 { format!("{} gems", t) } else { String::new() } }}
                     </span>
                 </div>
@@ -107,7 +108,7 @@ pub fn HomePage() -> impl IntoView {
             } else if let Some(err) = error.get() {
                 view!{ <div class="py-16 text-center"><p class="text-red-400">{err}</p></div> }.into_any()
             } else if movies.get().is_empty() {
-                view!{ <div class="py-16 text-center text-gray-400">"No gems match your filters."</div> }.into_any()
+                view!{ <div class="py-16 text-center text-stone-500">"No gems match your filters."</div> }.into_any()
             } else {
                 view!{ <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                     {move || movies.get().into_iter().map(|m| view!{ <MovieCard movie=m /> }).collect::<Vec<_>>()}
@@ -122,11 +123,11 @@ pub fn HomePage() -> impl IntoView {
                 let next_disabled = page.get() >= tp;
                 view!{
                     <div class="flex items-center justify-center gap-4 mt-10">
-                        <button class="px-4 py-2 bg-gray-800 text-white rounded disabled:opacity-30 hover:bg-gray-700"
+                        <button class="px-4 py-2 bg-[#201610] text-stone-200 rounded disabled:opacity-30 hover:bg-[#2b1e14]"
                             disabled=prev_disabled
                             on:click=move |_| set_page.update(|p| *p -= 1)>"← Prev"</button>
-                        <span class="text-gray-400 text-sm">{format!("Page {} of {}", cur, tp)}</span>
-                        <button class="px-4 py-2 bg-gray-800 text-white rounded disabled:opacity-30 hover:bg-gray-700"
+                        <span class="text-stone-400 text-sm">{format!("Page {} of {}", cur, tp)}</span>
+                        <button class="px-4 py-2 bg-[#201610] text-stone-200 rounded disabled:opacity-30 hover:bg-[#2b1e14]"
                             disabled=next_disabled
                             on:click=move |_| set_page.update(|p| *p += 1)>"Next →"</button>
                     </div>
@@ -169,8 +170,8 @@ pub fn AcclaimedPage() -> impl IntoView {
     view! {
         <div class="max-w-7xl mx-auto px-4 py-8">
             <div class="mb-8">
-                <h1 class="text-4xl font-bold text-white mb-2">"Acclaimed"</h1>
-                <p class="text-gray-400 text-lg">"IMDb 8.0+ and RT 80%+ — films everyone should see."</p>
+                <h1 class="text-4xl font-bold text-stone-100 mb-2">"Acclaimed"</h1>
+                <p class="text-stone-400 text-lg">"IMDb 8.0+ and RT 80%+ — films everyone should see."</p>
             </div>
             {move || if loading.get() {
                 view!{ <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
@@ -191,11 +192,83 @@ pub fn AcclaimedPage() -> impl IntoView {
                 let next_disabled = page.get() >= tp;
                 view!{
                     <div class="flex items-center justify-center gap-4 mt-10">
-                        <button class="px-4 py-2 bg-gray-800 text-white rounded disabled:opacity-30 hover:bg-gray-700"
+                        <button class="px-4 py-2 bg-[#201610] text-stone-200 rounded disabled:opacity-30 hover:bg-[#2b1e14]"
                             disabled=prev_disabled
                             on:click=move |_| set_page.update(|p| *p -= 1)>"← Prev"</button>
-                        <span class="text-gray-400 text-sm">{format!("Page {} of {}", cur, tp)}</span>
-                        <button class="px-4 py-2 bg-gray-800 text-white rounded disabled:opacity-30 hover:bg-gray-700"
+                        <span class="text-stone-400 text-sm">{format!("Page {} of {}", cur, tp)}</span>
+                        <button class="px-4 py-2 bg-[#201610] text-stone-200 rounded disabled:opacity-30 hover:bg-[#2b1e14]"
+                            disabled=next_disabled
+                            on:click=move |_| set_page.update(|p| *p += 1)>"Next →"</button>
+                    </div>
+                }.into_any()
+            }}
+        </div>
+    }
+}
+
+// ── Wildcards page ───────────────────────────────────────────────────────────
+#[component]
+pub fn WildcardsPage() -> impl IntoView {
+    let (page, set_page) = signal(1i32);
+    let (movies, set_movies) = signal(Vec::<MovieSummary>::new());
+    let (total, set_total) = signal(0i64);
+    let (loading, set_loading) = signal(true);
+    let (error, set_error) = signal(Option::<String>::None);
+
+    Effect::new(move |_| {
+        let p = page.get();
+        set_loading.set(true);
+        set_error.set(None);
+        spawn_local(async move {
+            match api::fetch_wildcards(p, PER_PAGE).await {
+                Ok(resp) => {
+                    set_movies.set(resp.data);
+                    set_total.set(resp.total);
+                    set_loading.set(false);
+                }
+                Err(e) => {
+                    set_error.set(Some(e));
+                    set_loading.set(false);
+                }
+            }
+        });
+    });
+
+    let total_pages = move || ((total.get() as f64) / (PER_PAGE as f64)).ceil() as i32;
+
+    view! {
+        <div class="max-w-7xl mx-auto px-4 py-8">
+            <div class="mb-8">
+                <h1 class="text-4xl font-bold text-stone-100 mb-2">"Wildcards"</h1>
+                <p class="text-stone-400 text-lg">"Films critics disagreed on — they score well algorithmically but have RT below 50%."</p>
+                <p class="text-stone-500 text-sm mt-2">"Low vote counts here may reflect critical rejection rather than genuine undiscovery. Make of them what you will."</p>
+            </div>
+            {move || if loading.get() {
+                view!{ <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                    {(0..10).map(|_| view!{ <SkeletonCard /> }).collect::<Vec<_>>()}
+                </div> }.into_any()
+            } else if let Some(err) = error.get() {
+                view!{ <div class="py-16 text-center"><p class="text-red-400">{err}</p></div> }.into_any()
+            } else if movies.get().is_empty() {
+                view!{ <div class="py-16 text-center text-stone-500">"No wildcards yet — run scoring to populate this list."</div> }.into_any()
+            } else {
+                view!{ <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                    {move || movies.get().into_iter().map(|m| view!{ <MovieCard movie=m /> }).collect::<Vec<_>>()}
+                </div> }.into_any()
+            }}
+            {move || {
+                let tp = total_pages();
+                if tp <= 1 { return view!{ <div /> }.into_any(); }
+                let cur = page.get();
+                let prev_disabled = page.get() <= 1;
+                let next_disabled = page.get() >= tp;
+                view!{
+                    <div class="flex items-center justify-center gap-4 mt-10">
+                        <button class="px-4 py-2 bg-[#201610] text-stone-200 rounded disabled:opacity-30 hover:bg-[#2b1e14]"
+                            disabled=prev_disabled
+                            on:click=move |_| set_page.update(|p| *p -= 1)>"← Prev"</button>
+                        <span class="text-stone-400 text-sm">{format!("Page {} of {}", cur, tp)}</span>
+                        <button class="px-4 py-2 bg-[#201610] text-stone-200 rounded disabled:opacity-30 hover:bg-[#2b1e14]"
                             disabled=next_disabled
                             on:click=move |_| set_page.update(|p| *p += 1)>"Next →"</button>
                     </div>
@@ -236,23 +309,23 @@ pub fn MovieDetail() -> impl IntoView {
 
     view! {
         <div class="max-w-4xl mx-auto px-4 py-8">
-            <A href="/" attr:class="text-emerald-400 hover:text-emerald-300 text-sm mb-6 inline-block">"← Back to Gems"</A>
+            <A href="/" attr:class="text-orange-600 hover:text-orange-500 text-sm mb-6 inline-block">"← Back to Gems"</A>
             {move || if loading.get() {
                 view!{ <div class="animate-pulse mt-6 space-y-4">
-                    <div class="h-8 bg-gray-800 rounded w-2/3" />
-                    <div class="h-4 bg-gray-800 rounded w-1/3" />
+                    <div class="h-8 bg-[#2b1e14] rounded w-2/3" />
+                    <div class="h-4 bg-[#2b1e14] rounded w-1/3" />
                     <div class="flex gap-8 mt-8">
-                        <div class="w-48 h-72 bg-gray-800 rounded flex-shrink-0" />
+                        <div class="w-48 h-72 bg-[#2b1e14] rounded flex-shrink-0" />
                         <div class="flex-1 space-y-3">
-                            <div class="h-4 bg-gray-800 rounded" />
-                            <div class="h-4 bg-gray-800 rounded w-5/6" />
-                            <div class="h-4 bg-gray-800 rounded w-4/6" />
+                            <div class="h-4 bg-[#2b1e14] rounded" />
+                            <div class="h-4 bg-[#2b1e14] rounded w-5/6" />
+                            <div class="h-4 bg-[#2b1e14] rounded w-4/6" />
                         </div>
                     </div>
                 </div> }.into_any()
             } else if let Some(err) = error.get() {
                 view!{ <div class="py-16 text-center"><p class="text-red-400 mb-4">{err}</p>
-                    <A href="/" attr:class="text-emerald-400">"← Back"</A></div> }.into_any()
+                    <A href="/" attr:class="text-orange-600">"← Back"</A></div> }.into_any()
             } else if let Some(m) = movie.get() {
                 let poster   = m.poster_url.clone().unwrap_or_default();
                 let title    = m.title.clone();
@@ -267,33 +340,33 @@ pub fn MovieDetail() -> impl IntoView {
 
                 view!{
                     <div class="mt-6">
-                        <h1 class="text-3xl font-bold text-white mb-1">{title.clone()}</h1>
-                        <p class="text-gray-400 mb-6">{year} " · " {director}</p>
+                        <h1 class="text-3xl font-bold text-stone-100 mb-1">{title.clone()}</h1>
+                        <p class="text-stone-400 mb-6">{year} " · " {director}</p>
                         <div class="flex gap-8 flex-wrap">
                             <div class="flex-shrink-0">
                                 {if poster.is_empty() {
-                                    view!{ <div class="w-48 h-72 bg-gray-800 rounded-lg flex items-center justify-center">
+                                    view!{ <div class="w-48 h-72 bg-[#201610] rounded flex items-center justify-center">
                                         <span class="text-5xl">"🎬"</span></div> }.into_any()
                                 } else {
-                                    view!{ <img src=poster alt=format!("{} poster", title) class="w-48 rounded-lg shadow-xl" /> }.into_any()
+                                    view!{ <img src=poster alt=format!("{} poster", title) class="w-48 rounded shadow-xl" /> }.into_any()
                                 }}
                             </div>
                             <div class="flex-1 min-w-0">
                                 <div class="flex flex-wrap gap-3 mb-6">
                                     {gem_str.map(|s| view!{
-                                        <div class="flex flex-col items-center bg-emerald-900 border border-emerald-700 rounded-lg px-4 py-2">
-                                            <span class="text-xs text-emerald-400 uppercase tracking-wide">"GEM"</span>
-                                            <span class="text-2xl font-bold text-emerald-300">{s}</span>
+                                        <div class="flex flex-col items-center bg-orange-950 border border-orange-800 rounded px-4 py-2">
+                                            <span class="text-xs text-orange-600 uppercase tracking-wide">"GEM"</span>
+                                            <span class="text-2xl font-bold text-orange-500">{s}</span>
                                         </div>
                                     })}
                                     {imdb_str.map(|r| view!{
-                                        <div class="flex flex-col items-center bg-yellow-900 border border-yellow-700 rounded-lg px-4 py-2">
+                                        <div class="flex flex-col items-center bg-yellow-900 border border-yellow-700 rounded px-4 py-2">
                                             <span class="text-xs text-yellow-400 uppercase tracking-wide">"IMDb"</span>
                                             <span class="text-2xl font-bold text-yellow-300">{r}</span>
                                         </div>
                                     })}
                                     {rt_str.map(|r| view!{
-                                        <div class="flex flex-col items-center bg-red-900 border border-red-700 rounded-lg px-4 py-2">
+                                        <div class="flex flex-col items-center bg-red-900 border border-red-700 rounded px-4 py-2">
                                             <span class="text-xs text-red-400 uppercase tracking-wide">"RT"</span>
                                             <span class="text-2xl font-bold text-red-300">{r}</span>
                                         </div>
@@ -302,12 +375,12 @@ pub fn MovieDetail() -> impl IntoView {
                                 {if !genre.is_empty() {
                                     let tags: Vec<_> = genre.split(", ").map(|g| {
                                         let g = g.to_string();
-                                        view!{ <span class="px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-gray-300">{g}</span> }
+                                        view!{ <span class="px-2 py-1 bg-[#201610] border border-[#2b1e14] rounded text-xs text-stone-300">{g}</span> }
                                     }).collect();
                                     view!{ <div class="flex flex-wrap gap-2 mb-4">{tags}</div> }.into_any()
                                 } else { view!{ <div /> }.into_any() }}
                                 {if !overview.is_empty() {
-                                    view!{ <p class="text-gray-300 leading-relaxed mb-6">{overview}</p> }.into_any()
+                                    view!{ <p class="text-stone-300 leading-relaxed mb-6">{overview}</p> }.into_any()
                                 } else { view!{ <div /> }.into_any() }}
                                 {imdb_id.map(|id| view!{
                                     <a href={format!("https://www.imdb.com/title/{}", id)}
@@ -320,6 +393,20 @@ pub fn MovieDetail() -> impl IntoView {
                     </div>
                 }.into_any()
             } else { view!{ <div /> }.into_any() }}
+        </div>
+    }
+}
+
+// ── Skeleton card (loading placeholder) ──────────────────────────────────────
+#[component]
+fn SkeletonCard() -> impl IntoView {
+    view! {
+        <div class="bg-[#201610] rounded overflow-hidden animate-pulse">
+            <div class="bg-[#2b1e14]" style="aspect-ratio:2/3" />
+            <div class="p-3 space-y-2">
+                <div class="h-3 bg-[#2b1e14] rounded w-3/4" />
+                <div class="h-3 bg-[#2b1e14] rounded w-1/2" />
+            </div>
         </div>
     }
 }
@@ -338,34 +425,37 @@ fn MovieCard(movie: MovieSummary) -> impl IntoView {
     let rt = movie.rt_critic_score.map(|r| format!("{}%", r));
 
     view! {
-        <A href=href attr:class="group block bg-gray-800 rounded-lg overflow-hidden shadow-lg hover:shadow-xl hover:ring-1 hover:ring-emerald-700 transition-all duration-200">
+        <A href=href attr:class="group block bg-[#201610] rounded overflow-hidden hover:ring-1 hover:ring-orange-700 transition-all duration-200">
             <div class="relative overflow-hidden" style="aspect-ratio:2/3">
                 {if has_poster {
                     view!{ <img src=poster alt=title.clone() loading="lazy"
                         class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" /> }.into_any()
                 } else {
-                    view!{ <div class="w-full h-full bg-gray-700 flex items-center justify-center">
+                    view!{ <div class="w-full h-full bg-[#2b1e14] flex items-center justify-center">
                         <span class="text-5xl">"🎬"</span></div> }.into_any()
                 }}
                 {gem_score.map(|s| view!{
-                    <div class="absolute top-2 right-2 bg-emerald-600 text-white text-xs font-bold px-1.5 py-0.5 rounded">
+                    <div class="absolute top-2 right-2 bg-orange-700 text-[#0d0906] text-xs font-bold px-1.5 py-0.5 rounded">
                         {s}</div>
                 })}
             </div>
             <div class="p-3">
-                <h3 class="text-white font-medium text-sm leading-snug line-clamp-2 mb-1">{title}</h3>
+                <h3 class="text-stone-100 font-medium text-sm leading-snug line-clamp-2 mb-1">{title}</h3>
                 <div class="flex items-center justify-between text-xs">
-                    <span class="text-gray-400">{year}</span>
+                    <span class="text-stone-400">{year}</span>
                     <div class="flex gap-2">
                         {imdb.map(|r| view!{ <span class="text-yellow-400">"★ "{r}</span> })}
                         {rt.map(|r| view!{ <span class="text-red-400">"🍅 "{r}</span> })}
                     </div>
                 </div>
                 {if !director.is_empty() {
-                    view!{ <p class="text-xs text-gray-500 mt-1 truncate">{director}</p> }.into_any()
+                    view!{ <p class="text-xs text-stone-500 mt-1 truncate">{director}</p> }.into_any()
                 } else { view!{ <span /> }.into_any() }}
             </div>
-       
+        </A>
+    }
+}
+
 // ── Admin page ───────────────────────────────────────────────────────────────
 #[derive(Clone, PartialEq)]
 enum ActionState {
@@ -377,13 +467,16 @@ enum ActionState {
 
 #[component]
 pub fn AdminPage() -> impl IntoView {
+    let (seed_state, set_seed_state) = signal(ActionState::Idle);
     let (sync_state, set_sync_state) = signal(ActionState::Idle);
     let (enrich_state, set_enrich_state) = signal(ActionState::Idle);
     let (score_state, set_score_state) = signal(ActionState::Idle);
+    let (enrich_limit, set_enrich_limit) = signal(10_000i64);
     let (logs, set_logs) = signal(Vec::<serde_json::Value>::new());
     let (logs_loading, set_logs_loading) = signal(false);
 
-    Effect::new(move |_| {
+    // Fetch logs — called on mount and on the polling interval
+    let fetch_logs = move || {
         set_logs_loading.set(true);
         spawn_local(async move {
             if let Ok(resp) = api::admin_logs().await {
@@ -393,40 +486,38 @@ pub fn AdminPage() -> impl IntoView {
             }
             set_logs_loading.set(false);
         });
-    });
+    };
+
+    // Initial load
+    Effect::new(move |_| { fetch_logs(); });
+
+
+    let run_seed = move |_| {
+        set_seed_state.set(ActionState::Running);
+        spawn_local(async move {
+            match api::admin_seed().await {
+                Ok(_) => set_seed_state.set(ActionState::Done("Started — watch logs below".into())),
+                Err(e) => set_seed_state.set(ActionState::Failed(e)),
+            }
+        });
+    };
 
     let run_sync = move |_| {
         set_sync_state.set(ActionState::Running);
         spawn_local(async move {
             match api::admin_sync().await {
-                Ok(v) => {
-                    let msg = format!(
-                        "✓ {} era windows, {} blockbusters, {}/{} gems",
-                        v.get("era_windows").and_then(|x| x.as_i64()).unwrap_or(0),
-                        v.get("blockbusters_synced").and_then(|x| x.as_i64()).unwrap_or(0),
-                        v.get("known_gems_seeded").and_then(|x| x.as_i64()).unwrap_or(0),
-                        v.get("known_gems_total").and_then(|x| x.as_i64()).unwrap_or(0),
-                    );
-                    set_sync_state.set(ActionState::Done(msg));
-                }
+                Ok(_) => set_sync_state.set(ActionState::Done("Started — watch logs below".into())),
                 Err(e) => set_sync_state.set(ActionState::Failed(e)),
             }
         });
     };
 
     let run_enrich = move |_| {
+        let limit = enrich_limit.get();
         set_enrich_state.set(ActionState::Running);
         spawn_local(async move {
-            match api::admin_enrich(500).await {
-                Ok(v) => {
-                    let msg = format!(
-                        "✓ {}/{} enriched, {} errors",
-                        v.get("enriched").and_then(|x| x.as_i64()).unwrap_or(0),
-                        v.get("total_candidates").and_then(|x| x.as_i64()).unwrap_or(0),
-                        v.get("errors_count").and_then(|x| x.as_i64()).unwrap_or(0),
-                    );
-                    set_enrich_state.set(ActionState::Done(msg));
-                }
+            match api::admin_enrich(limit).await {
+                Ok(_) => set_enrich_state.set(ActionState::Done("Started — watch logs below".into())),
                 Err(e) => set_enrich_state.set(ActionState::Failed(e)),
             }
         });
@@ -436,14 +527,7 @@ pub fn AdminPage() -> impl IntoView {
         set_score_state.set(ActionState::Running);
         spawn_local(async move {
             match api::admin_score().await {
-                Ok(v) => {
-                    let msg = format!(
-                        "✓ {} movies in {:.1}s",
-                        v.get("movies_scored").and_then(|x| x.as_i64()).unwrap_or(0),
-                        v.get("duration_secs").and_then(|x| x.as_f64()).unwrap_or(0.0),
-                    );
-                    set_score_state.set(ActionState::Done(msg));
-                }
+                Ok(_) => set_score_state.set(ActionState::Done("Started — watch logs below".into())),
                 Err(e) => set_score_state.set(ActionState::Failed(e)),
             }
         });
@@ -451,116 +535,26 @@ pub fn AdminPage() -> impl IntoView {
 
     view! {
         <div class="max-w-3xl mx-auto px-4 py-8">
-            <h1 class="text-3xl font-bold text-white mb-2">"Admin"</h1>
-            <p class="text-gray-400 mb-8">"Manage sync, enrichment, and scoring pipelines."</p>
+            <h1 class="text-3xl font-bold text-stone-100 mb-2">"Admin"</h1>
+            <p class="text-stone-400 mb-8">"Operations run on the server — you can close this page. Check logs below for progress."</p>
 
-            <div class="space-y-4 mb-10">
-                <AdminAction
-                    label="Sync Movies"
-                    description="Fetch hidden gem candidates + blockbusters from TMDB (all eras)"
-                    button_label="Run Sync"
-                    button_class="bg-emerald-700 hover:bg-emerald-600"
-                    state=sync_state
-                    on_click=run_sync
-                />
-                <AdminAction
-                    label="Enrich (OMDb)"
-                    description="Fetch IMDb ratings + Rotten Tomatoes scores (500 movies)"
-                    button_label="Run Enrich"
-                    button_class="bg-blue-700 hover:bg-blue-600"
-                    state=enrich_state
-                    on_click=run_enrich
-                />
-                <AdminAction
-                    label="Score Gems"
-                    description="Recompute gem scores for all movies in the DB"
-                    button_label="Run Score"
-                    button_class="bg-purple-700 hover:bg-purple-600"
-                    state=score_state
-                    on_click=run_score
-                />
-            </div>
-
-            <h2 class="text-xl font-semibold text-white mb-3">"Recent Logs"</h2>
-            {move || if logs_loading.get() {
-                view!{ <p class="text-gray-500 text-sm animate-pulse">"Loading logs…"</p> }.into_any()
-            } else if logs.get().is_empty() {
-                view!{ <p class="text-gray-500 text-sm">"No logs yet."</p> }.into_any()
-            } else {
-                let rows = logs.get().into_iter().map(|entry| {
-                    let level = entry.get("level").and_then(|v| v.as_str()).unwrap_or("info").to_string();
-                    let event = entry.get("event_type").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let msg   = entry.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let ts    = entry.get("created_at").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let level_class = match level.as_str() {
-                        "error" => "text-red-400",
-                        "warn"  => "text-yellow-400",
-                        _       => "text-emerald-400",
-                    }.to_string();
-                    view!{
-                        <tr class="border-t border-gray-800 text-xs font-mono">
-                            <td class={format!("py-1.5 pr-3 {}", level_class)}>{level}</td>
-                            <td class="py-1.5 pr-3 text-gray-400">{event}</td>
-                            <td class="py-1.5 pr-3 text-gray-300 max-w-xs truncate">{msg}</td>
-                            <td class="py-1.5 text-gray-600 whitespace-nowrap">{ts}</td>
-                        </tr>
-                    }
-                }).collect::<Vec<_>>();
-                view!{
-                    <div class="overflow-x-auto">
-                        <table class="w-full">
-                            <thead>
-                                <tr class="text-xs text-gray-600 uppercase">
-                                    <th class="pb-2 text-left">"Level"</th>
-                                    <th class="pb-2 text-left">"Event"</th>
-                                    <th class="pb-2 text-left">"Message"</th>
-                                    <th class="pb-2 text-left">"Time"</th>
-                                </tr>
-                            </thead>
-                            <tbody>{rows}</tbody>
-                        </table>
+            // Full pipeline — seed test data
+            <div class="mb-6 p-4 bg-[#17100a] rounded border border-orange-800">
+                <div class="flex items-start justify-between gap-4">
+                    <div class="flex-1 min-w-0">
+                        <p class="text-orange-500 font-semibold text-sm">"Seed Test Data"</p>
+                        <p class="text-xs text-stone-400 mt-0.5">"Runs the full pipeline: sync all eras + blockbusters, enrich via OMDb (2000 limit), score, classify acclaimed. Use on a fresh database. Takes 20–60+ min."</p>
                     </div>
-                }.into_any()
-            }}
-        </div>
-    }
-}
-
-#[component]
-fn AdminAction(
-    label: &'static str,
-    description: &'static str,
-    button_label: &'static str,
-    button_class: &'static str,
-    #[prop(into)] state: Signal<ActionState>,
-    on_click: impl Fn(web_sys::MouseEvent) + 'static,
-) -> impl IntoView {
-    view! {
-        <div class="flex items-center gap-4 p-4 bg-gray-900 rounded-lg border border-gray-800">
-            <div class="flex-1 min-w-0">
-                <p class="text-white font-medium text-sm">{label}</p>
-                <p class="text-xs text-gray-500 mt-0.5">{description}</p>
-            </div>
-            <div class="flex items-center gap-3 flex-shrink-0">
-                <span class="text-xs max-w-xs truncate" class:text-gray-400={move || state.get() == ActionState::Idle}
-                    class:text-yellow-400={move || state.get() == ActionState::Running}
-                    class:animate-pulse={move || state.get() == ActionState::Running}
-                    class:text-emerald-400={move || matches!(state.get(), ActionState::Done(_))}
-                    class:text-red-400={move || matches!(state.get(), ActionState::Failed(_))}>
-                    {move || match state.get() {
-                        ActionState::Idle       => String::new(),
-                        ActionState::Running    => "Running…".to_string(),
-                        ActionState::Done(msg)  => msg,
-                        ActionState::Failed(e)  => format!("✗ {}", e),
-                    }}
-                </span>
-                <button
-                    class={format!("px-4 py-2 {} text-white rounded text-sm disabled:opacity-40 transition-colors", button_class)}
-                    disabled=move || state.get() == ActionState::Running
-                    on:click=on_click>
-                    {button_label}
-                </button>
-            </div>
-        </div>
-    }
-}
+                    <div class="flex items-center gap-3 flex-shrink-0">
+                        <span class="text-xs max-w-xs truncate"
+                            class:text-stone-500={move || seed_state.get() == ActionState::Idle}
+                            class:text-yellow-400={move || seed_state.get() == ActionState::Running}
+                            class:animate-pulse={move || seed_state.get() == ActionState::Running}
+                            class:text-orange-600={move || matches!(seed_state.get(), ActionState::Done(_))}
+                            class:text-red-400={move || matches!(seed_state.get(), ActionState::Failed(_))}>
+                            {move || match seed_state.get() {
+                                ActionState::Idle       => String::new(),
+                                ActionState::Running    => "Running…".to_string(),
+                                ActionState::Done(msg)  => msg,
+                                ActionState::Failed(e)  => format!("✗ {}", e),
+                            
