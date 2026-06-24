@@ -36,106 +36,200 @@ const DECADE_OPTIONS: &[(i32, &str)] = &[
 ];
 const PER_PAGE: i32 = 20;
 
+// ── URL builder ───────────────────────────────────────────────────────────────
+// `genres` is comma-separated when multiple are selected (e.g. "Action,Drama").
 fn build_url(
     path: &str,
     page: i32,
-    genre: &Option<String>,
+    genres: &Option<String>,
     year: &Option<i32>,
     q: &Option<String>,
 ) -> String {
     let mut url = format!("{}?page={}", path, page);
-    if let Some(g) = genre { url.push_str(&format!("&genre={}", g)); }
-    if let Some(y) = year  { url.push_str(&format!("&year={}", y)); }
-    if let Some(s) = q     { url.push_str(&format!("&q={}", s)); }
+    if let Some(g) = genres { url.push_str(&format!("&genres={}", g)); }
+    if let Some(y) = year   { url.push_str(&format!("&year={}", y)); }
+    if let Some(s) = q      { url.push_str(&format!("&q={}", s)); }
     url
 }
 
-// ── Filter sidebar ────────────────────────────────────────────────────────────
+// ── Client-side email validation ──────────────────────────────────────────────
+fn is_valid_email_client(email: &str) -> bool {
+    let Some(at) = email.find('@') else { return false; };
+    if at == 0 { return false; }
+    let domain = &email[at + 1..];
+    let Some(dot) = domain.rfind('.') else { return false; };
+    dot != 0 && dot != domain.len() - 1 && (domain.len() - dot) >= 3
+}
+
+// ── Filter bar ────────────────────────────────────────────────────────────────
+// Overlay panel — does not displace the movie grid.
+// Genres are multi-select (OR logic). Era is single-select.
 #[component]
-fn FilterSidebar(
-    genre: Signal<Option<String>>,
+fn FilterBar(
+    genres: Signal<Vec<String>>,
     year: Signal<Option<i32>>,
     search: Signal<Option<String>>,
     total: Signal<i64>,
-    on_genre:  Callback<Option<String>>,
-    on_year:   Callback<Option<i32>>,
+    on_genres: Callback<Vec<String>>,
+    on_year: Callback<Option<i32>>,
     on_search: Callback<Option<String>>,
 ) -> impl IntoView {
+    let (panel_open, set_panel_open) = signal(false);
+
+    let active_count = move || genres.get().len() + year.get().map(|_| 1).unwrap_or(0);
+
     view! {
-        <div class="space-y-6 text-sm">
-            // Search
-            <input
-                type="text"
-                placeholder="Search titles…"
-                class="w-full bg-sc-card text-stone-200 border border-sc-border-input rounded px-3 py-1.5 text-sm placeholder-stone-600 focus:outline-none"
-                prop:value=move || search.get().unwrap_or_default()
-                on:input=move |ev| {
-                    let v = event_target_value(&ev);
-                    on_search.run(if v.is_empty() { None } else { Some(v) });
+        <div class="relative mb-6">
+
+            // ── Search + filter toggle ────────────────────────────────────────
+            <div class="flex gap-3 items-center">
+                <input
+                    type="text"
+                    placeholder="Search titles…"
+                    class="flex-1 bg-sc-card text-stone-200 border border-sc-border-input rounded-md px-3 py-2 text-sm placeholder-stone-600 focus:outline-none focus:border-sc-accent-border"
+                    prop:value=move || search.get().unwrap_or_default()
+                    on:input=move |ev| {
+                        let v = event_target_value(&ev);
+                        on_search.run(if v.is_empty() { None } else { Some(v) });
+                    }
+                />
+                <button
+                    class=move || { if active_count() > 0 {
+                        "flex-shrink-0 px-3 py-2 text-sm border rounded-md border-sc-accent text-sc-accent bg-sc-accent-deep"
+                    } else {
+                        "flex-shrink-0 px-3 py-2 text-sm border rounded-md border-sc-border text-stone-400 hover:border-stone-500 hover:text-stone-200 transition-colors"
+                    } }
+                    on:click=move |_| set_panel_open.update(|v| *v = !*v)
+                >
+                    {move || if active_count() > 0 { format!("Filters ({})", active_count()) } else { "Filters".to_string() }}
+                </button>
+            </div>
+
+            // ── Active filter chips ───────────────────────────────────────────
+            {move || {
+                let gs = genres.get();
+                let yr = year.get();
+                if gs.is_empty() && yr.is_none() {
+                    view! { <div /> }.into_any()
+                } else {
+                    view! {
+                        <div class="flex flex-wrap gap-1.5 mt-2">
+                            {gs.iter().cloned().map(|g| {
+                                let g_rm = g.clone();
+                                view! {
+                                    <button
+                                        class="flex items-center gap-1 px-2 py-0.5 text-xs rounded border border-sc-accent text-sc-accent bg-sc-accent-deep"
+                                        on:click=move |_| {
+                                            let mut v = genres.get();
+                                            v.retain(|x| x != &g_rm);
+                                            on_genres.run(v);
+                                        }
+                                    >{g} " ×"</button>
+                                }
+                            }).collect::<Vec<_>>()}
+                            {yr.map(|y| {
+                                let label = DECADE_OPTIONS.iter()
+                                    .find(|(yv, _)| *yv == y)
+                                    .map(|(_, l)| *l)
+                                    .unwrap_or("Era");
+                                view! {
+                                    <button
+                                        class="flex items-center gap-1 px-2 py-0.5 text-xs rounded border border-sc-accent text-sc-accent bg-sc-accent-deep"
+                                        on:click=move |_| on_year.run(None)
+                                    >{label} " ×"</button>
+                                }
+                            })}
+                        </div>
+                    }.into_any()
                 }
-            />
+            }}
 
-            // Film count
-            <p class="text-xs text-stone-600">
-                {move || { let t = total.get(); if t > 0 { format!("{} films", t) } else { String::new() } }}
-            </p>
-
-            // Era filter — compact button list
-            <div>
-                <p class="text-xs uppercase tracking-widest text-stone-600 mb-2">"Era"</p>
-                <div class="space-y-0.5">
-                    <button
-                        class=move || if year.get().is_none() {
-                            "block w-full text-left px-2 py-1 rounded text-xs text-sc-accent bg-sc-accent-deep"
-                        } else {
-                            "block w-full text-left px-2 py-1 rounded text-xs text-stone-400 hover:text-stone-200"
-                        }
-                        on:click=move |_| on_year.run(None)
-                    >"All eras"</button>
-                    {DECADE_OPTIONS.iter().map(|(y, l)| {
-                        let yv = *y;
-                        view! {
-                            <button
-                                class=move || if year.get() == Some(yv) {
-                                    "block w-full text-left px-2 py-1 rounded text-xs text-sc-accent bg-sc-accent-deep"
-                                } else {
-                                    "block w-full text-left px-2 py-1 rounded text-xs text-stone-400 hover:text-stone-200"
-                                }
-                                on:click=move |_| on_year.run(Some(yv))
-                            >{*l}</button>
-                        }
-                    }).collect::<Vec<_>>()}
-                </div>
-            </div>
-
-            // Genre filter — pill chips (click to toggle, click again to clear)
-            <div>
-                <p class="text-xs uppercase tracking-widest text-stone-600 mb-2">"Genre"</p>
-                <div class="flex flex-wrap gap-1.5">
-                    {GENRES.iter().map(|g| {
-                        let gs = g.to_string();
-                        let gs_click = gs.clone();
-                        let gs_class = gs.clone();
-                        view! {
-                            <button
-                                class=move || if genre.get().as_deref() == Some(gs_class.as_str()) {
-                                    "px-2 py-0.5 text-xs rounded border border-sc-accent text-sc-accent bg-sc-accent-deep"
-                                } else {
-                                    "px-2 py-0.5 text-xs rounded border border-sc-border text-stone-500"
-                                }
-                                on:click=move |_| {
-                                    let current = genre.get();
-                                    if current.as_deref() == Some(gs_click.as_str()) {
-                                        on_genre.run(None);
-                                    } else {
-                                        on_genre.run(Some(gs_click.clone()));
-                                    }
-                                }
-                            >{*g}</button>
-                        }
-                    }).collect::<Vec<_>>()}
-                </div>
-            </div>
+            // ── Transparent backdrop + floating panel ─────────────────────────
+            {move || if panel_open.get() {
+                view! {
+                    <div
+                        class="fixed inset-0 z-20"
+                        on:click=move |_| set_panel_open.set(false)
+                    />
+                    <div class="absolute top-full left-0 right-0 mt-1 bg-sc-panel border border-sc-border rounded-lg p-5 z-30 shadow-xl">
+                        <div class="flex flex-col sm:flex-row gap-6">
+                            // ERA — single-select
+                            <div class="flex-shrink-0">
+                                <p class="text-xs uppercase tracking-widest text-stone-500 mb-2">"Era"</p>
+                                <div class="flex sm:flex-col flex-wrap gap-1">
+                                    <button
+                                        class=move || if year.get().is_none() {
+                                            "px-3 py-1 rounded text-xs text-sc-accent bg-sc-accent-deep border border-sc-accent"
+                                        } else {
+                                            "px-3 py-1 rounded text-xs text-stone-400 hover:text-stone-200 border border-transparent hover:border-sc-border"
+                                        }
+                                        on:click=move |_| { on_year.run(None); set_panel_open.set(false); }
+                                    >"All eras"</button>
+                                    {DECADE_OPTIONS.iter().map(|(y, l)| {
+                                        let yv = *y;
+                                        view! {
+                                            <button
+                                                class=move || if year.get() == Some(yv) {
+                                                    "px-3 py-1 rounded text-xs text-sc-accent bg-sc-accent-deep border border-sc-accent"
+                                                } else {
+                                                    "px-3 py-1 rounded text-xs text-stone-400 hover:text-stone-200 border border-transparent hover:border-sc-border"
+                                                }
+                                                on:click=move |_| { on_year.run(Some(yv)); set_panel_open.set(false); }
+                                            >{*l}</button>
+                                        }
+                                    }).collect::<Vec<_>>()}
+                                </div>
+                            </div>
+                            // GENRE — multi-select
+                            <div class="flex-1 min-w-0">
+                                <p class="text-xs uppercase tracking-widest text-stone-500 mb-2">"Genre"</p>
+                                <div class="flex flex-wrap gap-1.5">
+                                    {GENRES.iter().map(|g| {
+                                        let gs = g.to_string();
+                                        let gs_click = gs.clone();
+                                        let gs_class = gs.clone();
+                                        view! {
+                                            <button
+                                                class=move || if genres.get().contains(&gs_class) {
+                                                    "px-2.5 py-1 text-xs rounded border border-sc-accent text-sc-accent bg-sc-accent-deep"
+                                                } else {
+                                                    "px-2.5 py-1 text-xs rounded border border-sc-border text-stone-400 hover:border-stone-500 hover:text-stone-200"
+                                                }
+                                                on:click=move |_| {
+                                                    let mut cur = genres.get();
+                                                    if let Some(pos) = cur.iter().position(|x| x == &gs_click) {
+                                                        cur.remove(pos);
+                                                    } else {
+                                                        cur.push(gs_click.clone());
+                                                    }
+                                                    on_genres.run(cur);
+                                                    // Panel stays open — user may pick multiple genres
+                                                }
+                                            >{*g}</button>
+                                        }
+                                    }).collect::<Vec<_>>()}
+                                </div>
+                            </div>
+                        </div>
+                        // Footer: film count + clear
+                        <div class="flex items-center justify-between mt-4 pt-3 border-t border-sc-border">
+                            <p class="text-xs text-stone-600">
+                                {move || { let t = total.get(); if t > 0 { format!("{} films", t) } else { String::new() } }}
+                            </p>
+                            {move || if active_count() > 0 {
+                                view! {
+                                    <button
+                                        class="text-xs text-stone-500 hover:text-stone-300 transition-colors"
+                                        on:click=move |_| { on_genres.run(vec![]); on_year.run(None); set_panel_open.set(false); }
+                                    >"Clear all"</button>
+                                }.into_any()
+                            } else { view! { <span /> }.into_any() }}
+                        </div>
+                    </div>
+                }.into_any()
+            } else {
+                view! { <div /> }.into_any()
+            }}
         </div>
     }
 }
@@ -148,8 +242,7 @@ fn PaginationBar(
     on_prev: Callback<()>,
     on_next: Callback<()>,
 ) -> impl IntoView {
-    // `on_next` is used inside view! below; rustc doesn't see through the macro.
-    let _ = &on_next;
+    let _ = &on_next; // used inside view! — rustc doesn't see through the macro
     if total_pages <= 1 {
         return view! { <div /> }.into_any();
     }
@@ -157,15 +250,15 @@ fn PaginationBar(
         <div class="flex items-center justify-center gap-4 mt-10">
             <button
                 class="px-4 py-2 bg-sc-card text-stone-200 rounded disabled:opacity-30 hover:bg-sc-border"
-                disabled=page <= 1
+                prop:disabled=move || page <= 1
                 on:click=move |_| on_prev.run(())
             >"← Prev"</button>
             <span class="text-stone-400 text-sm">{format!("Page {} of {}", page, total_pages)}</span>
             <button
                 class="px-4 py-2 bg-sc-card text-stone-200 rounded disabled:opacity-30 hover:bg-sc-border"
-                disabled=page >= total_pages
+                prop:disabled=move ||{ page >= total_pages }
                 on:click=move |_| on_next.run(())
-            >"Next →"</button>
+            >{"Next →"}</button>
         </div>
     }.into_any()
 }
@@ -176,10 +269,13 @@ pub fn HomePage() -> impl IntoView {
     let query    = use_query_map();
     let navigate = use_navigate();
 
-    let page   = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
-    let year   = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
-    let genre  = move || query.with(|q| q.get("genre").map(|v| v.clone()).filter(|v| !v.is_empty()));
-    let search = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let page    = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
+    let year    = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
+    let genres  = move || query.with(|q| {
+        q.get("genres").map(|v| v.split(',').filter(|s| !s.is_empty()).map(String::from).collect::<Vec<_>>()).unwrap_or_default()
+    });
+    let search  = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let gstr    = move || { let g = genres(); if g.is_empty() { None } else { Some(g.join(",")) } };
 
     let (movies,  set_movies)  = signal(Vec::<MovieSummary>::new());
     let (total,   set_total)   = signal(0i64);
@@ -187,9 +283,8 @@ pub fn HomePage() -> impl IntoView {
     let (error,   set_error)   = signal(Option::<String>::None);
 
     Effect::new(move |_| {
-        let p = page(); let y = year(); let g = genre(); let s = search();
-        set_loading.set(true);
-        set_error.set(None);
+        let p = page(); let y = year(); let g = gstr(); let s = search();
+        set_loading.set(true); set_error.set(None);
         spawn_local(async move {
             match api::fetch_gems(p, PER_PAGE, y, g, s).await {
                 Ok(r) => { set_movies.set(r.data); set_total.set(r.total); set_loading.set(false); }
@@ -201,63 +296,40 @@ pub fn HomePage() -> impl IntoView {
     let total_pages = move || ((total.get() as f64) / (PER_PAGE as f64)).ceil() as i32;
 
     let n1 = navigate.clone();
-    let on_genre_cb = Callback::new(move |g: Option<String>| {
-        n1(&build_url("/", 1, &g, &year(), &search()), NavigateOptions { replace: true, ..Default::default() });
+    let on_genres_cb = Callback::new(move |gs: Vec<String>| {
+        let s = if gs.is_empty() { None } else { Some(gs.join(",")) };
+        n1(&build_url("/", 1, &s, &year(), &search()), NavigateOptions { replace: true, ..Default::default() });
     });
     let n2 = navigate.clone();
     let on_year_cb = Callback::new(move |y: Option<i32>| {
-        n2(&build_url("/", 1, &genre(), &y, &search()), NavigateOptions { replace: true, ..Default::default() });
+        n2(&build_url("/", 1, &gstr(), &y, &search()), NavigateOptions { replace: true, ..Default::default() });
     });
     let n3 = navigate.clone();
     let on_search_cb = Callback::new(move |s: Option<String>| {
-        n3(&build_url("/", 1, &genre(), &year(), &s), NavigateOptions { replace: true, ..Default::default() });
+        n3(&build_url("/", 1, &gstr(), &year(), &s), NavigateOptions { replace: true, ..Default::default() });
     });
     let nav_pg = navigate;
 
-    let (filter_open, set_filter_open) = signal(false);
-
     view! {
         <div class="max-w-7xl mx-auto px-4 py-8">
-            // Mobile filter toggle
-            <div class="md:hidden mb-4">
-                <button
-                    class="text-xs text-stone-400 border border-sc-border rounded px-3 py-1.5"
-                    on:click=move |_| set_filter_open.update(|v| *v = !*v)
-                >
-                    {move || if filter_open.get() { "✕ Close filters" } else { "⚙ Filters" }}
-                </button>
+            <div class="mb-6">
+                <h1 class="text-4xl font-bold text-stone-100 mb-1">"Hidden Gems"</h1>
+                <p class="text-stone-400">"Films in the 6.5–7.9 rating sweet spot — seen by few, worth seeing by many."</p>
             </div>
-            <div class="flex gap-8">
-                // Sidebar — always visible on md+, toggled on mobile
-                <aside class=move || if filter_open.get() {
-                    "block md:block w-52 flex-shrink-0"
-                } else {
-                    "hidden md:block w-52 flex-shrink-0"
-                }>
-                    <FilterSidebar
-                        genre=Signal::derive(genre) year=Signal::derive(year)
-                        search=Signal::derive(search) total=Signal::derive(move || total.get())
-                        on_genre=on_genre_cb on_year=on_year_cb on_search=on_search_cb
-                    />
-                </aside>
-                // Main content
-                <div class="flex-1 min-w-0">
-                    <div class="mb-6">
-                        <h1 class="text-4xl font-bold text-stone-100 mb-1">"Hidden Gems"</h1>
-                        <p class="text-stone-400">"Films in the 6.5–7.9 rating sweet spot — seen by few, worth seeing by many."</p>
-                    </div>
-                    {move || render_movie_grid(loading.get(), error.get(), movies.get())}
-                    {move || {
-                        let tp = total_pages(); let p = page();
-                        let np = nav_pg.clone();
-                        let nn = nav_pg.clone();
-                        view!{ <PaginationBar page=p total_pages=tp
-                            on_prev=Callback::new(move |_| { np(&build_url("/", p - 1, &genre(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
-                            on_next=Callback::new(move |_| { nn(&build_url("/", p + 1, &genre(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
-                        /> }
-                    }}
-                </div>
-            </div>
+            <FilterBar
+                genres=Signal::derive(genres) year=Signal::derive(year)
+                search=Signal::derive(search) total=Signal::derive(move || total.get())
+                on_genres=on_genres_cb on_year=on_year_cb on_search=on_search_cb
+            />
+            {move || render_movie_grid(loading.get(), error.get(), movies.get())}
+            {move || {
+                let tp = total_pages(); let p = page();
+                let np = nav_pg.clone(); let nn = nav_pg.clone();
+                view!{ <PaginationBar page=p total_pages=tp
+                    on_prev=Callback::new(move |_| { np(&build_url("/", p - 1, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
+                    on_next=Callback::new(move |_| { nn(&build_url("/", p + 1, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
+                /> }
+            }}
         </div>
     }
 }
@@ -268,10 +340,13 @@ pub fn AcclaimedPage() -> impl IntoView {
     let query    = use_query_map();
     let navigate = use_navigate();
 
-    let page   = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
-    let year   = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
-    let genre  = move || query.with(|q| q.get("genre").map(|v| v.clone()).filter(|v| !v.is_empty()));
-    let search = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let page    = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
+    let year    = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
+    let genres  = move || query.with(|q| {
+        q.get("genres").map(|v| v.split(',').filter(|s| !s.is_empty()).map(String::from).collect::<Vec<_>>()).unwrap_or_default()
+    });
+    let search  = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let gstr    = move || { let g = genres(); if g.is_empty() { None } else { Some(g.join(",")) } };
 
     let (movies,  set_movies)  = signal(Vec::<MovieSummary>::new());
     let (total,   set_total)   = signal(0i64);
@@ -279,9 +354,8 @@ pub fn AcclaimedPage() -> impl IntoView {
     let (error,   set_error)   = signal(Option::<String>::None);
 
     Effect::new(move |_| {
-        let p = page(); let y = year(); let g = genre(); let s = search();
-        set_loading.set(true);
-        set_error.set(None);
+        let p = page(); let y = year(); let g = gstr(); let s = search();
+        set_loading.set(true); set_error.set(None);
         spawn_local(async move {
             match api::fetch_acclaimed(p, PER_PAGE, y, g, s).await {
                 Ok(r) => { set_movies.set(r.data); set_total.set(r.total); set_loading.set(false); }
@@ -293,60 +367,40 @@ pub fn AcclaimedPage() -> impl IntoView {
     let total_pages = move || ((total.get() as f64) / (PER_PAGE as f64)).ceil() as i32;
 
     let n1 = navigate.clone();
-    let on_genre_cb = Callback::new(move |g: Option<String>| {
-        n1(&build_url("/acclaimed", 1, &g, &year(), &search()), NavigateOptions { replace: true, ..Default::default() });
+    let on_genres_cb = Callback::new(move |gs: Vec<String>| {
+        let s = if gs.is_empty() { None } else { Some(gs.join(",")) };
+        n1(&build_url("/acclaimed", 1, &s, &year(), &search()), NavigateOptions { replace: true, ..Default::default() });
     });
     let n2 = navigate.clone();
     let on_year_cb = Callback::new(move |y: Option<i32>| {
-        n2(&build_url("/acclaimed", 1, &genre(), &y, &search()), NavigateOptions { replace: true, ..Default::default() });
+        n2(&build_url("/acclaimed", 1, &gstr(), &y, &search()), NavigateOptions { replace: true, ..Default::default() });
     });
     let n3 = navigate.clone();
     let on_search_cb = Callback::new(move |s: Option<String>| {
-        n3(&build_url("/acclaimed", 1, &genre(), &year(), &s), NavigateOptions { replace: true, ..Default::default() });
+        n3(&build_url("/acclaimed", 1, &gstr(), &year(), &s), NavigateOptions { replace: true, ..Default::default() });
     });
     let nav_pg = navigate;
 
-    let (filter_open, set_filter_open) = signal(false);
-
     view! {
         <div class="max-w-7xl mx-auto px-4 py-8">
-            <div class="md:hidden mb-4">
-                <button
-                    class="text-xs text-stone-400 border border-sc-border rounded px-3 py-1.5"
-                    on:click=move |_| set_filter_open.update(|v| *v = !*v)
-                >
-                    {move || if filter_open.get() { "✕ Close filters" } else { "⚙ Filters" }}
-                </button>
+            <div class="mb-6">
+                <h1 class="text-4xl font-bold text-stone-100 mb-1">"Acclaimed"</h1>
+                <p class="text-stone-400">"8.0+ community rating and 80%+ critic score — films everyone should see."</p>
             </div>
-            <div class="flex gap-8">
-                <aside class=move || if filter_open.get() {
-                    "block md:block w-52 flex-shrink-0"
-                } else {
-                    "hidden md:block w-52 flex-shrink-0"
-                }>
-                    <FilterSidebar
-                        genre=Signal::derive(genre) year=Signal::derive(year)
-                        search=Signal::derive(search) total=Signal::derive(move || total.get())
-                        on_genre=on_genre_cb on_year=on_year_cb on_search=on_search_cb
-                    />
-                </aside>
-                <div class="flex-1 min-w-0">
-                    <div class="mb-6">
-                        <h1 class="text-4xl font-bold text-stone-100 mb-1">"Acclaimed"</h1>
-                        <p class="text-stone-400">"8.0+ community rating and 80%+ critic score — films everyone should see."</p>
-                    </div>
-                    {move || render_movie_grid(loading.get(), error.get(), movies.get())}
-                    {move || {
-                        let tp = total_pages(); let p = page();
-                        let np = nav_pg.clone();
-                        let nn = nav_pg.clone();
-                        view!{ <PaginationBar page=p total_pages=tp
-                            on_prev=Callback::new(move |_| { np(&build_url("/acclaimed", p - 1, &genre(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
-                            on_next=Callback::new(move |_| { nn(&build_url("/acclaimed", p + 1, &genre(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
-                        /> }
-                    }}
-                </div>
-            </div>
+            <FilterBar
+                genres=Signal::derive(genres) year=Signal::derive(year)
+                search=Signal::derive(search) total=Signal::derive(move || total.get())
+                on_genres=on_genres_cb on_year=on_year_cb on_search=on_search_cb
+            />
+            {move || render_movie_grid(loading.get(), error.get(), movies.get())}
+            {move || {
+                let tp = total_pages(); let p = page();
+                let np = nav_pg.clone(); let nn = nav_pg.clone();
+                view!{ <PaginationBar page=p total_pages=tp
+                    on_prev=Callback::new(move |_| { np(&build_url("/acclaimed", p - 1, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
+                    on_next=Callback::new(move |_| { nn(&build_url("/acclaimed", p + 1, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
+                /> }
+            }}
         </div>
     }
 }
@@ -357,10 +411,13 @@ pub fn WildcardsPage() -> impl IntoView {
     let query    = use_query_map();
     let navigate = use_navigate();
 
-    let page   = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
-    let year   = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
-    let genre  = move || query.with(|q| q.get("genre").map(|v| v.clone()).filter(|v| !v.is_empty()));
-    let search = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let page    = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
+    let year    = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
+    let genres  = move || query.with(|q| {
+        q.get("genres").map(|v| v.split(',').filter(|s| !s.is_empty()).map(String::from).collect::<Vec<_>>()).unwrap_or_default()
+    });
+    let search  = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let gstr    = move || { let g = genres(); if g.is_empty() { None } else { Some(g.join(",")) } };
 
     let (movies,  set_movies)  = signal(Vec::<MovieSummary>::new());
     let (total,   set_total)   = signal(0i64);
@@ -368,9 +425,8 @@ pub fn WildcardsPage() -> impl IntoView {
     let (error,   set_error)   = signal(Option::<String>::None);
 
     Effect::new(move |_| {
-        let p = page(); let y = year(); let g = genre(); let s = search();
-        set_loading.set(true);
-        set_error.set(None);
+        let p = page(); let y = year(); let g = gstr(); let s = search();
+        set_loading.set(true); set_error.set(None);
         spawn_local(async move {
             match api::fetch_wildcards(p, PER_PAGE, y, g, s).await {
                 Ok(r) => { set_movies.set(r.data); set_total.set(r.total); set_loading.set(false); }
@@ -382,60 +438,167 @@ pub fn WildcardsPage() -> impl IntoView {
     let total_pages = move || ((total.get() as f64) / (PER_PAGE as f64)).ceil() as i32;
 
     let n1 = navigate.clone();
-    let on_genre_cb = Callback::new(move |g: Option<String>| {
-        n1(&build_url("/wildcards", 1, &g, &year(), &search()), NavigateOptions { replace: true, ..Default::default() });
+    let on_genres_cb = Callback::new(move |gs: Vec<String>| {
+        let s = if gs.is_empty() { None } else { Some(gs.join(",")) };
+        n1(&build_url("/wildcards", 1, &s, &year(), &search()), NavigateOptions { replace: true, ..Default::default() });
     });
     let n2 = navigate.clone();
     let on_year_cb = Callback::new(move |y: Option<i32>| {
-        n2(&build_url("/wildcards", 1, &genre(), &y, &search()), NavigateOptions { replace: true, ..Default::default() });
+        n2(&build_url("/wildcards", 1, &gstr(), &y, &search()), NavigateOptions { replace: true, ..Default::default() });
     });
     let n3 = navigate.clone();
     let on_search_cb = Callback::new(move |s: Option<String>| {
-        n3(&build_url("/wildcards", 1, &genre(), &year(), &s), NavigateOptions { replace: true, ..Default::default() });
+        n3(&build_url("/wildcards", 1, &gstr(), &year(), &s), NavigateOptions { replace: true, ..Default::default() });
     });
     let nav_pg = navigate;
 
-    let (filter_open, set_filter_open) = signal(false);
-
     view! {
         <div class="max-w-7xl mx-auto px-4 py-8">
-            <div class="md:hidden mb-4">
-                <button
-                    class="text-xs text-stone-400 border border-sc-border rounded px-3 py-1.5"
-                    on:click=move |_| set_filter_open.update(|v| *v = !*v)
-                >
-                    {move || if filter_open.get() { "✕ Close filters" } else { "⚙ Filters" }}
-                </button>
+            <div class="mb-6">
+                <h1 class="text-4xl font-bold text-stone-100 mb-1">"Wildcards"</h1>
+                <p class="text-stone-400">"Films critics disagreed on — they score well algorithmically but have RT below 50%."</p>
+                <p class="text-stone-600 text-sm mt-1">"Low votes may reflect critical rejection rather than genuine undiscovery."</p>
             </div>
-            <div class="flex gap-8">
-                <aside class=move || if filter_open.get() {
-                    "block md:block w-52 flex-shrink-0"
+            <FilterBar
+                genres=Signal::derive(genres) year=Signal::derive(year)
+                search=Signal::derive(search) total=Signal::derive(move || total.get())
+                on_genres=on_genres_cb on_year=on_year_cb on_search=on_search_cb
+            />
+            {move || render_movie_grid(loading.get(), error.get(), movies.get())}
+            {move || {
+                let tp = total_pages(); let p = page();
+                let np = nav_pg.clone(); let nn = nav_pg.clone();
+                view!{ <PaginationBar page=p total_pages=tp
+                    on_prev=Callback::new(move |_| { np(&build_url("/wildcards", p - 1, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
+                    on_next=Callback::new(move |_| { nn(&build_url("/wildcards", p + 1, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
+                /> }
+            }}
+        </div>
+    }
+}
+
+// ── Sign-in page ──────────────────────────────────────────────────────────────
+#[component]
+pub fn SignInPage() -> impl IntoView {
+    let auth     = use_context::<RwSignal<Option<AuthState>>>().expect("auth context missing");
+    let navigate = use_navigate();
+
+    let (email,   set_email)   = signal(String::new());
+    let (sent,    set_sent)    = signal(false);
+    let (error,   set_error)   = signal(Option::<String>::None);
+    let (loading, set_loading) = signal(false);
+
+    // If already signed in, skip to home
+    Effect::new(move |_| {
+        if auth.get().is_some() {
+            navigate("/", NavigateOptions::default());
+        }
+    });
+
+    let submit = move || {
+        let raw = email.get_untracked();
+        let e = raw.trim().to_lowercase();
+        if e.is_empty() {
+            set_error.set(Some("Please enter your email address.".into()));
+            return;
+        }
+        if !is_valid_email_client(&e) {
+            set_error.set(Some("That doesn't look like a valid email address.".into()));
+            return;
+        }
+        set_loading.set(true);
+        set_error.set(None);
+        spawn_local(async move {
+            match api::send_magic_link(&e).await {
+                Ok(_) => set_sent.set(true),
+                Err(msg) => {
+                    let clean = if msg.to_lowercase().contains("invalid email") {
+                        "That doesn't look like a valid email address.".to_string()
+                    } else {
+                        "Something went wrong — please try again.".to_string()
+                    };
+                    set_error.set(Some(clean));
+                    set_loading.set(false);
+                }
+            }
+            set_loading.set(false);
+        });
+    };
+
+    view! {
+        <div class="min-h-96 flex items-start justify-center pt-16 px-4">
+            <div class="w-full max-w-md">
+                {move || if sent.get() {
+                    view! {
+                        <div class="text-center py-8">
+                            <p class="text-5xl mb-6">"📬"</p>
+                            <h1 class="text-2xl font-bold text-stone-100 mb-3">"Check your email"</h1>
+                            <p class="text-stone-400 mb-2">
+                                "We sent a sign-in link to "
+                                <span class="text-stone-200">{email.get()}</span>
+                                "."
+                            </p>
+                            <p class="text-stone-500 text-sm mt-4 mb-8">
+                                "Click the link in the email to sign in. It expires in 15 minutes."
+                            </p>
+                            <button
+                                class="text-sm text-stone-500 hover:text-stone-300 transition-colors underline"
+                                on:click=move |_| { set_sent.set(false); set_email.set(String::new()); set_error.set(None); }
+                            >"Use a different email"</button>
+                        </div>
+                    }.into_any()
                 } else {
-                    "hidden md:block w-52 flex-shrink-0"
-                }>
-                    <FilterSidebar
-                        genre=Signal::derive(genre) year=Signal::derive(year)
-                        search=Signal::derive(search) total=Signal::derive(move || total.get())
-                        on_genre=on_genre_cb on_year=on_year_cb on_search=on_search_cb
-                    />
-                </aside>
-                <div class="flex-1 min-w-0">
-                    <div class="mb-6">
-                        <h1 class="text-4xl font-bold text-stone-100 mb-1">"Wildcards"</h1>
-                        <p class="text-stone-400">"Films critics disagreed on — they score well algorithmically but have RT below 50%."</p>
-                        <p class="text-stone-600 text-sm mt-1">"Low votes may reflect critical rejection rather than genuine undiscovery."</p>
-                    </div>
-                    {move || render_movie_grid(loading.get(), error.get(), movies.get())}
-                    {move || {
-                        let tp = total_pages(); let p = page();
-                        let np = nav_pg.clone();
-                        let nn = nav_pg.clone();
-                        view!{ <PaginationBar page=p total_pages=tp
-                            on_prev=Callback::new(move |_| { np(&build_url("/wildcards", p - 1, &genre(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
-                            on_next=Callback::new(move |_| { nn(&build_url("/wildcards", p + 1, &genre(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
-                        /> }
-                    }}
-                </div>
+                    view! {
+                        <div>
+                            <div class="text-center mb-8">
+                                <A href="/" attr:class="font-display text-4xl tracking-widest text-stone-100 hover:text-sc-accent transition-colors">
+                                    "GEM FINDER"
+                                </A>
+                                <p class="text-stone-500 mt-2 text-sm">"Track films you want to see or have seen."</p>
+                            </div>
+
+                            <div class="bg-sc-panel border border-sc-border rounded-lg p-8">
+                                <h2 class="text-xl font-bold text-stone-100 mb-1">"Sign in"</h2>
+                                <p class="text-stone-500 text-sm mb-6">
+                                    "Enter your email — we'll send a magic link. "
+                                    "New here? Your account is created automatically."
+                                </p>
+
+                                <label class="block text-xs text-stone-500 uppercase tracking-widest mb-1.5">"Email"</label>
+                                <input
+                                    type="email"
+                                    placeholder="your@email.com"
+                                    autocomplete="email"
+                                    class="w-full bg-sc-card text-stone-200 border border-sc-border-input rounded-md px-3 py-2.5 text-sm mb-1 focus:outline-none focus:border-sc-accent-border"
+                                    prop:value=move || email.get()
+                                    on:input=move |ev| {
+                                        set_error.set(None);
+                                        set_email.set(event_target_value(&ev));
+                                    }
+                                    on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                        if ev.key() == "Enter" { submit(); }
+                                    }
+                                />
+
+                                {move || error.get().map(|e| view! {
+                                    <p class="text-red-400 text-xs mb-3 mt-1">{e}</p>
+                                })}
+
+                                <button
+                                    class="w-full mt-3 bg-sc-accent-bg text-stone-100 rounded-md px-4 py-2.5 text-sm font-medium hover:bg-sc-accent-bg-hover transition-colors disabled:opacity-50"
+                                    on:click=move |_| submit()
+                                    prop:disabled=move || loading.get()
+                                >
+                                    {move || if loading.get() { "Sending…" } else { "Send sign-in link" }}
+                                </button>
+                            </div>
+
+                            <p class="text-center text-stone-600 text-xs mt-6">
+                                <A href="/" attr:class="hover:text-stone-400 transition-colors">"← Back to Gem Finder"</A>
+                            </p>
+                        </div>
+                    }.into_any()
+                }}
             </div>
         </div>
     }
@@ -445,27 +608,24 @@ pub fn WildcardsPage() -> impl IntoView {
 #[component]
 pub fn MovieDetail() -> impl IntoView {
     let params = use_params_map();
+    let _navigate = use_navigate();
     let (movie,   set_movie)   = signal(Option::<gem_finder_shared::types::Movie>::None);
     let (loading, set_loading) = signal(true);
     let (error,   set_error)   = signal(Option::<String>::None);
 
-    // Watchlist state for this movie (None = not on list, Some(state) = current state)
-    let (wl_state, set_wl_state) = signal(Option::<WatchState>::None);
+    let (wl_state,   set_wl_state)   = signal(Option::<WatchState>::None);
     let (wl_loading, set_wl_loading) = signal(false);
-    let (wl_error, set_wl_error) = signal(Option::<String>::None);
+    let (wl_error,   set_wl_error)   = signal(Option::<String>::None);
 
     let auth = use_context::<RwSignal<Option<AuthState>>>().unwrap_or_else(|| RwSignal::new(None));
-    let modal_open = use_context::<RwSignal<bool>>().unwrap_or_else(|| RwSignal::new(false));
 
     let movie_id = move || params.with(|p| p.get("id").map(|v| v.to_string()));
 
-    // Load movie + watchlist state on mount
     spawn_local(async move {
         match movie_id() {
             None => { set_error.set(Some("Invalid movie ID".into())); set_loading.set(false); }
             Some(id) => match api::fetch_movie(&id).await {
-                Ok(m)  => {
-                    // If logged in, load watchlist entry for this movie
+                Ok(m) => {
                     if let Some(a) = auth.get_untracked() {
                         if let Some(db_id) = m.id {
                             if let Ok(entry) = api::get_watchlist_entry(db_id, &a.token).await {
@@ -483,7 +643,6 @@ pub fn MovieDetail() -> impl IntoView {
 
     view! {
         <div class="max-w-4xl mx-auto px-4 py-8">
-            // Browser back — preserves filter state in URL history
             <button
                 class="text-sc-accent hover:text-sc-accent-hover text-sm mb-6 inline-block bg-transparent border-none cursor-pointer p-0"
                 on:click=|_| {
@@ -519,9 +678,9 @@ pub fn MovieDetail() -> impl IntoView {
                 let overview = m.overview.clone().unwrap_or_default();
                 let imdb_str = m.imdb_rating.map(|r| format!("{:.1}", r));
                 let rt_str   = m.rt_critic_score.map(|r| format!("{}%", r));
-                let gem_str     = m.gem_score.map(|s| format!("{:.0}%", s * 100.0));
-                let imdb_id     = m.imdb_id.clone();
-                let movie_db_id = m.id.unwrap_or(0); // i64 is Copy — safe to use in multiple closures
+                let gem_str  = m.gem_score.map(|s| format!("{:.0}%", s * 100.0));
+                let imdb_id  = m.imdb_id.clone();
+                let movie_db_id = m.id.unwrap_or(0);
 
                 view!{
                     <div class="mt-6">
@@ -557,7 +716,6 @@ pub fn MovieDetail() -> impl IntoView {
                                         </div>
                                     })}
                                 </div>
-                                // Genre tags — comma-split to show all tags simultaneously
                                 {if !genre.is_empty() {
                                     let tags: Vec<_> = genre.split(", ").map(|g| {
                                         let g = g.to_string();
@@ -576,31 +734,30 @@ pub fn MovieDetail() -> impl IntoView {
                                     </a>
                                 })}
 
-                                // Watchlist
+                                // ── Watchlist ─────────────────────────────────────────────────────
                                 <div class="mt-6 pt-6 border-t border-sc-border">
                                     {move || match auth.get() {
                                         None => view! {
                                             <div>
                                                 <p class="text-stone-500 text-sm mb-2">"Track this film in your watchlist"</p>
-                                                <button
-                                                    class="text-sm text-sc-accent hover:text-sc-accent-hover border border-sc-accent-border rounded px-3 py-1.5"
-                                                    on:click=move |_| modal_open.set(true)
-                                                >"Sign in to add"</button>
+                                                <A
+                                                    href="/signin"
+                                                    attr:class="inline-block text-sm text-sc-accent hover:text-sc-accent-hover border border-sc-accent-border rounded px-3 py-1.5"
+                                                >"Sign in to add"</A>
                                             </div>
                                         }.into_any(),
                                         Some(a) => {
-                                            // Clone token once per button so each closure owns its own copy
-                                            let t_want = a.token.clone();
+                                            let t_want  = a.token.clone();
                                             let t_watch = a.token.clone();
-                                            let t_nope = a.token.clone();
-                                            let t_del = a.token.clone();
+                                            let t_nope  = a.token.clone();
+                                            let t_del   = a.token.clone();
 
                                             let on_want = move |_: web_sys::MouseEvent| {
                                                 let t = t_want.clone();
                                                 set_wl_loading.set(true); set_wl_error.set(None);
                                                 spawn_local(async move {
                                                     match api::upsert_watchlist(movie_db_id, WatchState::WantToWatch, None, &t).await {
-                                                        Ok(_) => set_wl_state.set(Some(WatchState::WantToWatch)),
+                                                        Ok(_)  => set_wl_state.set(Some(WatchState::WantToWatch)),
                                                         Err(e) => set_wl_error.set(Some(e)),
                                                     }
                                                     set_wl_loading.set(false);
@@ -611,7 +768,7 @@ pub fn MovieDetail() -> impl IntoView {
                                                 set_wl_loading.set(true); set_wl_error.set(None);
                                                 spawn_local(async move {
                                                     match api::upsert_watchlist(movie_db_id, WatchState::Watched, None, &t).await {
-                                                        Ok(_) => set_wl_state.set(Some(WatchState::Watched)),
+                                                        Ok(_)  => set_wl_state.set(Some(WatchState::Watched)),
                                                         Err(e) => set_wl_error.set(Some(e)),
                                                     }
                                                     set_wl_loading.set(false);
@@ -622,7 +779,7 @@ pub fn MovieDetail() -> impl IntoView {
                                                 set_wl_loading.set(true); set_wl_error.set(None);
                                                 spawn_local(async move {
                                                     match api::upsert_watchlist(movie_db_id, WatchState::NotInterested, None, &t).await {
-                                                        Ok(_) => set_wl_state.set(Some(WatchState::NotInterested)),
+                                                        Ok(_)  => set_wl_state.set(Some(WatchState::NotInterested)),
                                                         Err(e) => set_wl_error.set(Some(e)),
                                                     }
                                                     set_wl_loading.set(false);
@@ -633,7 +790,7 @@ pub fn MovieDetail() -> impl IntoView {
                                                 set_wl_loading.set(true); set_wl_error.set(None);
                                                 spawn_local(async move {
                                                     match api::delete_watchlist(movie_db_id, &t).await {
-                                                        Ok(_) => set_wl_state.set(None),
+                                                        Ok(_)  => set_wl_state.set(None),
                                                         Err(e) => set_wl_error.set(Some(e)),
                                                     }
                                                     set_wl_loading.set(false);
@@ -671,13 +828,10 @@ pub fn MovieDetail() -> impl IntoView {
                                                             on:click=on_nope
                                                             prop:disabled=move || wl_loading.get()
                                                         >"✗ Not interested"</button>
-                                                        // Always in DOM — hidden via class when no entry exists
                                                         <button
                                                             class=move || if wl_state.get().is_some() {
                                                                 "px-3 py-1.5 rounded text-sm text-stone-600 hover:text-stone-400 border border-sc-border"
-                                                            } else {
-                                                                "hidden"
-                                                            }
+                                                            } else { "hidden" }
                                                             on:click=on_remove
                                                             prop:disabled=move || wl_loading.get()
                                                         >"Remove"</button>
@@ -731,8 +885,6 @@ fn SkeletonCard() -> impl IntoView {
 }
 
 // ── Movie card ────────────────────────────────────────────────────────────────
-// Uses a plain <a> + navigate() to avoid any attr:class forwarding uncertainty
-// with leptos_router's <A> component, while still preserving SPA navigation.
 #[component]
 fn MovieCard(movie: MovieSummary) -> impl IntoView {
     let navigate  = use_navigate();
@@ -787,24 +939,14 @@ fn MovieCard(movie: MovieSummary) -> impl IntoView {
 
 // ── Admin page ────────────────────────────────────────────────────────────────
 #[derive(Clone, PartialEq)]
-enum ActionState {
-    Idle,
-    Running,
-    Done(String),
-    Failed(String),
-}
+enum ActionState { Idle, Running, Done(String), Failed(String) }
 
 // ── Auth verify page ──────────────────────────────────────────────────────────
-
-/// Landing page for magic-link email clicks: `/auth/verify?token=<uuid>`.
-/// Exchanges the one-time token for a JWT, saves it to localStorage + auth context,
-/// then redirects to the home page.
 #[component]
 pub fn VerifyPage() -> impl IntoView {
     let query    = use_query_map();
     let navigate = use_navigate();
     let auth     = use_context::<RwSignal<Option<AuthState>>>().expect("auth context missing");
-
     let (status, set_status) = signal("Verifying…".to_string());
 
     let token_val = query.with_untracked(|q| q.get("token").unwrap_or_default().to_string());
@@ -904,7 +1046,6 @@ pub fn AdminPage() -> impl IntoView {
             <h1 class="text-3xl font-bold text-stone-100 mb-2">"Admin"</h1>
             <p class="text-stone-400 mb-8">"Operations run on the server — you can close this page. Check logs below for progress."</p>
 
-            // Seed
             <div class="mb-6 p-4 bg-sc-panel rounded border border-sc-accent-border">
                 <div class="flex items-start justify-between gap-4">
                     <div class="flex-1 min-w-0">
@@ -920,7 +1061,6 @@ pub fn AdminPage() -> impl IntoView {
                 </div>
             </div>
 
-            // Sync
             <div class="mb-4 p-4 bg-sc-panel rounded border border-sc-border">
                 <div class="flex items-start justify-between gap-4">
                     <div class="flex-1 min-w-0">
@@ -936,7 +1076,6 @@ pub fn AdminPage() -> impl IntoView {
                 </div>
             </div>
 
-            // Enrich
             <div class="mb-4 p-4 bg-sc-panel rounded border border-sc-border">
                 <div class="flex items-start justify-between gap-4">
                     <div class="flex-1 min-w-0">
@@ -964,7 +1103,6 @@ pub fn AdminPage() -> impl IntoView {
                 </div>
             </div>
 
-            // Score
             <div class="mb-8 p-4 bg-sc-panel rounded border border-sc-border">
                 <div class="flex items-start justify-between gap-4">
                     <div class="flex-1 min-w-0">
@@ -980,7 +1118,6 @@ pub fn AdminPage() -> impl IntoView {
                 </div>
             </div>
 
-            // Run logs
             <div>
                 <div class="flex items-center justify-between mb-3">
                     <h2 class="text-lg font-semibold text-stone-200">"Run Logs"</h2>

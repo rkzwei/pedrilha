@@ -30,6 +30,35 @@ fn purge_expired<T>(map: &mut HashMap<String, (T, Instant)>) {
     map.retain(|_, (_, created)| now.duration_since(*created).as_secs() < CHALLENGE_TTL_SECS);
 }
 
+// ── Email validation ──────────────────────────────────────────────────────────
+
+fn is_valid_email(email: &str) -> bool {
+    // Must have exactly one @
+    let mut parts = email.splitn(2, '@');
+    let local = parts.next().unwrap_or("");
+    let domain = match parts.next() {
+        Some(d) => d,
+        None => return false,
+    };
+    if local.is_empty() || domain.is_empty() {
+        return false;
+    }
+    // Domain must contain a dot not at start or end
+    if let Some(dot) = domain.rfind('.') {
+        if dot == 0 || dot == domain.len() - 1 {
+            return false;
+        }
+        // TLD must be at least 2 chars
+        if domain.len() - dot < 3 {
+            return false;
+        }
+    } else {
+        return false;
+    }
+    // Reject obvious junk (consecutive dots, @ in local part handled by splitn)
+    !local.contains("..") && !domain.contains("..")
+}
+
 // ── Magic link ────────────────────────────────────────────────────────────────
 
 /// POST /api/auth/magic
@@ -41,7 +70,7 @@ pub async fn magic_link_request(
     Json(body): Json<MagicLinkRequest>,
 ) -> (StatusCode, Json<Value>) {
     let email = body.email.trim().to_lowercase();
-    if email.is_empty() || !email.contains('@') {
+    if !is_valid_email(&email) {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": "invalid email address" })),

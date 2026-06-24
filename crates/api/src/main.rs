@@ -97,7 +97,7 @@ struct GemsQuery {
     page: Option<i32>,
     per_page: Option<i32>,
     min_year: Option<i32>,
-    genre: Option<String>,
+    genres: Option<String>, // comma-separated for multi-select (e.g. "Action,Drama")
     q: Option<String>,
 }
 
@@ -106,7 +106,7 @@ struct AclaimedQuery {
     page: Option<i32>,
     per_page: Option<i32>,
     min_year: Option<i32>,
-    genre: Option<String>,
+    genres: Option<String>, // comma-separated for multi-select (e.g. "Action,Drama")
     q: Option<String>,
 }
 
@@ -115,7 +115,7 @@ struct WildcardsQuery {
     page: Option<i32>,
     per_page: Option<i32>,
     min_year: Option<i32>,
-    genre: Option<String>,
+    genres: Option<String>, // comma-separated for multi-select (e.g. "Action,Drama")
     q: Option<String>,
 }
 
@@ -629,14 +629,17 @@ async fn get_gems(
                     return false;
                 }
             }
-            if let Some(ref g) = query.genre {
-                let g_lower = g.to_lowercase();
-                if !m
-                    .genre
-                    .as_deref()
-                    .map_or(false, |mg| mg.to_lowercase().contains(&g_lower))
-                {
-                    return false;
+            if let Some(ref g) = query.genres {
+                let selected: Vec<String> = g
+                    .split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.trim().to_lowercase())
+                    .collect();
+                if !selected.is_empty() {
+                    let movie_genres = m.genre.as_deref().unwrap_or("").to_lowercase();
+                    if !selected.iter().any(|sel| movie_genres.contains(sel.as_str())) {
+                        return false;
+                    }
                 }
             }
             if let Some(ref q) = query.q {
@@ -709,7 +712,7 @@ async fn get_acclaimed(
             if let Some(min_y) = query.min_year {
                 if m.year.map_or(true, |y| y < min_y) { return false; }
             }
-            if let Some(ref g) = query.genre {
+            if let Some(ref g) = query.genres {
                 let g_lower = g.to_lowercase();
                 if !m.genre.as_deref().map_or(false, |mg| mg.to_lowercase().contains(&g_lower)) {
                     return false;
@@ -781,7 +784,7 @@ async fn get_wildcards(
             if let Some(min_y) = query.min_year {
                 if m.year.map_or(true, |y| y < min_y) { return false; }
             }
-            if let Some(ref g) = query.genre {
+            if let Some(ref g) = query.genres {
                 let g_lower = g.to_lowercase();
                 if !m.genre.as_deref().map_or(false, |mg| mg.to_lowercase().contains(&g_lower)) {
                     return false;

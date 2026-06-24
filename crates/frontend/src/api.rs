@@ -18,7 +18,7 @@ pub async fn fetch_gems(
         url.push_str(&format!("&min_year={}", y));
     }
     if let Some(g) = genre {
-        url.push_str(&format!("&genre={}", g));
+        url.push_str(&format!("&genres={}", g));
     }
     if let Some(s) = q {
         url.push_str(&format!("&q={}", s));
@@ -52,7 +52,7 @@ pub async fn fetch_acclaimed(
         url.push_str(&format!("&min_year={}", y));
     }
     if let Some(g) = genre {
-        url.push_str(&format!("&genre={}", g));
+        url.push_str(&format!("&genres={}", g));
     }
     if let Some(s) = q {
         url.push_str(&format!("&q={}", s));
@@ -86,7 +86,7 @@ pub async fn fetch_wildcards(
         url.push_str(&format!("&min_year={}", y));
     }
     if let Some(g) = genre {
-        url.push_str(&format!("&genre={}", g));
+        url.push_str(&format!("&genres={}", g));
     }
     if let Some(s) = q {
         url.push_str(&format!("&q={}", s));

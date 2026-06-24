@@ -4,12 +4,25 @@ use leptos::task::spawn_local;
 /// Sign-in modal — email input → POST /api/auth/magic → "check your email" confirmation.
 /// On success the user gets a magic link; clicking it navigates to `/auth/verify?token=...`
 /// which exchanges the token for a JWT and stores it in the auth context.
+///
+/// Always rendered in the DOM; visibility is controlled via CSS display so mount/unmount
+/// doesn't cause state-loss bugs. State resets whenever `is_open` transitions to true.
 #[component]
-pub fn SignInModal(on_close: Callback<()>) -> impl IntoView {
+pub fn SignInModal(is_open: Signal<bool>, on_close: Callback<()>) -> impl IntoView {
     let (email, set_email) = signal(String::new());
     let (sent, set_sent) = signal(false);
     let (error, set_error) = signal(Option::<String>::None);
     let (loading, set_loading) = signal(false);
+
+    // Reset form state every time the modal is opened.
+    Effect::new(move |_| {
+        if is_open.get() {
+            set_sent.set(false);
+            set_error.set(None);
+            set_email.set(String::new());
+            set_loading.set(false);
+        }
+    });
 
     let submit = move || {
         let e = email.get_untracked();
@@ -28,9 +41,10 @@ pub fn SignInModal(on_close: Callback<()>) -> impl IntoView {
     };
 
     view! {
-        // Full-screen backdrop
+        // Full-screen backdrop — display:none when closed, flex when open.
         <div
             class="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center"
+            style:display=move || if is_open.get() { "" } else { "none" }
             on:click=move |_| on_close.run(())
         >
             // Modal panel — stop propagation so clicking inside doesn't close

@@ -160,16 +160,12 @@ fn App() -> impl IntoView {
                     </Routes>
                 </main>
 
-                // Sign-in modal — rendered at root so it sits above everything
-                {move || if modal_open.get() {
-                    view! {
-                        <components::SignInModal
-                            on_close=Callback::new(move |_| modal_open.set(false))
-                        />
-                    }.into_any()
-                } else {
-                    view! { <div /> }.into_any()
-                }}
+                // Sign-in modal — always in DOM, visibility controlled inside the component.
+                // This avoids mount/unmount state-loss bugs when the modal is reopened.
+                <components::SignInModal
+                    is_open=Signal::derive(move || modal_open.get())
+                    on_close=Callback::new(move |_| modal_open.set(false))
+                />
 
                 <footer class="bg-sc-panel border-t border-sc-border py-8 text-center text-stone-600 text-sm">
                     <p>"Gem Finder — Unearthing what the blockbusters buried."</p>
