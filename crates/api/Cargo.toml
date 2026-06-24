@@ -19,3 +19,9 @@ tracing-appender = "0.2"
 reqwest = { version = "0.12", features = ["json"] }
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
+
+# Auth
+lettre = { version = "0.11", features = ["tokio1-native-tls"] }
+jsonwebtoken = "9"
+uuid = { version = "1", features = ["v4"] }
+webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
