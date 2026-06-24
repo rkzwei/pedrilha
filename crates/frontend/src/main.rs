@@ -9,13 +9,85 @@ mod api;
 mod components;
 mod pages;
 
+// ── Auth state ────────────────────────────────────────────────────────────────
+
+/// Session state stored in context and mirrored to localStorage.
+#[derive(Clone, Debug)]
+pub struct AuthState {
+    pub token: String,
+    pub user_id: String,
+    pub email: String,
+    pub username: Option<String>,
+}
+
+// localStorage key constants
+const LS_TOKEN:    &str = "gf_token";
+const LS_USER_ID:  &str = "gf_user_id";
+const LS_EMAIL:    &str = "gf_email";
+const LS_USERNAME: &str = "gf_username";
+
+/// Get the browser's localStorage, or None in non-browser environments.
+pub fn local_storage() -> Option<web_sys::Storage> {
+    web_sys::window()
+        .and_then(|w| w.local_storage().ok())
+        .and_then(|s| s)
+}
+
+/// Persist auth credentials to localStorage.
+pub fn save_auth_to_storage(token: &str, user_id: &str, email: &str, username: Option<&str>) {
+    if let Some(ls) = local_storage() {
+        let _ = ls.set_item(LS_TOKEN, token);
+        let _ = ls.set_item(LS_USER_ID, user_id);
+        let _ = ls.set_item(LS_EMAIL, email);
+        if let Some(u) = username {
+            let _ = ls.set_item(LS_USERNAME, u);
+        } else {
+            let _ = ls.remove_item(LS_USERNAME);
+        }
+    }
+}
+
+/// Load auth state from localStorage. Returns None if no session is stored.
+pub fn load_auth_from_storage() -> Option<AuthState> {
+    let ls = local_storage()?;
+    let token   = ls.get_item(LS_TOKEN).ok()??;
+    let user_id = ls.get_item(LS_USER_ID).ok()??;
+    let email   = ls.get_item(LS_EMAIL).ok()??;
+    let username = ls.get_item(LS_USERNAME).ok().flatten();
+    if token.is_empty() { return None; }
+    Some(AuthState { token, user_id, email, username })
+}
+
+/// Clear auth from localStorage and reset the auth signal.
+pub fn logout(auth: RwSignal<Option<AuthState>>) {
+    if let Some(ls) = local_storage() {
+        let _ = ls.remove_item(LS_TOKEN);
+        let _ = ls.remove_item(LS_USER_ID);
+        let _ = ls.remove_item(LS_EMAIL);
+        let _ = ls.remove_item(LS_USERNAME);
+    }
+    auth.set(None);
+}
+
+// ── Entry point ───────────────────────────────────────────────────────────────
+
 fn main() {
     mount_to_body(|| view! { <App /> })
 }
 
+// ── App root ──────────────────────────────────────────────────────────────────
+
 #[component]
 fn App() -> impl IntoView {
     provide_meta_context();
+
+    // Auth context — load persisted session on startup.
+    let auth: RwSignal<Option<AuthState>> = RwSignal::new(load_auth_from_storage());
+    provide_context(auth);
+
+    // Sign-in modal visibility — provided so any component can trigger it.
+    let modal_open: RwSignal<bool> = RwSignal::new(false);
+    provide_context(modal_open);
 
     view! {
         <Router>
@@ -28,7 +100,7 @@ fn App() -> impl IntoView {
                         <A href="/" attr:class="font-display text-3xl tracking-widest text-stone-100 hover:text-sc-accent transition-colors">
                             "GEM FINDER"
                         </A>
-                        <div class="flex gap-6">
+                        <div class="flex gap-6 items-center">
                             <A href="/" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide">
                                 "GEMS"
                             </A>
@@ -41,6 +113,32 @@ fn App() -> impl IntoView {
                             <A href="/admin" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide">
                                 "ADMIN"
                             </A>
+                            // Auth section
+                            {move || match auth.get() {
+                                Some(a) => {
+                                    let display = a.username.clone()
+                                        .unwrap_or_else(|| {
+                                            a.email.split('@').next().unwrap_or("user").to_string()
+                                        });
+                                    view! {
+                                        <span class="text-stone-500 text-sm">{display}</span>
+                                        <button
+                                            class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide"
+                                            on:click=move |_| logout(auth)
+                                        >
+                                            "SIGN OUT"
+                                        </button>
+                                    }.into_any()
+                                }
+                                None => view! {
+                                    <button
+                                        class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide"
+                                        on:click=move |_| modal_open.set(true)
+                                    >
+                                        "SIGN IN"
+                                    </button>
+                                }.into_any()
+                            }}
                         </div>
                     </nav>
                 </header>
@@ -58,8 +156,20 @@ fn App() -> impl IntoView {
                         <Route path=path!("/wildcards") view=pages::WildcardsPage />
                         <Route path=path!("/movie/:id") view=pages::MovieDetail />
                         <Route path=path!("/admin") view=pages::AdminPage />
+                        <Route path=path!("/auth/verify") view=pages::VerifyPage />
                     </Routes>
                 </main>
+
+                // Sign-in modal — rendered at root so it sits above everything
+                {move || if modal_open.get() {
+                    view! {
+                        <components::SignInModal
+                            on_close=Callback::new(move |_| modal_open.set(false))
+                        />
+                    }.into_any()
+                } else {
+                    view! { <div /> }.into_any()
+                }}
 
                 <footer class="bg-sc-panel border-t border-sc-border py-8 text-center text-stone-600 text-sm">
                     <p>"Gem Finder — Unearthing what the blockbusters buried."</p>

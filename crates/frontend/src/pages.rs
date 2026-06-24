@@ -1,22 +1,29 @@
 use crate::api;
+use crate::{save_auth_to_storage, AuthState};
 use gem_finder_shared::id_encode::encode_movie_id;
-use gem_finder_shared::types::MovieSummary;
+use gem_finder_shared::types::{MovieSummary, WatchState};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-
-use leptos_router::{components::A, hooks::use_params_map};
+use leptos_router::{
+    components::A,
+    hooks::{use_navigate, use_params_map, use_query_map},
+    NavigateOptions,
+};
 
 const GENRES: &[&str] = &[
     "Action",
+    "Animation",
     "Comedy",
+    "Crime",
     "Drama",
     "Horror",
-    "Thriller",
-    "Science Fiction",
     "Romance",
+    "Science Fiction",
+    "Thriller",
     "Documentary",
-    "Foreign",
-    "Indie",
+    "Western",
+    "War",
+    "Musical",
 ];
 const DECADE_OPTIONS: &[(i32, &str)] = &[
     (1960, "1960s+"),
@@ -29,288 +36,463 @@ const DECADE_OPTIONS: &[(i32, &str)] = &[
 ];
 const PER_PAGE: i32 = 20;
 
-// ── Home page ────────────────────────────────────────────────────────────────
+fn build_url(
+    path: &str,
+    page: i32,
+    genre: &Option<String>,
+    year: &Option<i32>,
+    q: &Option<String>,
+) -> String {
+    let mut url = format!("{}?page={}", path, page);
+    if let Some(g) = genre { url.push_str(&format!("&genre={}", g)); }
+    if let Some(y) = year  { url.push_str(&format!("&year={}", y)); }
+    if let Some(s) = q     { url.push_str(&format!("&q={}", s)); }
+    url
+}
+
+// ── Filter sidebar ────────────────────────────────────────────────────────────
+#[component]
+fn FilterSidebar(
+    genre: Signal<Option<String>>,
+    year: Signal<Option<i32>>,
+    search: Signal<Option<String>>,
+    total: Signal<i64>,
+    on_genre:  Callback<Option<String>>,
+    on_year:   Callback<Option<i32>>,
+    on_search: Callback<Option<String>>,
+) -> impl IntoView {
+    view! {
+        <div class="space-y-6 text-sm">
+            // Search
+            <input
+                type="text"
+                placeholder="Search titles…"
+                class="w-full bg-sc-card text-stone-200 border border-sc-border-input rounded px-3 py-1.5 text-sm placeholder-stone-600 focus:outline-none"
+                prop:value=move || search.get().unwrap_or_default()
+                on:input=move |ev| {
+                    let v = event_target_value(&ev);
+                    on_search.run(if v.is_empty() { None } else { Some(v) });
+                }
+            />
+
+            // Film count
+            <p class="text-xs text-stone-600">
+                {move || { let t = total.get(); if t > 0 { format!("{} films", t) } else { String::new() } }}
+            </p>
+
+            // Era filter — compact button list
+            <div>
+                <p class="text-xs uppercase tracking-widest text-stone-600 mb-2">"Era"</p>
+                <div class="space-y-0.5">
+                    <button
+                        class=move || if year.get().is_none() {
+                            "block w-full text-left px-2 py-1 rounded text-xs text-sc-accent bg-sc-accent-deep"
+                        } else {
+                            "block w-full text-left px-2 py-1 rounded text-xs text-stone-400 hover:text-stone-200"
+                        }
+                        on:click=move |_| on_year.run(None)
+                    >"All eras"</button>
+                    {DECADE_OPTIONS.iter().map(|(y, l)| {
+                        let yv = *y;
+                        view! {
+                            <button
+                                class=move || if year.get() == Some(yv) {
+                                    "block w-full text-left px-2 py-1 rounded text-xs text-sc-accent bg-sc-accent-deep"
+                                } else {
+                                    "block w-full text-left px-2 py-1 rounded text-xs text-stone-400 hover:text-stone-200"
+                                }
+                                on:click=move |_| on_year.run(Some(yv))
+                            >{*l}</button>
+                        }
+                    }).collect::<Vec<_>>()}
+                </div>
+            </div>
+
+            // Genre filter — pill chips (click to toggle, click again to clear)
+            <div>
+                <p class="text-xs uppercase tracking-widest text-stone-600 mb-2">"Genre"</p>
+                <div class="flex flex-wrap gap-1.5">
+                    {GENRES.iter().map(|g| {
+                        let gs = g.to_string();
+                        let gs_click = gs.clone();
+                        let gs_class = gs.clone();
+                        view! {
+                            <button
+                                class=move || if genre.get().as_deref() == Some(gs_class.as_str()) {
+                                    "px-2 py-0.5 text-xs rounded border border-sc-accent text-sc-accent bg-sc-accent-deep"
+                                } else {
+                                    "px-2 py-0.5 text-xs rounded border border-sc-border text-stone-500"
+                                }
+                                on:click=move |_| {
+                                    let current = genre.get();
+                                    if current.as_deref() == Some(gs_click.as_str()) {
+                                        on_genre.run(None);
+                                    } else {
+                                        on_genre.run(Some(gs_click.clone()));
+                                    }
+                                }
+                            >{*g}</button>
+                        }
+                    }).collect::<Vec<_>>()}
+                </div>
+            </div>
+        </div>
+    }
+}
+
+// ── Pagination bar ────────────────────────────────────────────────────────────
+#[component]
+fn PaginationBar(
+    page: i32,
+    total_pages: i32,
+    on_prev: Callback<()>,
+    on_next: Callback<()>,
+) -> impl IntoView {
+    // `on_next` is used inside view! below; rustc doesn't see through the macro.
+    let _ = &on_next;
+    if total_pages <= 1 {
+        return view! { <div /> }.into_any();
+    }
+    view! {
+        <div class="flex items-center justify-center gap-4 mt-10">
+            <button
+                class="px-4 py-2 bg-sc-card text-stone-200 rounded disabled:opacity-30 hover:bg-sc-border"
+                disabled=page <= 1
+                on:click=move |_| on_prev.run(())
+            >"← Prev"</button>
+            <span class="text-stone-400 text-sm">{format!("Page {} of {}", page, total_pages)}</span>
+            <button
+                class="px-4 py-2 bg-sc-card text-stone-200 rounded disabled:opacity-30 hover:bg-sc-border"
+                disabled=page >= total_pages
+                on:click=move |_| on_next.run(())
+            >"Next →"</button>
+        </div>
+    }.into_any()
+}
+
+// ── Home page ─────────────────────────────────────────────────────────────────
 #[component]
 pub fn HomePage() -> impl IntoView {
-    let (page, set_page) = signal(1i32);
-    let (min_year, set_min_year) = signal(Option::<i32>::None);
-    let (genre, set_genre) = signal(Option::<String>::None);
-    let (movies, set_movies) = signal(Vec::<MovieSummary>::new());
-    let (total, set_total) = signal(0i64);
+    let query    = use_query_map();
+    let navigate = use_navigate();
+
+    let page   = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
+    let year   = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
+    let genre  = move || query.with(|q| q.get("genre").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let search = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+
+    let (movies,  set_movies)  = signal(Vec::<MovieSummary>::new());
+    let (total,   set_total)   = signal(0i64);
     let (loading, set_loading) = signal(true);
-    let (error, set_error) = signal(Option::<String>::None);
+    let (error,   set_error)   = signal(Option::<String>::None);
 
     Effect::new(move |_| {
-        let p = page.get();
-        let y = min_year.get();
-        let g = genre.get();
+        let p = page(); let y = year(); let g = genre(); let s = search();
         set_loading.set(true);
         set_error.set(None);
         spawn_local(async move {
-            match api::fetch_gems(p, PER_PAGE, y, g).await {
-                Ok(resp) => {
-                    set_movies.set(resp.data);
-                    set_total.set(resp.total);
-                    set_loading.set(false);
-                }
-                Err(e) => {
-                    set_error.set(Some(e));
-                    set_loading.set(false);
-                }
+            match api::fetch_gems(p, PER_PAGE, y, g, s).await {
+                Ok(r) => { set_movies.set(r.data); set_total.set(r.total); set_loading.set(false); }
+                Err(e) => { set_error.set(Some(e)); set_loading.set(false); }
             }
         });
     });
 
     let total_pages = move || ((total.get() as f64) / (PER_PAGE as f64)).ceil() as i32;
 
+    let n1 = navigate.clone();
+    let on_genre_cb = Callback::new(move |g: Option<String>| {
+        n1(&build_url("/", 1, &g, &year(), &search()), NavigateOptions { replace: true, ..Default::default() });
+    });
+    let n2 = navigate.clone();
+    let on_year_cb = Callback::new(move |y: Option<i32>| {
+        n2(&build_url("/", 1, &genre(), &y, &search()), NavigateOptions { replace: true, ..Default::default() });
+    });
+    let n3 = navigate.clone();
+    let on_search_cb = Callback::new(move |s: Option<String>| {
+        n3(&build_url("/", 1, &genre(), &year(), &s), NavigateOptions { replace: true, ..Default::default() });
+    });
+    let nav_pg = navigate;
+
+    let (filter_open, set_filter_open) = signal(false);
+
     view! {
         <div class="max-w-7xl mx-auto px-4 py-8">
-            <div class="mb-8">
-                <h1 class="text-4xl font-bold text-stone-100 mb-2">"Hidden Gems"</h1>
-                <p class="text-stone-400 text-lg">"Films in the 6.5–7.9 rating sweet spot — seen by few, worth seeing by many."</p>
+            // Mobile filter toggle
+            <div class="md:hidden mb-4">
+                <button
+                    class="text-xs text-stone-400 border border-sc-border rounded px-3 py-1.5"
+                    on:click=move |_| set_filter_open.update(|v| *v = !*v)
+                >
+                    {move || if filter_open.get() { "✕ Close filters" } else { "⚙ Filters" }}
+                </button>
             </div>
-
-            <div class="flex flex-wrap gap-4 mb-6 p-4 bg-sc-panel rounded border border-sc-border">
-                <div class="flex flex-col gap-1">
-                    <label class="text-xs text-stone-500 uppercase tracking-wide">"Era"</label>
-                    <select class="bg-sc-card text-stone-200 border border-sc-border-input rounded px-3 py-2 text-sm"
-                        on:change=move |ev| {
-                            let v = event_target_value(&ev);
-                            set_page.set(1);
-                            set_min_year.set(if v.is_empty() { None } else { v.parse().ok() });
-                        }>
-                        <option value="">"All eras"</option>
-                        {DECADE_OPTIONS.iter().map(|(y,l)| view!{ <option value={y.to_string()}>{*l}</option> }).collect::<Vec<_>>()}
-                    </select>
-                </div>
-                <div class="flex flex-col gap-1">
-                    <label class="text-xs text-stone-500 uppercase tracking-wide">"Genre"</label>
-                    <select class="bg-sc-card text-stone-200 border border-sc-border-input rounded px-3 py-2 text-sm"
-                        on:change=move |ev| {
-                            let v = event_target_value(&ev);
-                            set_page.set(1);
-                            set_genre.set(if v.is_empty() { None } else { Some(v) });
-                        }>
-                        <option value="">"All genres"</option>
-                        {GENRES.iter().map(|g| view!{ <option value={*g}>{*g}</option> }).collect::<Vec<_>>()}
-                    </select>
-                </div>
-                <div class="flex items-end ml-auto">
-                    <span class="text-sm text-stone-500">
-                        {move || { let t = total.get(); if t > 0 { format!("{} gems", t) } else { String::new() } }}
-                    </span>
-                </div>
-            </div>
-
-            {move || if loading.get() {
-                view!{ <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                    {(0..10).map(|_| view!{ <SkeletonCard /> }).collect::<Vec<_>>()}
-                </div> }.into_any()
-            } else if let Some(err) = error.get() {
-                view!{ <div class="py-16 text-center"><p class="text-red-400">{err}</p></div> }.into_any()
-            } else if movies.get().is_empty() {
-                view!{ <div class="py-16 text-center text-stone-500">"No gems match your filters."</div> }.into_any()
-            } else {
-                view!{ <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                    {move || movies.get().into_iter().map(|m| view!{ <MovieCard movie=m /> }).collect::<Vec<_>>()}
-                </div> }.into_any()
-            }}
-
-            {move || {
-                let tp = total_pages();
-                if tp <= 1 { return view!{ <div /> }.into_any(); }
-                let cur = page.get();
-                let prev_disabled = page.get() <= 1;
-                let next_disabled = page.get() >= tp;
-                view!{
-                    <div class="flex items-center justify-center gap-4 mt-10">
-                        <button class="px-4 py-2 bg-sc-card text-stone-200 rounded disabled:opacity-30 hover:bg-sc-border"
-                            disabled=prev_disabled
-                            on:click=move |_| set_page.update(|p| *p -= 1)>"← Prev"</button>
-                        <span class="text-stone-400 text-sm">{format!("Page {} of {}", cur, tp)}</span>
-                        <button class="px-4 py-2 bg-sc-card text-stone-200 rounded disabled:opacity-30 hover:bg-sc-border"
-                            disabled=next_disabled
-                            on:click=move |_| set_page.update(|p| *p += 1)>"Next →"</button>
+            <div class="flex gap-8">
+                // Sidebar — always visible on md+, toggled on mobile
+                <aside class=move || if filter_open.get() {
+                    "block md:block w-52 flex-shrink-0"
+                } else {
+                    "hidden md:block w-52 flex-shrink-0"
+                }>
+                    <FilterSidebar
+                        genre=Signal::derive(genre) year=Signal::derive(year)
+                        search=Signal::derive(search) total=Signal::derive(move || total.get())
+                        on_genre=on_genre_cb on_year=on_year_cb on_search=on_search_cb
+                    />
+                </aside>
+                // Main content
+                <div class="flex-1 min-w-0">
+                    <div class="mb-6">
+                        <h1 class="text-4xl font-bold text-stone-100 mb-1">"Hidden Gems"</h1>
+                        <p class="text-stone-400">"Films in the 6.5–7.9 rating sweet spot — seen by few, worth seeing by many."</p>
                     </div>
-                }.into_any()
-            }}
+                    {move || render_movie_grid(loading.get(), error.get(), movies.get())}
+                    {move || {
+                        let tp = total_pages(); let p = page();
+                        let np = nav_pg.clone();
+                        let nn = nav_pg.clone();
+                        view!{ <PaginationBar page=p total_pages=tp
+                            on_prev=Callback::new(move |_| { np(&build_url("/", p - 1, &genre(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
+                            on_next=Callback::new(move |_| { nn(&build_url("/", p + 1, &genre(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
+                        /> }
+                    }}
+                </div>
+            </div>
         </div>
     }
 }
 
-// ── Acclaimed page ───────────────────────────────────────────────────────────
+// ── Acclaimed page ────────────────────────────────────────────────────────────
 #[component]
 pub fn AcclaimedPage() -> impl IntoView {
-    let (page, set_page) = signal(1i32);
-    let (movies, set_movies) = signal(Vec::<MovieSummary>::new());
-    let (total, set_total) = signal(0i64);
+    let query    = use_query_map();
+    let navigate = use_navigate();
+
+    let page   = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
+    let year   = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
+    let genre  = move || query.with(|q| q.get("genre").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let search = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+
+    let (movies,  set_movies)  = signal(Vec::<MovieSummary>::new());
+    let (total,   set_total)   = signal(0i64);
     let (loading, set_loading) = signal(true);
-    let (error, set_error) = signal(Option::<String>::None);
+    let (error,   set_error)   = signal(Option::<String>::None);
 
     Effect::new(move |_| {
-        let p = page.get();
+        let p = page(); let y = year(); let g = genre(); let s = search();
         set_loading.set(true);
         set_error.set(None);
         spawn_local(async move {
-            match api::fetch_acclaimed(p, PER_PAGE).await {
-                Ok(resp) => {
-                    set_movies.set(resp.data);
-                    set_total.set(resp.total);
-                    set_loading.set(false);
-                }
-                Err(e) => {
-                    set_error.set(Some(e));
-                    set_loading.set(false);
-                }
+            match api::fetch_acclaimed(p, PER_PAGE, y, g, s).await {
+                Ok(r) => { set_movies.set(r.data); set_total.set(r.total); set_loading.set(false); }
+                Err(e) => { set_error.set(Some(e)); set_loading.set(false); }
             }
         });
     });
 
     let total_pages = move || ((total.get() as f64) / (PER_PAGE as f64)).ceil() as i32;
 
+    let n1 = navigate.clone();
+    let on_genre_cb = Callback::new(move |g: Option<String>| {
+        n1(&build_url("/acclaimed", 1, &g, &year(), &search()), NavigateOptions { replace: true, ..Default::default() });
+    });
+    let n2 = navigate.clone();
+    let on_year_cb = Callback::new(move |y: Option<i32>| {
+        n2(&build_url("/acclaimed", 1, &genre(), &y, &search()), NavigateOptions { replace: true, ..Default::default() });
+    });
+    let n3 = navigate.clone();
+    let on_search_cb = Callback::new(move |s: Option<String>| {
+        n3(&build_url("/acclaimed", 1, &genre(), &year(), &s), NavigateOptions { replace: true, ..Default::default() });
+    });
+    let nav_pg = navigate;
+
+    let (filter_open, set_filter_open) = signal(false);
+
     view! {
         <div class="max-w-7xl mx-auto px-4 py-8">
-            <div class="mb-8">
-                <h1 class="text-4xl font-bold text-stone-100 mb-2">"Acclaimed"</h1>
-                <p class="text-stone-400 text-lg">"8.0+ community rating and 80%+ critic score — films everyone should see."</p>
+            <div class="md:hidden mb-4">
+                <button
+                    class="text-xs text-stone-400 border border-sc-border rounded px-3 py-1.5"
+                    on:click=move |_| set_filter_open.update(|v| *v = !*v)
+                >
+                    {move || if filter_open.get() { "✕ Close filters" } else { "⚙ Filters" }}
+                </button>
             </div>
-            {move || if loading.get() {
-                view!{ <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                    {(0..10).map(|_| view!{ <SkeletonCard /> }).collect::<Vec<_>>()}
-                </div> }.into_any()
-            } else if let Some(err) = error.get() {
-                view!{ <div class="py-16 text-center"><p class="text-red-400">{err}</p></div> }.into_any()
-            } else {
-                view!{ <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                    {move || movies.get().into_iter().map(|m| view!{ <MovieCard movie=m /> }).collect::<Vec<_>>()}
-                </div> }.into_any()
-            }}
-            {move || {
-                let tp = total_pages();
-                if tp <= 1 { return view!{ <div /> }.into_any(); }
-                let cur = page.get();
-                let prev_disabled = page.get() <= 1;
-                let next_disabled = page.get() >= tp;
-                view!{
-                    <div class="flex items-center justify-center gap-4 mt-10">
-                        <button class="px-4 py-2 bg-sc-card text-stone-200 rounded disabled:opacity-30 hover:bg-sc-border"
-                            disabled=prev_disabled
-                            on:click=move |_| set_page.update(|p| *p -= 1)>"← Prev"</button>
-                        <span class="text-stone-400 text-sm">{format!("Page {} of {}", cur, tp)}</span>
-                        <button class="px-4 py-2 bg-sc-card text-stone-200 rounded disabled:opacity-30 hover:bg-sc-border"
-                            disabled=next_disabled
-                            on:click=move |_| set_page.update(|p| *p += 1)>"Next →"</button>
+            <div class="flex gap-8">
+                <aside class=move || if filter_open.get() {
+                    "block md:block w-52 flex-shrink-0"
+                } else {
+                    "hidden md:block w-52 flex-shrink-0"
+                }>
+                    <FilterSidebar
+                        genre=Signal::derive(genre) year=Signal::derive(year)
+                        search=Signal::derive(search) total=Signal::derive(move || total.get())
+                        on_genre=on_genre_cb on_year=on_year_cb on_search=on_search_cb
+                    />
+                </aside>
+                <div class="flex-1 min-w-0">
+                    <div class="mb-6">
+                        <h1 class="text-4xl font-bold text-stone-100 mb-1">"Acclaimed"</h1>
+                        <p class="text-stone-400">"8.0+ community rating and 80%+ critic score — films everyone should see."</p>
                     </div>
-                }.into_any()
-            }}
+                    {move || render_movie_grid(loading.get(), error.get(), movies.get())}
+                    {move || {
+                        let tp = total_pages(); let p = page();
+                        let np = nav_pg.clone();
+                        let nn = nav_pg.clone();
+                        view!{ <PaginationBar page=p total_pages=tp
+                            on_prev=Callback::new(move |_| { np(&build_url("/acclaimed", p - 1, &genre(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
+                            on_next=Callback::new(move |_| { nn(&build_url("/acclaimed", p + 1, &genre(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
+                        /> }
+                    }}
+                </div>
+            </div>
         </div>
     }
 }
 
-// ── Wildcards page ───────────────────────────────────────────────────────────
+// ── Wildcards page ────────────────────────────────────────────────────────────
 #[component]
 pub fn WildcardsPage() -> impl IntoView {
-    let (page, set_page) = signal(1i32);
-    let (movies, set_movies) = signal(Vec::<MovieSummary>::new());
-    let (total, set_total) = signal(0i64);
+    let query    = use_query_map();
+    let navigate = use_navigate();
+
+    let page   = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
+    let year   = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
+    let genre  = move || query.with(|q| q.get("genre").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let search = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+
+    let (movies,  set_movies)  = signal(Vec::<MovieSummary>::new());
+    let (total,   set_total)   = signal(0i64);
     let (loading, set_loading) = signal(true);
-    let (error, set_error) = signal(Option::<String>::None);
+    let (error,   set_error)   = signal(Option::<String>::None);
 
     Effect::new(move |_| {
-        let p = page.get();
+        let p = page(); let y = year(); let g = genre(); let s = search();
         set_loading.set(true);
         set_error.set(None);
         spawn_local(async move {
-            match api::fetch_wildcards(p, PER_PAGE).await {
-                Ok(resp) => {
-                    set_movies.set(resp.data);
-                    set_total.set(resp.total);
-                    set_loading.set(false);
-                }
-                Err(e) => {
-                    set_error.set(Some(e));
-                    set_loading.set(false);
-                }
+            match api::fetch_wildcards(p, PER_PAGE, y, g, s).await {
+                Ok(r) => { set_movies.set(r.data); set_total.set(r.total); set_loading.set(false); }
+                Err(e) => { set_error.set(Some(e)); set_loading.set(false); }
             }
         });
     });
 
     let total_pages = move || ((total.get() as f64) / (PER_PAGE as f64)).ceil() as i32;
 
+    let n1 = navigate.clone();
+    let on_genre_cb = Callback::new(move |g: Option<String>| {
+        n1(&build_url("/wildcards", 1, &g, &year(), &search()), NavigateOptions { replace: true, ..Default::default() });
+    });
+    let n2 = navigate.clone();
+    let on_year_cb = Callback::new(move |y: Option<i32>| {
+        n2(&build_url("/wildcards", 1, &genre(), &y, &search()), NavigateOptions { replace: true, ..Default::default() });
+    });
+    let n3 = navigate.clone();
+    let on_search_cb = Callback::new(move |s: Option<String>| {
+        n3(&build_url("/wildcards", 1, &genre(), &year(), &s), NavigateOptions { replace: true, ..Default::default() });
+    });
+    let nav_pg = navigate;
+
+    let (filter_open, set_filter_open) = signal(false);
+
     view! {
         <div class="max-w-7xl mx-auto px-4 py-8">
-            <div class="mb-8">
-                <h1 class="text-4xl font-bold text-stone-100 mb-2">"Wildcards"</h1>
-                <p class="text-stone-400 text-lg">"Films critics disagreed on — they score well algorithmically but have RT below 50%."</p>
-                <p class="text-stone-500 text-sm mt-2">"Low vote counts here may reflect critical rejection rather than genuine undiscovery. Make of them what you will."</p>
+            <div class="md:hidden mb-4">
+                <button
+                    class="text-xs text-stone-400 border border-sc-border rounded px-3 py-1.5"
+                    on:click=move |_| set_filter_open.update(|v| *v = !*v)
+                >
+                    {move || if filter_open.get() { "✕ Close filters" } else { "⚙ Filters" }}
+                </button>
             </div>
-            {move || if loading.get() {
-                view!{ <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                    {(0..10).map(|_| view!{ <SkeletonCard /> }).collect::<Vec<_>>()}
-                </div> }.into_any()
-            } else if let Some(err) = error.get() {
-                view!{ <div class="py-16 text-center"><p class="text-red-400">{err}</p></div> }.into_any()
-            } else if movies.get().is_empty() {
-                view!{ <div class="py-16 text-center text-stone-500">"No wildcards yet — run scoring to populate this list."</div> }.into_any()
-            } else {
-                view!{ <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                    {move || movies.get().into_iter().map(|m| view!{ <MovieCard movie=m /> }).collect::<Vec<_>>()}
-                </div> }.into_any()
-            }}
-            {move || {
-                let tp = total_pages();
-                if tp <= 1 { return view!{ <div /> }.into_any(); }
-                let cur = page.get();
-                let prev_disabled = page.get() <= 1;
-                let next_disabled = page.get() >= tp;
-                view!{
-                    <div class="flex items-center justify-center gap-4 mt-10">
-                        <button class="px-4 py-2 bg-sc-card text-stone-200 rounded disabled:opacity-30 hover:bg-sc-border"
-                            disabled=prev_disabled
-                            on:click=move |_| set_page.update(|p| *p -= 1)>"← Prev"</button>
-                        <span class="text-stone-400 text-sm">{format!("Page {} of {}", cur, tp)}</span>
-                        <button class="px-4 py-2 bg-sc-card text-stone-200 rounded disabled:opacity-30 hover:bg-sc-border"
-                            disabled=next_disabled
-                            on:click=move |_| set_page.update(|p| *p += 1)>"Next →"</button>
+            <div class="flex gap-8">
+                <aside class=move || if filter_open.get() {
+                    "block md:block w-52 flex-shrink-0"
+                } else {
+                    "hidden md:block w-52 flex-shrink-0"
+                }>
+                    <FilterSidebar
+                        genre=Signal::derive(genre) year=Signal::derive(year)
+                        search=Signal::derive(search) total=Signal::derive(move || total.get())
+                        on_genre=on_genre_cb on_year=on_year_cb on_search=on_search_cb
+                    />
+                </aside>
+                <div class="flex-1 min-w-0">
+                    <div class="mb-6">
+                        <h1 class="text-4xl font-bold text-stone-100 mb-1">"Wildcards"</h1>
+                        <p class="text-stone-400">"Films critics disagreed on — they score well algorithmically but have RT below 50%."</p>
+                        <p class="text-stone-600 text-sm mt-1">"Low votes may reflect critical rejection rather than genuine undiscovery."</p>
                     </div>
-                }.into_any()
-            }}
+                    {move || render_movie_grid(loading.get(), error.get(), movies.get())}
+                    {move || {
+                        let tp = total_pages(); let p = page();
+                        let np = nav_pg.clone();
+                        let nn = nav_pg.clone();
+                        view!{ <PaginationBar page=p total_pages=tp
+                            on_prev=Callback::new(move |_| { np(&build_url("/wildcards", p - 1, &genre(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
+                            on_next=Callback::new(move |_| { nn(&build_url("/wildcards", p + 1, &genre(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
+                        /> }
+                    }}
+                </div>
+            </div>
         </div>
     }
 }
 
-// ── Movie detail page ────────────────────────────────────────────────────────
+// ── Movie detail page ─────────────────────────────────────────────────────────
 #[component]
 pub fn MovieDetail() -> impl IntoView {
     let params = use_params_map();
-    let (movie, set_movie) = signal(Option::<gem_finder_shared::types::Movie>::None);
+    let (movie,   set_movie)   = signal(Option::<gem_finder_shared::types::Movie>::None);
     let (loading, set_loading) = signal(true);
-    let (error, set_error) = signal(Option::<String>::None);
+    let (error,   set_error)   = signal(Option::<String>::None);
+
+    // Watchlist state for this movie (None = not on list, Some(state) = current state)
+    let (wl_state, set_wl_state) = signal(Option::<WatchState>::None);
+    let (wl_loading, set_wl_loading) = signal(false);
+    let (wl_error, set_wl_error) = signal(Option::<String>::None);
+
+    let auth = use_context::<RwSignal<Option<AuthState>>>().unwrap_or_else(|| RwSignal::new(None));
+    let modal_open = use_context::<RwSignal<bool>>().unwrap_or_else(|| RwSignal::new(false));
 
     let movie_id = move || params.with(|p| p.get("id").map(|v| v.to_string()));
 
+    // Load movie + watchlist state on mount
     spawn_local(async move {
         match movie_id() {
-            None => {
-                set_error.set(Some("Invalid movie ID".into()));
-                set_loading.set(false);
-            }
-            Some(encoded_id) => match api::fetch_movie(&encoded_id).await {
-                Ok(m) => {
+            None => { set_error.set(Some("Invalid movie ID".into())); set_loading.set(false); }
+            Some(id) => match api::fetch_movie(&id).await {
+                Ok(m)  => {
+                    // If logged in, load watchlist entry for this movie
+                    if let Some(a) = auth.get_untracked() {
+                        if let Some(db_id) = m.id {
+                            if let Ok(entry) = api::get_watchlist_entry(db_id, &a.token).await {
+                                set_wl_state.set(entry.map(|e| e.state));
+                            }
+                        }
+                    }
                     set_movie.set(Some(m));
                     set_loading.set(false);
                 }
-                Err(e) => {
-                    set_error.set(Some(e));
-                    set_loading.set(false);
-                }
+                Err(e) => { set_error.set(Some(e)); set_loading.set(false); }
             },
         }
     });
 
     view! {
         <div class="max-w-4xl mx-auto px-4 py-8">
-            <A href="/" attr:class="text-sc-accent hover:text-sc-accent-hover text-sm mb-6 inline-block">"← Back to Gems"</A>
+            // Browser back — preserves filter state in URL history
+            <button
+                class="text-sc-accent hover:text-sc-accent-hover text-sm mb-6 inline-block bg-transparent border-none cursor-pointer p-0"
+                on:click=|_| {
+                    if let Some(w) = web_sys::window() {
+                        if let Ok(h) = w.history() { let _ = h.back(); }
+                    }
+                }
+            >"← Back"</button>
+
             {move || if loading.get() {
                 view!{ <div class="animate-pulse mt-6 space-y-4">
                     <div class="h-8 bg-sc-border rounded w-2/3" />
@@ -320,13 +502,14 @@ pub fn MovieDetail() -> impl IntoView {
                         <div class="flex-1 space-y-3">
                             <div class="h-4 bg-sc-border rounded" />
                             <div class="h-4 bg-sc-border rounded w-5/6" />
-                            <div class="h-4 bg-sc-border rounded w-4/6" />
                         </div>
                     </div>
                 </div> }.into_any()
             } else if let Some(err) = error.get() {
-                view!{ <div class="py-16 text-center"><p class="text-red-400 mb-4">{err}</p>
-                    <A href="/" attr:class="text-sc-accent">"← Back"</A></div> }.into_any()
+                view!{ <div class="py-16 text-center">
+                    <p class="text-red-400 mb-4">{err}</p>
+                    <A href="/" attr:class="text-sc-accent">"← Back to Gems"</A>
+                </div> }.into_any()
             } else if let Some(m) = movie.get() {
                 let poster   = m.poster_url.clone().unwrap_or_default();
                 let title    = m.title.clone();
@@ -336,8 +519,9 @@ pub fn MovieDetail() -> impl IntoView {
                 let overview = m.overview.clone().unwrap_or_default();
                 let imdb_str = m.imdb_rating.map(|r| format!("{:.1}", r));
                 let rt_str   = m.rt_critic_score.map(|r| format!("{}%", r));
-                let gem_str  = m.gem_score.map(|s| format!("{:.0}%", s * 100.0));
-                let imdb_id  = m.imdb_id.clone();
+                let gem_str     = m.gem_score.map(|s| format!("{:.0}%", s * 100.0));
+                let imdb_id     = m.imdb_id.clone();
+                let movie_db_id = m.id.unwrap_or(0); // i64 is Copy — safe to use in multiple closures
 
                 view!{
                     <div class="mt-6">
@@ -356,13 +540,13 @@ pub fn MovieDetail() -> impl IntoView {
                                 <div class="flex flex-wrap gap-3 mb-6">
                                     {gem_str.map(|s| view!{
                                         <div class="flex flex-col items-center bg-sc-accent-deep border border-sc-accent-border rounded px-4 py-2">
-                                            <span class="text-xs text-sc-accent uppercase tracking-wide">"GEM"</span>
+                                            <span class="text-xs text-sc-accent uppercase tracking-wide">"💎 Gem Score"</span>
                                             <span class="text-2xl font-bold text-sc-accent-hover">{s}</span>
                                         </div>
                                     })}
                                     {imdb_str.map(|r| view!{
                                         <div class="flex flex-col items-center bg-yellow-900 border border-yellow-700 rounded px-4 py-2">
-                                            <span class="text-xs text-yellow-400 uppercase tracking-wide">"Rating"</span>
+                                            <span class="text-xs text-yellow-400 uppercase tracking-wide">"IMDb"</span>
                                             <span class="text-2xl font-bold text-yellow-300">{r}</span>
                                         </div>
                                     })}
@@ -373,6 +557,7 @@ pub fn MovieDetail() -> impl IntoView {
                                         </div>
                                     })}
                                 </div>
+                                // Genre tags — comma-split to show all tags simultaneously
                                 {if !genre.is_empty() {
                                     let tags: Vec<_> = genre.split(", ").map(|g| {
                                         let g = g.to_string();
@@ -387,8 +572,124 @@ pub fn MovieDetail() -> impl IntoView {
                                     <a href={format!("https://www.imdb.com/title/{}", id)}
                                         target="_blank" rel="noopener noreferrer"
                                         class="text-sm text-yellow-400 hover:text-yellow-300 border border-yellow-700 rounded px-3 py-1">
-                                        "View on IMDb →"</a>
+                                        "View on IMDb →"
+                                    </a>
                                 })}
+
+                                // Watchlist
+                                <div class="mt-6 pt-6 border-t border-sc-border">
+                                    {move || match auth.get() {
+                                        None => view! {
+                                            <div>
+                                                <p class="text-stone-500 text-sm mb-2">"Track this film in your watchlist"</p>
+                                                <button
+                                                    class="text-sm text-sc-accent hover:text-sc-accent-hover border border-sc-accent-border rounded px-3 py-1.5"
+                                                    on:click=move |_| modal_open.set(true)
+                                                >"Sign in to add"</button>
+                                            </div>
+                                        }.into_any(),
+                                        Some(a) => {
+                                            // Clone token once per button so each closure owns its own copy
+                                            let t_want = a.token.clone();
+                                            let t_watch = a.token.clone();
+                                            let t_nope = a.token.clone();
+                                            let t_del = a.token.clone();
+
+                                            let on_want = move |_: web_sys::MouseEvent| {
+                                                let t = t_want.clone();
+                                                set_wl_loading.set(true); set_wl_error.set(None);
+                                                spawn_local(async move {
+                                                    match api::upsert_watchlist(movie_db_id, WatchState::WantToWatch, None, &t).await {
+                                                        Ok(_) => set_wl_state.set(Some(WatchState::WantToWatch)),
+                                                        Err(e) => set_wl_error.set(Some(e)),
+                                                    }
+                                                    set_wl_loading.set(false);
+                                                });
+                                            };
+                                            let on_watched = move |_: web_sys::MouseEvent| {
+                                                let t = t_watch.clone();
+                                                set_wl_loading.set(true); set_wl_error.set(None);
+                                                spawn_local(async move {
+                                                    match api::upsert_watchlist(movie_db_id, WatchState::Watched, None, &t).await {
+                                                        Ok(_) => set_wl_state.set(Some(WatchState::Watched)),
+                                                        Err(e) => set_wl_error.set(Some(e)),
+                                                    }
+                                                    set_wl_loading.set(false);
+                                                });
+                                            };
+                                            let on_nope = move |_: web_sys::MouseEvent| {
+                                                let t = t_nope.clone();
+                                                set_wl_loading.set(true); set_wl_error.set(None);
+                                                spawn_local(async move {
+                                                    match api::upsert_watchlist(movie_db_id, WatchState::NotInterested, None, &t).await {
+                                                        Ok(_) => set_wl_state.set(Some(WatchState::NotInterested)),
+                                                        Err(e) => set_wl_error.set(Some(e)),
+                                                    }
+                                                    set_wl_loading.set(false);
+                                                });
+                                            };
+                                            let on_remove = move |_: web_sys::MouseEvent| {
+                                                let t = t_del.clone();
+                                                set_wl_loading.set(true); set_wl_error.set(None);
+                                                spawn_local(async move {
+                                                    match api::delete_watchlist(movie_db_id, &t).await {
+                                                        Ok(_) => set_wl_state.set(None),
+                                                        Err(e) => set_wl_error.set(Some(e)),
+                                                    }
+                                                    set_wl_loading.set(false);
+                                                });
+                                            };
+
+                                            view! {
+                                                <div>
+                                                    <p class="text-xs text-stone-600 uppercase tracking-widest mb-3">"Your list"</p>
+                                                    <div class="flex flex-wrap gap-2">
+                                                        <button
+                                                            class=move || if wl_state.get() == Some(WatchState::WantToWatch) {
+                                                                "px-3 py-1.5 rounded text-sm bg-sc-accent-bg text-stone-100 border border-sc-accent-border"
+                                                            } else {
+                                                                "px-3 py-1.5 rounded text-sm text-stone-400 border border-sc-border hover:border-sc-accent-border hover:text-stone-200"
+                                                            }
+                                                            on:click=on_want
+                                                            prop:disabled=move || wl_loading.get()
+                                                        >"🔖 Want to watch"</button>
+                                                        <button
+                                                            class=move || if wl_state.get() == Some(WatchState::Watched) {
+                                                                "px-3 py-1.5 rounded text-sm bg-sc-accent-bg text-stone-100 border border-sc-accent-border"
+                                                            } else {
+                                                                "px-3 py-1.5 rounded text-sm text-stone-400 border border-sc-border hover:border-sc-accent-border hover:text-stone-200"
+                                                            }
+                                                            on:click=on_watched
+                                                            prop:disabled=move || wl_loading.get()
+                                                        >"✓ Watched"</button>
+                                                        <button
+                                                            class=move || if wl_state.get() == Some(WatchState::NotInterested) {
+                                                                "px-3 py-1.5 rounded text-sm bg-sc-accent-bg text-stone-100 border border-sc-accent-border"
+                                                            } else {
+                                                                "px-3 py-1.5 rounded text-sm text-stone-400 border border-sc-border hover:border-sc-accent-border hover:text-stone-200"
+                                                            }
+                                                            on:click=on_nope
+                                                            prop:disabled=move || wl_loading.get()
+                                                        >"✗ Not interested"</button>
+                                                        // Always in DOM — hidden via class when no entry exists
+                                                        <button
+                                                            class=move || if wl_state.get().is_some() {
+                                                                "px-3 py-1.5 rounded text-sm text-stone-600 hover:text-stone-400 border border-sc-border"
+                                                            } else {
+                                                                "hidden"
+                                                            }
+                                                            on:click=on_remove
+                                                            prop:disabled=move || wl_loading.get()
+                                                        >"Remove"</button>
+                                                    </div>
+                                                    {move || wl_error.get().map(|e| view! {
+                                                        <p class="text-red-400 text-xs mt-2">{e}</p>
+                                                    })}
+                                                </div>
+                                            }.into_any()
+                                        }
+                                    }}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -398,7 +699,24 @@ pub fn MovieDetail() -> impl IntoView {
     }
 }
 
-// ── Skeleton card (loading placeholder) ──────────────────────────────────────
+// ── Shared movie grid renderer ────────────────────────────────────────────────
+fn render_movie_grid(loading: bool, error: Option<String>, movies: Vec<MovieSummary>) -> impl IntoView {
+    if loading {
+        view!{ <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {(0..10).map(|_| view!{ <SkeletonCard /> }).collect::<Vec<_>>()}
+        </div> }.into_any()
+    } else if let Some(err) = error {
+        view!{ <div class="py-16 text-center"><p class="text-red-400">{err}</p></div> }.into_any()
+    } else if movies.is_empty() {
+        view!{ <div class="py-16 text-center text-stone-500">"No films match your filters."</div> }.into_any()
+    } else {
+        view!{ <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {movies.into_iter().map(|m| view!{ <MovieCard movie=m /> }).collect::<Vec<_>>()}
+        </div> }.into_any()
+    }
+}
+
+// ── Skeleton card ─────────────────────────────────────────────────────────────
 #[component]
 fn SkeletonCard() -> impl IntoView {
     view! {
@@ -412,22 +730,35 @@ fn SkeletonCard() -> impl IntoView {
     }
 }
 
-// ── Movie card ───────────────────────────────────────────────────────────────
+// ── Movie card ────────────────────────────────────────────────────────────────
+// Uses a plain <a> + navigate() to avoid any attr:class forwarding uncertainty
+// with leptos_router's <A> component, while still preserving SPA navigation.
 #[component]
 fn MovieCard(movie: MovieSummary) -> impl IntoView {
-    let href = format!("/movie/{}", encode_movie_id(movie.id));
-    let poster = movie.poster_url.clone().unwrap_or_default();
+    let navigate  = use_navigate();
+    let href      = format!("/movie/{}", encode_movie_id(movie.id));
+    let href_nav  = href.clone();
+    let poster    = movie.poster_url.clone().unwrap_or_default();
     let has_poster = !poster.is_empty();
     let gem_score = movie.gem_score.map(|s| format!("{:.0}%", s * 100.0));
-    let year = movie.year.map(|y| y.to_string()).unwrap_or_default();
-    let title = movie.title.clone();
-    let director = movie.director.clone().unwrap_or_default();
-    let imdb = movie.imdb_rating.map(|r| format!("{:.1}", r));
-    let rt = movie.rt_critic_score.map(|r| format!("{}%", r));
+    let year      = movie.year.map(|y| y.to_string()).unwrap_or_default();
+    let title     = movie.title.clone();
+    let director  = movie.director.clone().unwrap_or_default();
+    let imdb      = movie.imdb_rating.map(|r| format!("{:.1}", r));
+    let rt        = movie.rt_critic_score.map(|r| format!("{}%", r));
 
     view! {
-        <A href=href attr:class="group block bg-sc-card rounded overflow-hidden hover:ring-1 hover:ring-sc-accent-bg transition-all duration-200">
-            <div class="relative overflow-hidden" style="aspect-ratio:2/3">
+        <a
+            href=href
+            class="group block bg-sc-card rounded overflow-hidden hover:ring-1 hover:ring-sc-accent-bg transition-all duration-200 cursor-pointer"
+            on:click=move |ev: web_sys::MouseEvent| {
+                if !ev.meta_key() && !ev.ctrl_key() && !ev.shift_key() && ev.button() == 0 {
+                    ev.prevent_default();
+                    navigate(&href_nav, Default::default());
+                }
+            }
+        >
+            <div class="overflow-hidden" style="aspect-ratio:2/3">
                 {if has_poster {
                     view!{ <img src=poster alt=title.clone() loading="lazy"
                         class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" /> }.into_any()
@@ -435,29 +766,26 @@ fn MovieCard(movie: MovieSummary) -> impl IntoView {
                     view!{ <div class="w-full h-full bg-sc-border flex items-center justify-center">
                         <span class="text-5xl">"🎬"</span></div> }.into_any()
                 }}
-                {gem_score.map(|s| view!{
-                    <div class="absolute top-2 right-2 bg-sc-accent-bg text-sc-base text-xs font-bold px-1.5 py-0.5 rounded">
-                        {s}</div>
-                })}
             </div>
             <div class="p-3">
                 <h3 class="text-stone-100 font-medium text-sm leading-snug line-clamp-2 mb-1">{title}</h3>
-                <div class="flex items-center justify-between text-xs">
+                <div class="flex items-center justify-between text-xs mb-0.5">
                     <span class="text-stone-400">{year}</span>
-                    <div class="flex gap-2">
+                    <div class="flex gap-2 items-center">
+                        {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold">"💎 "{s}</span> })}
                         {imdb.map(|r| view!{ <span class="text-yellow-400">"★ "{r}</span> })}
-                        {rt.map(|r| view!{ <span class="text-red-400">"🍅 "{r}</span> })}
+                        {rt.map(|r|  view!{ <span class="text-red-400">"🍅 "{r}</span> })}
                     </div>
                 </div>
                 {if !director.is_empty() {
-                    view!{ <p class="text-xs text-stone-500 mt-1 truncate">{director}</p> }.into_any()
+                    view!{ <p class="text-xs text-stone-500 mt-0.5 truncate">{director}</p> }.into_any()
                 } else { view!{ <span /> }.into_any() }}
             </div>
-        </A>
+        </a>
     }
 }
 
-// ── Admin page ───────────────────────────────────────────────────────────────
+// ── Admin page ────────────────────────────────────────────────────────────────
 #[derive(Clone, PartialEq)]
 enum ActionState {
     Idle,
@@ -466,17 +794,59 @@ enum ActionState {
     Failed(String),
 }
 
+// ── Auth verify page ──────────────────────────────────────────────────────────
+
+/// Landing page for magic-link email clicks: `/auth/verify?token=<uuid>`.
+/// Exchanges the one-time token for a JWT, saves it to localStorage + auth context,
+/// then redirects to the home page.
+#[component]
+pub fn VerifyPage() -> impl IntoView {
+    let query    = use_query_map();
+    let navigate = use_navigate();
+    let auth     = use_context::<RwSignal<Option<AuthState>>>().expect("auth context missing");
+
+    let (status, set_status) = signal("Verifying…".to_string());
+
+    let token_val = query.with_untracked(|q| q.get("token").unwrap_or_default().to_string());
+
+    if token_val.is_empty() {
+        set_status.set("Invalid link — no token provided.".to_string());
+    } else {
+        spawn_local(async move {
+            match api::verify_token(&token_val).await {
+                Ok(resp) => {
+                    save_auth_to_storage(&resp.token, &resp.user_id, &resp.email, None);
+                    auth.set(Some(AuthState {
+                        token: resp.token,
+                        user_id: resp.user_id,
+                        email: resp.email,
+                        username: None,
+                    }));
+                    navigate("/", NavigateOptions::default());
+                }
+                Err(e) => set_status.set(format!("Sign-in failed: {}", e)),
+            }
+        });
+    }
+
+    view! {
+        <div class="max-w-md mx-auto px-4 py-16 text-center">
+            <p class="text-2xl mb-4">"🔑"</p>
+            <p class="text-stone-300">{move || status.get()}</p>
+        </div>
+    }
+}
+
 #[component]
 pub fn AdminPage() -> impl IntoView {
-    let (seed_state, set_seed_state) = signal(ActionState::Idle);
-    let (sync_state, set_sync_state) = signal(ActionState::Idle);
+    let (seed_state,   set_seed_state)   = signal(ActionState::Idle);
+    let (sync_state,   set_sync_state)   = signal(ActionState::Idle);
     let (enrich_state, set_enrich_state) = signal(ActionState::Idle);
-    let (score_state, set_score_state) = signal(ActionState::Idle);
+    let (score_state,  set_score_state)  = signal(ActionState::Idle);
     let (enrich_limit, set_enrich_limit) = signal(10_000i64);
-    let (logs, set_logs) = signal(Vec::<serde_json::Value>::new());
+    let (logs,         set_logs)         = signal(Vec::<serde_json::Value>::new());
     let (logs_loading, set_logs_loading) = signal(false);
 
-    // Fetch logs — called on mount and on the polling interval
     let fetch_logs = move || {
         set_logs_loading.set(true);
         spawn_local(async move {
@@ -489,51 +859,41 @@ pub fn AdminPage() -> impl IntoView {
         });
     };
 
-    // Initial load
-    Effect::new(move |_| {
-        fetch_logs();
-    });
+    Effect::new(move |_| { fetch_logs(); });
 
     let run_seed = move |_| {
         set_seed_state.set(ActionState::Running);
         spawn_local(async move {
             match api::admin_seed().await {
-                Ok(_) => set_seed_state.set(ActionState::Done("Started — watch logs below".into())),
+                Ok(_)  => set_seed_state.set(ActionState::Done("Started — watch logs below".into())),
                 Err(e) => set_seed_state.set(ActionState::Failed(e)),
             }
         });
     };
-
     let run_sync = move |_| {
         set_sync_state.set(ActionState::Running);
         spawn_local(async move {
             match api::admin_sync().await {
-                Ok(_) => set_sync_state.set(ActionState::Done("Started — watch logs below".into())),
+                Ok(_)  => set_sync_state.set(ActionState::Done("Started — watch logs below".into())),
                 Err(e) => set_sync_state.set(ActionState::Failed(e)),
             }
         });
     };
-
     let run_enrich = move |_| {
         let limit = enrich_limit.get();
         set_enrich_state.set(ActionState::Running);
         spawn_local(async move {
             match api::admin_enrich(limit).await {
-                Ok(_) => {
-                    set_enrich_state.set(ActionState::Done("Started — watch logs below".into()))
-                }
+                Ok(_)  => set_enrich_state.set(ActionState::Done("Started — watch logs below".into())),
                 Err(e) => set_enrich_state.set(ActionState::Failed(e)),
             }
         });
     };
-
     let run_score = move |_| {
         set_score_state.set(ActionState::Running);
         spawn_local(async move {
             match api::admin_score().await {
-                Ok(_) => {
-                    set_score_state.set(ActionState::Done("Started — watch logs below".into()))
-                }
+                Ok(_)  => set_score_state.set(ActionState::Done("Started — watch logs below".into())),
                 Err(e) => set_score_state.set(ActionState::Failed(e)),
             }
         });
@@ -544,7 +904,7 @@ pub fn AdminPage() -> impl IntoView {
             <h1 class="text-3xl font-bold text-stone-100 mb-2">"Admin"</h1>
             <p class="text-stone-400 mb-8">"Operations run on the server — you can close this page. Check logs below for progress."</p>
 
-            // Full pipeline — seed test data
+            // Seed
             <div class="mb-6 p-4 bg-sc-panel rounded border border-sc-accent-border">
                 <div class="flex items-start justify-between gap-4">
                     <div class="flex-1 min-w-0">
@@ -552,25 +912,10 @@ pub fn AdminPage() -> impl IntoView {
                         <p class="text-xs text-stone-400 mt-0.5">"Runs the full pipeline: sync all eras + blockbusters, enrich via OMDb (2000 limit), score, classify acclaimed. Use on a fresh database. Takes 20–60+ min."</p>
                     </div>
                     <div class="flex items-center gap-3 flex-shrink-0">
-                        <span class="text-xs max-w-xs truncate"
-                            class:text-stone-500={move || seed_state.get() == ActionState::Idle}
-                            class:text-yellow-400={move || seed_state.get() == ActionState::Running}
-                            class:animate-pulse={move || seed_state.get() == ActionState::Running}
-                            class:text-sc-accent={move || matches!(seed_state.get(), ActionState::Done(_))}
-                            class:text-red-400={move || matches!(seed_state.get(), ActionState::Failed(_))}>
-                            {move || match seed_state.get() {
-                                ActionState::Idle       => String::new(),
-                                ActionState::Running    => "Running…".to_string(),
-                                ActionState::Done(msg)  => msg,
-                                ActionState::Failed(e)  => format!("✗ {}", e),
-                            }}
-                        </span>
-                        <button
-                            class="px-3 py-1.5 bg-sc-accent-bg hover:bg-sc-accent-bg-hover text-stone-100 text-xs rounded disabled:opacity-50"
-                            disabled={move || seed_state.get() == ActionState::Running}
-                            on:click=run_seed>
-                            "Seed"
-                        </button>
+                        <AdminStatus state=seed_state.into() />
+                        <button class="px-3 py-1.5 bg-sc-accent-bg hover:bg-sc-accent-bg-hover text-stone-100 text-xs rounded disabled:opacity-50"
+                            disabled=move || seed_state.get() == ActionState::Running
+                            on:click=run_seed>"Seed"</button>
                     </div>
                 </div>
             </div>
@@ -583,25 +928,10 @@ pub fn AdminPage() -> impl IntoView {
                         <p class="text-xs text-stone-400 mt-0.5">"Fetch new movies from TMDB across all era windows + blockbusters. 5–15 min."</p>
                     </div>
                     <div class="flex items-center gap-3 flex-shrink-0">
-                        <span class="text-xs max-w-xs truncate"
-                            class:text-stone-500={move || sync_state.get() == ActionState::Idle}
-                            class:text-yellow-400={move || sync_state.get() == ActionState::Running}
-                            class:animate-pulse={move || sync_state.get() == ActionState::Running}
-                            class:text-sc-accent={move || matches!(sync_state.get(), ActionState::Done(_))}
-                            class:text-red-400={move || matches!(sync_state.get(), ActionState::Failed(_))}>
-                            {move || match sync_state.get() {
-                                ActionState::Idle       => String::new(),
-                                ActionState::Running    => "Running…".to_string(),
-                                ActionState::Done(msg)  => msg,
-                                ActionState::Failed(e)  => format!("✗ {}", e),
-                            }}
-                        </span>
-                        <button
-                            class="px-3 py-1.5 bg-sc-accent-bg hover:bg-sc-accent-bg-hover text-stone-100 text-xs rounded disabled:opacity-50"
-                            disabled={move || sync_state.get() == ActionState::Running}
-                            on:click=run_sync>
-                            "Sync"
-                        </button>
+                        <AdminStatus state=sync_state.into() />
+                        <button class="px-3 py-1.5 bg-sc-accent-bg hover:bg-sc-accent-bg-hover text-stone-100 text-xs rounded disabled:opacity-50"
+                            disabled=move || sync_state.get() == ActionState::Running
+                            on:click=run_sync>"Sync"</button>
                     </div>
                 </div>
             </div>
@@ -616,34 +946,20 @@ pub fn AdminPage() -> impl IntoView {
                             <label class="text-xs text-stone-500">"Limit:"</label>
                             <input type="number" min="1" max="50000"
                                 class="w-24 bg-sc-card border border-sc-border-input text-stone-200 text-xs rounded px-2 py-1"
-                                prop:value={move || enrich_limit.get().to_string()}
+                                prop:value=move || enrich_limit.get().to_string()
                                 on:change=move |ev| {
                                     if let Ok(v) = event_target_value(&ev).parse::<i64>() {
                                         set_enrich_limit.set(v.clamp(1, 50_000));
                                     }
-                                } />
+                                }
+                            />
                         </div>
                     </div>
                     <div class="flex items-center gap-3 flex-shrink-0">
-                        <span class="text-xs max-w-xs truncate"
-                            class:text-stone-500={move || enrich_state.get() == ActionState::Idle}
-                            class:text-yellow-400={move || enrich_state.get() == ActionState::Running}
-                            class:animate-pulse={move || enrich_state.get() == ActionState::Running}
-                            class:text-sc-accent={move || matches!(enrich_state.get(), ActionState::Done(_))}
-                            class:text-red-400={move || matches!(enrich_state.get(), ActionState::Failed(_))}>
-                            {move || match enrich_state.get() {
-                                ActionState::Idle       => String::new(),
-                                ActionState::Running    => "Running…".to_string(),
-                                ActionState::Done(msg)  => msg,
-                                ActionState::Failed(e)  => format!("✗ {}", e),
-                            }}
-                        </span>
-                        <button
-                            class="px-3 py-1.5 bg-sc-accent-bg hover:bg-sc-accent-bg-hover text-stone-100 text-xs rounded disabled:opacity-50"
-                            disabled={move || enrich_state.get() == ActionState::Running}
-                            on:click=run_enrich>
-                            "Enrich"
-                        </button>
+                        <AdminStatus state=enrich_state.into() />
+                        <button class="px-3 py-1.5 bg-sc-accent-bg hover:bg-sc-accent-bg-hover text-stone-100 text-xs rounded disabled:opacity-50"
+                            disabled=move || enrich_state.get() == ActionState::Running
+                            on:click=run_enrich>"Enrich"</button>
                     </div>
                 </div>
             </div>
@@ -656,25 +972,10 @@ pub fn AdminPage() -> impl IntoView {
                         <p class="text-xs text-stone-400 mt-0.5">"Recalculate gem scores and re-classify wildcards. Under 1 min."</p>
                     </div>
                     <div class="flex items-center gap-3 flex-shrink-0">
-                        <span class="text-xs max-w-xs truncate"
-                            class:text-stone-500={move || score_state.get() == ActionState::Idle}
-                            class:text-yellow-400={move || score_state.get() == ActionState::Running}
-                            class:animate-pulse={move || score_state.get() == ActionState::Running}
-                            class:text-sc-accent={move || matches!(score_state.get(), ActionState::Done(_))}
-                            class:text-red-400={move || matches!(score_state.get(), ActionState::Failed(_))}>
-                            {move || match score_state.get() {
-                                ActionState::Idle       => String::new(),
-                                ActionState::Running    => "Running…".to_string(),
-                                ActionState::Done(msg)  => msg,
-                                ActionState::Failed(e)  => format!("✗ {}", e),
-                            }}
-                        </span>
-                        <button
-                            class="px-3 py-1.5 bg-sc-accent-bg hover:bg-sc-accent-bg-hover text-stone-100 text-xs rounded disabled:opacity-50"
-                            disabled={move || score_state.get() == ActionState::Running}
-                            on:click=run_score>
-                            "Score"
-                        </button>
+                        <AdminStatus state=score_state.into() />
+                        <button class="px-3 py-1.5 bg-sc-accent-bg hover:bg-sc-accent-bg-hover text-stone-100 text-xs rounded disabled:opacity-50"
+                            disabled=move || score_state.get() == ActionState::Running
+                            on:click=run_score>"Score"</button>
                     </div>
                 </div>
             </div>
@@ -683,11 +984,8 @@ pub fn AdminPage() -> impl IntoView {
             <div>
                 <div class="flex items-center justify-between mb-3">
                     <h2 class="text-lg font-semibold text-stone-200">"Run Logs"</h2>
-                    <button
-                        class="text-xs text-stone-400 hover:text-stone-200 px-2 py-1 bg-sc-card rounded border border-sc-border"
-                        on:click=move |_| fetch_logs()>
-                        "Refresh"
-                    </button>
+                    <button class="text-xs text-stone-400 hover:text-stone-200 px-2 py-1 bg-sc-card rounded border border-sc-border"
+                        on:click=move |_| fetch_logs()>"Refresh"</button>
                 </div>
                 {move || if logs_loading.get() {
                     view!{ <p class="text-stone-500 text-sm">"Loading…"</p> }.into_any()
@@ -720,5 +1018,25 @@ pub fn AdminPage() -> impl IntoView {
                 }}
             </div>
         </div>
+    }
+}
+
+// ── Admin status chip ─────────────────────────────────────────────────────────
+#[component]
+fn AdminStatus(state: Signal<ActionState>) -> impl IntoView {
+    view! {
+        <span class="text-xs max-w-xs truncate"
+            class:text-stone-500={move || state.get() == ActionState::Idle}
+            class:text-yellow-400={move || state.get() == ActionState::Running}
+            class:animate-pulse={move || state.get() == ActionState::Running}
+            class:text-sc-accent={move || matches!(state.get(), ActionState::Done(_))}
+            class:text-red-400={move || matches!(state.get(), ActionState::Failed(_))}>
+            {move || match state.get() {
+                ActionState::Idle      => String::new(),
+                ActionState::Running   => "Running…".to_string(),
+                ActionState::Done(msg) => msg,
+                ActionState::Failed(e) => format!("✗ {}", e),
+            }}
+        </span>
     }
 }

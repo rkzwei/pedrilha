@@ -1,5 +1,5 @@
 use anyhow::Result;
-use gem_finder_shared::types::{Movie, MovieSummary, RunLogEntry};
+use gem_finder_shared::types::{Movie, MovieSummary, RunLogEntry, User, WatchlistEntry, WatchState};
 use turso::{params, Connection, Value};
 
 /// Helper to extract an Option<String> from a Value.
@@ -675,8 +675,8 @@ pub async fn update_movie_enrichment(
 ) -> Result<()> {
     conn.execute(
         "UPDATE movies SET
-            imdb_rating       = COALESCE(?, imdb_rating),
-            imdb_vote_count   = COALESCE(?, imdb_vote_count),
+            imdb_rating       = COALESCE(?1, imdb_rating),
+            imdb_vote_count   = COALESCE(?2, imdb_vote_count),
             rt_critic_score   = COALESCE(?, rt_critic_score),
             rt_audience_score = COALESCE(?, rt_audience_score)
          WHERE id = ?",
@@ -690,4 +690,291 @@ pub async fn update_movie_enrichment(
     )
     .await?;
     Ok(())
+}
+
+// ── Phase 8: Users ────────────────────────────────────────────────────────────
+
+fn row_to_user(row: &turso::Row) -> Result<User> {
+    Ok(User {
+        id: value_to_opt_string(row.get_value(0)?).unwrap_or_default(),
+        email: value_to_opt_string(row.get_value(1)?).unwrap_or_default(),
+        username: value_to_opt_string(row.get_value(2)?),
+        created_at: value_to_opt_string(row.get_value(3)?),
+        last_login: value_to_opt_string(row.get_value(4)?),
+    })
+}
+
+/// Find a user by email address.
+pub async fn find_user_by_email(conn: &Connection, email: &str) -> Result<Option<User>> {
+    let mut stmt = conn
+        .prepare("SELECT id, email, username, created_at, last_login FROM users WHERE email = ?1")
+        .await?;
+    let mut rows = stmt.query(params![email]).await?;
+    match rows.next().await? {
+        Some(row) => Ok(Some(row_to_user(&row)?)),
+        None => Ok(None),
+    }
+}
+
+/// Find a user by their UUID.
+pub async fn find_user_by_id(conn: &Connection, user_id: &str) -> Result<Option<User>> {
+    let mut stmt = conn
+        .prepare("SELECT id, email, username, created_at, last_login FROM users WHERE id = ?1")
+        .await?;
+    let mut rows = stmt.query(params![user_id]).await?;
+    match rows.next().await? {
+        Some(row) => Ok(Some(row_to_user(&row)?)),
+        None => Ok(None),
+    }
+}
+
+/// Find a user by email or create a new one. Returns the user either way.
+pub async fn find_or_create_user(conn: &Connection, new_id: &str, email: &str) -> Result<User> {
+    if let Some(user) = find_user_by_email(conn, email).await? {
+        return Ok(user);
+    }
+    conn.execute(
+        "INSERT INTO users (id, email) VALUES (?1, ?2)",
+        params![new_id, email],
+    )
+    .await?;
+    find_user_by_email(conn, email)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("user insert succeeded but select returned nothing"))
+}
+
+/// Record the current time as last_login for a user.
+pub async fn touch_user_login(conn: &Connection, user_id: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE users SET last_login = datetime('now') WHERE id = ?1",
+        params![user_id],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Set or update a user's username.
+/// Returns an error if the username is already taken (UNIQUE constraint violation).
+pub async fn set_username(conn: &Connection, user_id: &str, username: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE users SET username = ?1 WHERE id = ?2",
+        params![username, user_id],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Returns `true` if the username is not already claimed by any user.
+pub async fn username_available(conn: &Connection, username: &str) -> Result<bool> {
+    let mut stmt = conn
+        .prepare("SELECT 1 FROM users WHERE username = ?1 LIMIT 1")
+        .await?;
+    let mut rows = stmt.query(params![username]).await?;
+    Ok(rows.next().await?.is_none())
+}
+
+// ── Phase 8: Magic tokens ─────────────────────────────────────────────────────
+
+/// Insert a new magic token for a user.
+pub async fn create_magic_token(
+    conn: &Connection,
+    token: &str,
+    user_id: &str,
+    expires_at: &str,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO magic_tokens (token, user_id, expires_at) VALUES (?1, ?2, ?3)",
+        params![token, user_id, expires_at],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Verify and consume a magic token. Returns the owning `User` on success.
+///
+/// Returns `Ok(None)` when the token is unknown, already used, or expired.
+pub async fn consume_magic_token(conn: &Connection, token: &str) -> Result<Option<User>> {
+    let mut stmt = conn
+        .prepare("SELECT user_id, expires_at, used_at FROM magic_tokens WHERE token = ?1")
+        .await?;
+    let mut rows = stmt.query(params![token]).await?;
+
+    let row = match rows.next().await? {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+
+    let user_id = value_to_opt_string(row.get_value(0)?).unwrap_or_default();
+    let expires_at = value_to_opt_string(row.get_value(1)?).unwrap_or_default();
+    let used_at = value_to_opt_string(row.get_value(2)?);
+
+    if used_at.is_some() {
+        return Ok(None); // already consumed
+    }
+
+    // Check expiry using SQLite's datetime comparison
+    let mut exp_stmt = conn.prepare("SELECT 1 WHERE ?1 < datetime('now')").await?;
+    let mut exp_rows = exp_stmt.query(params![expires_at.as_str()]).await?;
+    if exp_rows.next().await?.is_some() {
+        return Ok(None); // expired
+    }
+
+    conn.execute(
+        "UPDATE magic_tokens SET used_at = datetime('now') WHERE token = ?1",
+        params![token],
+    )
+    .await?;
+
+    find_user_by_id(conn, &user_id).await
+}
+
+// ── Phase 8: Passkeys ─────────────────────────────────────────────────────────
+
+/// Persist a WebAuthn passkey credential for a user.
+///
+/// `credential_id` — base64url-encoded credential ID.
+/// `passkey_json`  — full `webauthn_rs::Passkey` serialised to JSON; needed
+///                   to rebuild the `Passkey` list for authentication challenges.
+pub async fn store_passkey(
+    conn: &Connection,
+    user_id: &str,
+    credential_id: &str,
+    passkey_json: &str,
+    name: Option<&str>,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO passkeys (user_id, credential_id, public_key, name)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(credential_id) DO UPDATE SET public_key = excluded.public_key",
+        params![user_id, credential_id, passkey_json, name.unwrap_or("")],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Load all passkey JSON blobs for a user.
+/// Deserialise each with `serde_json::from_str::<webauthn_rs::prelude::Passkey>`.
+pub async fn get_user_passkey_jsons(conn: &Connection, user_id: &str) -> Result<Vec<String>> {
+    let mut stmt = conn
+        .prepare("SELECT public_key FROM passkeys WHERE user_id = ?1")
+        .await?;
+    let mut rows = stmt.query(params![user_id]).await?;
+    let mut result = Vec::new();
+    while let Some(row) = rows.next().await? {
+        if let Some(json) = value_to_opt_string(row.get_value(0)?) {
+            result.push(json);
+        }
+    }
+    Ok(result)
+}
+
+/// Update the sign count after a successful passkey authentication.
+pub async fn update_passkey_sign_count(
+    conn: &Connection,
+    credential_id: &str,
+    sign_count: i64,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE passkeys SET sign_count = ?1 WHERE credential_id = ?2",
+        params![sign_count, credential_id],
+    )
+    .await?;
+    Ok(())
+}
+
+// ── Phase 8: Watchlist ────────────────────────────────────────────────────────
+
+/// Fetch a single watchlist entry for a user × movie pair. Returns `None` if not present.
+pub async fn get_watchlist_entry(
+    conn: &Connection,
+    user_id: &str,
+    movie_id: i64,
+) -> Result<Option<WatchlistEntry>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, user_id, movie_id, state, user_rating, created_at, updated_at
+             FROM watchlist WHERE user_id = ?1 AND movie_id = ?2",
+        )
+        .await?;
+    let mut rows = stmt.query(params![user_id, movie_id]).await?;
+    match rows.next().await? {
+        Some(row) => Ok(Some(row_to_watchlist_entry(&row)?)),
+        None => Ok(None),
+    }
+}
+
+/// Fetch all watchlist entries for a user, ordered by most recently updated.
+pub async fn get_user_watchlist(
+    conn: &Connection,
+    user_id: &str,
+) -> Result<Vec<WatchlistEntry>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, user_id, movie_id, state, user_rating, created_at, updated_at
+             FROM watchlist WHERE user_id = ?1 ORDER BY updated_at DESC",
+        )
+        .await?;
+    let mut rows = stmt.query(params![user_id]).await?;
+    let mut result = Vec::new();
+    while let Some(row) = rows.next().await? {
+        result.push(row_to_watchlist_entry(&row)?);
+    }
+    Ok(result)
+}
+
+/// Insert or update a watchlist entry. Uses UPSERT on the (user_id, movie_id) unique constraint.
+pub async fn upsert_watchlist_entry(
+    conn: &Connection,
+    user_id: &str,
+    movie_id: i64,
+    state: &str,
+    user_rating: Option<i32>,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO watchlist (user_id, movie_id, state, user_rating, updated_at)
+         VALUES (?1, ?2, ?3, ?4, datetime('now'))
+         ON CONFLICT(user_id, movie_id) DO UPDATE SET
+             state       = excluded.state,
+             user_rating = excluded.user_rating,
+             updated_at  = datetime('now')",
+        params![user_id, movie_id, state, user_rating],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Remove a watchlist entry. Silently succeeds if the entry does not exist.
+pub async fn delete_watchlist_entry(
+    conn: &Connection,
+    user_id: &str,
+    movie_id: i64,
+) -> Result<()> {
+    conn.execute(
+        "DELETE FROM watchlist WHERE user_id = ?1 AND movie_id = ?2",
+        params![user_id, movie_id],
+    )
+    .await?;
+    Ok(())
+}
+
+fn row_to_watchlist_entry(row: &turso::Row) -> Result<WatchlistEntry> {
+    let id          = value_to_opt_i64(row.get_value(0)?);
+    let user_id     = value_to_opt_string(row.get_value(1)?).unwrap_or_default();
+    let movie_id    = value_to_opt_i64(row.get_value(2)?).unwrap_or(0);
+    let state_str   = value_to_opt_string(row.get_value(3)?).unwrap_or_default();
+    let user_rating = value_to_opt_i32(row.get_value(4)?);
+    let created_at  = value_to_opt_string(row.get_value(5)?);
+    let updated_at  = value_to_opt_string(row.get_value(6)?);
+
+    let state = WatchState::try_from(state_str.as_str())?;
+
+    Ok(WatchlistEntry {
+        id,
+        user_id,
+        movie_id,
+        state,
+        user_rating,
+        created_at,
+        updated_at,
+    })
 }

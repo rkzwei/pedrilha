@@ -4,17 +4,21 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+mod middleware;
 mod routes;
 mod services;
 use gem_finder_db::{migrations, models, Database};
 use gem_finder_shared::types::{HealthResponse, Movie, MovieSummary, PaginatedResponse};
+use routes::auth::ChallengeStore;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::sync::{atomic::AtomicBool, Arc};
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use webauthn_rs::prelude::*;
 
 /// How long list responses are served from the in-memory cache before a DB refresh.
 /// Lists only change when the admin runs a score/sync job, so 5 minutes is conservative.
@@ -75,10 +79,17 @@ struct AppState {
     tmdb_api_key: String,
     omdb_api_key: String,
     /// Prevents concurrent admin operations (sync, enrich, score, seed).
-    /// Set to `true` while any admin task is running; cleared by the task's RAII guard.
     admin_busy: Arc<AtomicBool>,
     /// In-memory TTL cache for the three public movie list endpoints.
     movie_cache: Arc<RwLock<MovieCache>>,
+    /// Secret used to sign and verify JWTs.
+    jwt_secret: String,
+    /// WebAuthn relying-party instance — stateless, cheap to clone.
+    webauthn: Arc<Webauthn>,
+    /// Pending WebAuthn passkey registration challenges keyed by user_id.
+    passkey_reg_challenges: ChallengeStore<PasskeyRegistration>,
+    /// Pending WebAuthn passkey authentication challenges keyed by session key.
+    passkey_auth_challenges: ChallengeStore<PasskeyAuthentication>,
 }
 
 #[derive(Deserialize)]
@@ -87,18 +98,25 @@ struct GemsQuery {
     per_page: Option<i32>,
     min_year: Option<i32>,
     genre: Option<String>,
+    q: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct AclaimedQuery {
     page: Option<i32>,
     per_page: Option<i32>,
+    min_year: Option<i32>,
+    genre: Option<String>,
+    q: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct WildcardsQuery {
     page: Option<i32>,
     per_page: Option<i32>,
+    min_year: Option<i32>,
+    genre: Option<String>,
+    q: Option<String>,
 }
 
 #[tokio::main]
@@ -184,12 +202,36 @@ async fn main() {
         tracing::warn!("OMDB_API_KEY not set — enrichment will be unavailable");
     }
 
+    // JWT secret — required for auth to function.
+    let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| {
+        tracing::warn!("JWT_SECRET not set — using insecure default (set this in production!)");
+        "change-me-in-production".to_string()
+    });
+
+    // WebAuthn relying-party configuration.
+    let webauthn_rp_id =
+        std::env::var("WEBAUTHN_RP_ID").unwrap_or_else(|_| "localhost".to_string());
+    let webauthn_origin = std::env::var("WEBAUTHN_ORIGIN")
+        .unwrap_or_else(|_| "http://localhost:3000".to_string());
+
+    let webauthn_origin_url =
+        Url::parse(&webauthn_origin).expect("WEBAUTHN_ORIGIN must be a valid URL");
+
+    let webauthn = WebauthnBuilder::new(&webauthn_rp_id, &webauthn_origin_url)
+        .expect("invalid WebAuthn config")
+        .build()
+        .expect("failed to build WebAuthn");
+
     let state = AppState {
         db: Arc::new(db),
         tmdb_api_key,
         omdb_api_key,
         admin_busy: Arc::new(AtomicBool::new(false)),
         movie_cache: Arc::new(RwLock::new(MovieCache::default())),
+        jwt_secret,
+        webauthn: Arc::new(webauthn),
+        passkey_reg_challenges: Arc::new(Mutex::new(HashMap::new())),
+        passkey_auth_challenges: Arc::new(Mutex::new(HashMap::new())),
     };
 
     let router = Router::new()
@@ -198,6 +240,45 @@ async fn main() {
         .route("/api/acclaimed", get(get_acclaimed))
         .route("/api/wildcards", get(get_wildcards))
         .route("/api/movies/{id}", get(get_movie))
+        // Auth
+        .route("/api/auth/magic", post(routes::auth::magic_link_request))
+        .route("/api/auth/verify", get(routes::auth::magic_link_verify))
+        .route(
+            "/api/auth/passkey/register/start",
+            post(routes::auth::passkey_register_start),
+        )
+        .route(
+            "/api/auth/passkey/register/finish",
+            post(routes::auth::passkey_register_finish),
+        )
+        .route(
+            "/api/auth/passkey/authenticate/start",
+            post(routes::auth::passkey_auth_start),
+        )
+        .route(
+            "/api/auth/passkey/authenticate/finish",
+            post(routes::auth::passkey_auth_finish),
+        )
+        // Watchlist — JWT protected
+        .route(
+            "/api/watchlist",
+            get(routes::watchlist::get_watchlist).post(routes::watchlist::upsert_watchlist),
+        )
+        .route(
+            "/api/watchlist/movie/:movie_id",
+            get(routes::watchlist::get_watchlist_movie)
+                .delete(routes::watchlist::delete_watchlist_movie),
+        )
+        // User — JWT protected
+        .route(
+            "/api/user/username",
+            axum::routing::patch(routes::auth::set_username),
+        )
+        .route(
+            "/api/user/username/check",
+            get(routes::auth::check_username),
+        )
+        // Admin
         .route("/api/score", post(run_scoring))
         .route("/api/admin/sync", post(routes::admin::trigger_sync))
         .route("/api/admin/enrich", post(routes::admin::trigger_enrich))
@@ -558,6 +639,12 @@ async fn get_gems(
                     return false;
                 }
             }
+            if let Some(ref q) = query.q {
+                let q_lower = q.to_lowercase();
+                if !m.title.to_lowercase().contains(&q_lower) {
+                    return false;
+                }
+            }
             true
         })
         .collect();
@@ -580,7 +667,7 @@ async fn get_gems(
     }))
 }
 
-/// GET /api/acclaimed — paginated acclaimed films (IMDb ≥ 8.0, RT ≥ 80%).
+/// GET /api/acclaimed — paginated acclaimed films (IMDb ≥ 8.0, RT ≥ 80%) with optional filters.
 async fn get_acclaimed(
     State(state): State<AppState>,
     Query(query): Query<AclaimedQuery>,
@@ -616,12 +703,32 @@ async fn get_acclaimed(
         full_list
     };
 
-    let total = full_list.len() as i64;
+    let filtered: Vec<&MovieSummary> = full_list
+        .iter()
+        .filter(|m| {
+            if let Some(min_y) = query.min_year {
+                if m.year.map_or(true, |y| y < min_y) { return false; }
+            }
+            if let Some(ref g) = query.genre {
+                let g_lower = g.to_lowercase();
+                if !m.genre.as_deref().map_or(false, |mg| mg.to_lowercase().contains(&g_lower)) {
+                    return false;
+                }
+            }
+            if let Some(ref q) = query.q {
+                if !m.title.to_lowercase().contains(&q.to_lowercase()) { return false; }
+            }
+            true
+        })
+        .collect();
+
+    let total = filtered.len() as i64;
     let start = ((page - 1) * per_page) as usize;
-    let data: Vec<MovieSummary> = full_list
+    let data: Vec<MovieSummary> = filtered
         .into_iter()
         .skip(start)
         .take(per_page as usize)
+        .cloned()
         .collect();
 
     Ok(Json(PaginatedResponse {
@@ -632,7 +739,7 @@ async fn get_acclaimed(
     }))
 }
 
-/// GET /api/wildcards — paginated wildcard films (scored but RT < 50%).
+/// GET /api/wildcards — paginated wildcard films (scored but RT < 50%) with optional filters.
 async fn get_wildcards(
     State(state): State<AppState>,
     Query(query): Query<WildcardsQuery>,
@@ -668,12 +775,32 @@ async fn get_wildcards(
         full_list
     };
 
-    let total = full_list.len() as i64;
+    let filtered: Vec<&MovieSummary> = full_list
+        .iter()
+        .filter(|m| {
+            if let Some(min_y) = query.min_year {
+                if m.year.map_or(true, |y| y < min_y) { return false; }
+            }
+            if let Some(ref g) = query.genre {
+                let g_lower = g.to_lowercase();
+                if !m.genre.as_deref().map_or(false, |mg| mg.to_lowercase().contains(&g_lower)) {
+                    return false;
+                }
+            }
+            if let Some(ref q) = query.q {
+                if !m.title.to_lowercase().contains(&q.to_lowercase()) { return false; }
+            }
+            true
+        })
+        .collect();
+
+    let total = filtered.len() as i64;
     let start = ((page - 1) * per_page) as usize;
-    let data: Vec<MovieSummary> = full_list
+    let data: Vec<MovieSummary> = filtered
         .into_iter()
         .skip(start)
         .take(per_page as usize)
+        .cloned()
         .collect();
 
     Ok(Json(PaginatedResponse {

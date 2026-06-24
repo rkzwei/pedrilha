@@ -60,3 +60,9 @@ SECRETS.env
 
 # Private legal and business notes (not for repo)
 LEGAL_NOTES.md
+
+# Linux FUSE/filesystem temp files
+.fuse_hidden*
+
+# Claude agent working directory
+.claude/
