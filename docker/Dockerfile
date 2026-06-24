@@ -24,8 +24,9 @@ RUN curl -fsSL \
 WORKDIR /app
 COPY . .
 
-# Build Tailwind CSS + WASM frontend from crates/frontend/ — matches CI working-directory
-# Running trunk from the crate dir avoids "could not find root package" in workspace builds
+# Build Tailwind CSS first (generates assets/tailwind.css referenced by index.html),
+# then trunk build. Explicit index.html arg + Trunk.toml bypass virtual-workspace
+# "root package not found" error from cargo metadata.
 RUN cd crates/frontend && npm install && npm run build:css && trunk build --release
 
 # ─── Stage 2: API binary ─────────────────────────────────────────────────────

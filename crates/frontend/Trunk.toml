@@ -1,0 +1,9 @@
+# Trunk build configuration for gem-finder-frontend.
+# Explicit target bypasses cargo metadata root-package resolution,
+# which fails in virtual workspaces (workspace Cargo.toml has no [package]).
+[build]
+target = "index.html"
+dist = "dist"
+
+[watch]
+ignore = ["dist", "assets/tailwind.css"]
