@@ -31,7 +31,11 @@ pub async fn send_magic_link(to_email: &str, token: &str, next: Option<&str>) ->
             token,
             n
         ),
-        None => format!("{}/auth/verify?token={}", app_url.trim_end_matches('/'), token),
+        None => format!(
+            "{}/auth/verify?token={}",
+            app_url.trim_end_matches('/'),
+            token
+        ),
     };
 
     let body = format!(

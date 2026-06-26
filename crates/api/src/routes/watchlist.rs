@@ -4,7 +4,7 @@ use axum::{
     Json,
 };
 use gem_finder_db::models;
-use gem_finder_shared::types::{WatchlistEntry, WatchlistUpsert, WatchState};
+use gem_finder_shared::types::{WatchState, WatchlistEntry, WatchlistUpsert};
 
 use crate::middleware::auth::AuthUser;
 use crate::AppState;

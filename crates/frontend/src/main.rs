@@ -18,9 +18,9 @@ pub struct AuthState {
     pub username: Option<String>,
 }
 
-const LS_TOKEN:    &str = "gf_token";
-const LS_USER_ID:  &str = "gf_user_id";
-const LS_EMAIL:    &str = "gf_email";
+const LS_TOKEN: &str = "gf_token";
+const LS_USER_ID: &str = "gf_user_id";
+const LS_EMAIL: &str = "gf_email";
 const LS_USERNAME: &str = "gf_username";
 
 pub fn local_storage() -> Option<web_sys::Storage> {
@@ -44,12 +44,19 @@ pub fn save_auth_to_storage(token: &str, user_id: &str, email: &str, username: O
 
 pub fn load_auth_from_storage() -> Option<AuthState> {
     let ls = local_storage()?;
-    let token   = ls.get_item(LS_TOKEN).ok()??;
+    let token = ls.get_item(LS_TOKEN).ok()??;
     let user_id = ls.get_item(LS_USER_ID).ok()??;
-    let email   = ls.get_item(LS_EMAIL).ok()??;
+    let email = ls.get_item(LS_EMAIL).ok()??;
     let username = ls.get_item(LS_USERNAME).ok().flatten();
-    if token.is_empty() { return None; }
-    Some(AuthState { token, user_id, email, username })
+    if token.is_empty() {
+        return None;
+    }
+    Some(AuthState {
+        token,
+        user_id,
+        email,
+        username,
+    })
 }
 
 pub fn logout(auth: RwSignal<Option<AuthState>>) {

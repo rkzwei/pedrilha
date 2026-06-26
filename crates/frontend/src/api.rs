@@ -1,4 +1,7 @@
-use gem_finder_shared::types::{AuthResponse, Movie, MovieSummary, PaginatedResponse, WatchlistEntry, WatchlistUpsert, WatchState};
+use gem_finder_shared::types::{
+    AuthResponse, Movie, MovieSummary, PaginatedResponse, WatchState, WatchlistEntry,
+    WatchlistUpsert,
+};
 
 /// Returns the current page origin (e.g. `https://example.com`) at runtime.
 /// Reqwest in WASM requires absolute URLs; reading the origin from the browser
@@ -17,13 +20,26 @@ pub async fn fetch_gems(
     genre: Option<String>,
     q: Option<String>,
 ) -> Result<PaginatedResponse<MovieSummary>, String> {
-    let mut url = format!("{}/api/gems?page={}&per_page={}", api_base(), page, per_page);
-    if let Some(y) = min_year { url.push_str(&format!("&min_year={}", y)); }
-    if let Some(g) = genre    { url.push_str(&format!("&genres={}", g)); }
-    if let Some(s) = q        { url.push_str(&format!("&q={}", s)); }
-    reqwest::get(&url).await
+    let mut url = format!(
+        "{}/api/gems?page={}&per_page={}",
+        api_base(),
+        page,
+        per_page
+    );
+    if let Some(y) = min_year {
+        url.push_str(&format!("&min_year={}", y));
+    }
+    if let Some(g) = genre {
+        url.push_str(&format!("&genres={}", g));
+    }
+    if let Some(s) = q {
+        url.push_str(&format!("&q={}", s));
+    }
+    reqwest::get(&url)
+        .await
         .map_err(|e| format!("Network error: {}", e))?
-        .json::<PaginatedResponse<MovieSummary>>().await
+        .json::<PaginatedResponse<MovieSummary>>()
+        .await
         .map_err(|e| format!("Parse error: {}", e))
 }
 
@@ -35,13 +51,26 @@ pub async fn fetch_acclaimed(
     genre: Option<String>,
     q: Option<String>,
 ) -> Result<PaginatedResponse<MovieSummary>, String> {
-    let mut url = format!("{}/api/acclaimed?page={}&per_page={}", api_base(), page, per_page);
-    if let Some(y) = min_year { url.push_str(&format!("&min_year={}", y)); }
-    if let Some(g) = genre    { url.push_str(&format!("&genres={}", g)); }
-    if let Some(s) = q        { url.push_str(&format!("&q={}", s)); }
-    reqwest::get(&url).await
+    let mut url = format!(
+        "{}/api/acclaimed?page={}&per_page={}",
+        api_base(),
+        page,
+        per_page
+    );
+    if let Some(y) = min_year {
+        url.push_str(&format!("&min_year={}", y));
+    }
+    if let Some(g) = genre {
+        url.push_str(&format!("&genres={}", g));
+    }
+    if let Some(s) = q {
+        url.push_str(&format!("&q={}", s));
+    }
+    reqwest::get(&url)
+        .await
         .map_err(|e| format!("Network error: {}", e))?
-        .json::<PaginatedResponse<MovieSummary>>().await
+        .json::<PaginatedResponse<MovieSummary>>()
+        .await
         .map_err(|e| format!("Parse error: {}", e))
 }
 
@@ -53,24 +82,42 @@ pub async fn fetch_wildcards(
     genre: Option<String>,
     q: Option<String>,
 ) -> Result<PaginatedResponse<MovieSummary>, String> {
-    let mut url = format!("{}/api/wildcards?page={}&per_page={}", api_base(), page, per_page);
-    if let Some(y) = min_year { url.push_str(&format!("&min_year={}", y)); }
-    if let Some(g) = genre    { url.push_str(&format!("&genres={}", g)); }
-    if let Some(s) = q        { url.push_str(&format!("&q={}", s)); }
-    reqwest::get(&url).await
+    let mut url = format!(
+        "{}/api/wildcards?page={}&per_page={}",
+        api_base(),
+        page,
+        per_page
+    );
+    if let Some(y) = min_year {
+        url.push_str(&format!("&min_year={}", y));
+    }
+    if let Some(g) = genre {
+        url.push_str(&format!("&genres={}", g));
+    }
+    if let Some(s) = q {
+        url.push_str(&format!("&q={}", s));
+    }
+    reqwest::get(&url)
+        .await
         .map_err(|e| format!("Network error: {}", e))?
-        .json::<PaginatedResponse<MovieSummary>>().await
+        .json::<PaginatedResponse<MovieSummary>>()
+        .await
         .map_err(|e| format!("Parse error: {}", e))
 }
 
 /// Fetch a single movie by its mv+base36 encoded ID.
 pub async fn fetch_movie(encoded_id: &str) -> Result<Movie, String> {
     let url = format!("{}/api/movies/{}", api_base(), encoded_id);
-    let resp = reqwest::get(&url).await.map_err(|e| format!("Network error: {}", e))?;
+    let resp = reqwest::get(&url)
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
     match resp.status().as_u16() {
         404 => Err("Movie not found".to_string()),
         400 => Err("Invalid movie ID".to_string()),
-        _   => resp.json::<Movie>().await.map_err(|e| format!("Parse error: {}", e)),
+        _ => resp
+            .json::<Movie>()
+            .await
+            .map_err(|e| format!("Parse error: {}", e)),
     }
 }
 
@@ -86,7 +133,12 @@ pub async fn admin_sync(token: &str) -> Result<serde_json::Value, String> {
 
 /// POST /api/admin/enrich — OMDb enrichment in background.
 pub async fn admin_enrich(limit: i64, token: &str) -> Result<serde_json::Value, String> {
-    admin_post("/api/admin/enrich", serde_json::json!({ "limit": limit }), token).await
+    admin_post(
+        "/api/admin/enrich",
+        serde_json::json!({ "limit": limit }),
+        token,
+    )
+    .await
 }
 
 /// POST /api/admin/score — batch scoring in background.
@@ -101,18 +153,22 @@ pub async fn admin_logs(token: &str) -> Result<serde_json::Value, String> {
     if !token.is_empty() {
         req = req.header("Authorization", format!("Bearer {}", token));
     }
-    req.send().await
+    req.send()
+        .await
         .map_err(|e| format!("Network error: {}", e))?
-        .json::<serde_json::Value>().await
+        .json::<serde_json::Value>()
+        .await
         .map_err(|e| format!("Parse error: {}", e))
 }
 
 /// GET /api/admin/status — capability flags (no auth required).
 pub async fn fetch_admin_status() -> Result<serde_json::Value, String> {
     let url = format!("{}/api/admin/status", api_base());
-    reqwest::get(&url).await
+    reqwest::get(&url)
+        .await
         .map_err(|e| format!("Network error: {}", e))?
-        .json::<serde_json::Value>().await
+        .json::<serde_json::Value>()
+        .await
         .map_err(|e| format!("Parse error: {}", e))
 }
 
@@ -124,7 +180,8 @@ pub async fn send_magic_link(email: &str) -> Result<(), String> {
     let resp = reqwest::Client::new()
         .post(&url)
         .json(&serde_json::json!({ "email": email }))
-        .send().await
+        .send()
+        .await
         .map_err(|e| format!("Network error: {}", e))?;
     if resp.status().is_success() {
         Ok(())
@@ -136,11 +193,18 @@ pub async fn send_magic_link(email: &str) -> Result<(), String> {
 /// `GET /api/auth/verify?token=<token>` — exchange magic-link token for JWT.
 pub async fn verify_token(token: &str) -> Result<AuthResponse, String> {
     let url = format!("{}/api/auth/verify?token={}", api_base(), token);
-    let resp = reqwest::get(&url).await.map_err(|e| format!("Network error: {}", e))?;
+    let resp = reqwest::get(&url)
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
     if resp.status().is_success() {
-        resp.json::<AuthResponse>().await.map_err(|e| format!("Parse error: {}", e))
+        resp.json::<AuthResponse>()
+            .await
+            .map_err(|e| format!("Parse error: {}", e))
     } else {
-        Err(resp.text().await.unwrap_or_else(|_| "Invalid or expired link".into()))
+        Err(resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "Invalid or expired link".into()))
     }
 }
 
@@ -152,10 +216,12 @@ pub async fn get_watchlist(token: &str) -> Result<Vec<WatchlistEntry>, String> {
     let resp = reqwest::Client::new()
         .get(&url)
         .header("Authorization", format!("Bearer {}", token))
-        .send().await
+        .send()
+        .await
         .map_err(|e| format!("Network error: {}", e))?;
     if resp.status().is_success() {
-        resp.json::<Vec<WatchlistEntry>>().await
+        resp.json::<Vec<WatchlistEntry>>()
+            .await
             .map_err(|e| format!("Parse error: {}", e))
     } else {
         Err(format!("Server error: {}", resp.status()))
@@ -164,30 +230,52 @@ pub async fn get_watchlist(token: &str) -> Result<Vec<WatchlistEntry>, String> {
 
 /// `GET /api/watchlist/movie/:movie_id` — check if a specific movie is on the watchlist.
 /// Returns `None` if not on the list (404 from server).
-pub async fn get_watchlist_entry(movie_id: i64, token: &str) -> Result<Option<WatchlistEntry>, String> {
+pub async fn get_watchlist_entry(
+    movie_id: i64,
+    token: &str,
+) -> Result<Option<WatchlistEntry>, String> {
     let url = format!("{}/api/watchlist/movie/{}", api_base(), movie_id);
     let resp = reqwest::Client::new()
         .get(&url)
         .header("Authorization", format!("Bearer {}", token))
-        .send().await
+        .send()
+        .await
         .map_err(|e| format!("Network error: {}", e))?;
     match resp.status().as_u16() {
-        200 => resp.json::<WatchlistEntry>().await.map(Some).map_err(|e| format!("Parse error: {}", e)),
+        200 => resp
+            .json::<WatchlistEntry>()
+            .await
+            .map(Some)
+            .map_err(|e| format!("Parse error: {}", e)),
         404 => Ok(None),
-        _   => Err(format!("Server error: {}", resp.status())),
+        _ => Err(format!("Server error: {}", resp.status())),
     }
 }
 
 /// `POST /api/watchlist` — upsert a watchlist entry.
-pub async fn upsert_watchlist(movie_id: i64, state: WatchState, user_rating: Option<i32>, token: &str) -> Result<(), String> {
+pub async fn upsert_watchlist(
+    movie_id: i64,
+    state: WatchState,
+    user_rating: Option<i32>,
+    token: &str,
+) -> Result<(), String> {
     let url = format!("{}/api/watchlist", api_base());
     let resp = reqwest::Client::new()
         .post(&url)
         .header("Authorization", format!("Bearer {}", token))
-        .json(&WatchlistUpsert { movie_id, state, user_rating })
-        .send().await
+        .json(&WatchlistUpsert {
+            movie_id,
+            state,
+            user_rating,
+        })
+        .send()
+        .await
         .map_err(|e| format!("Network error: {}", e))?;
-    if resp.status().is_success() { Ok(()) } else { Err(format!("Server error: {}", resp.status())) }
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        Err(format!("Server error: {}", resp.status()))
+    }
 }
 
 /// `DELETE /api/watchlist/movie/:movie_id` — remove a movie from the watchlist.
@@ -196,21 +284,32 @@ pub async fn delete_watchlist(movie_id: i64, token: &str) -> Result<(), String> 
     let resp = reqwest::Client::new()
         .delete(&url)
         .header("Authorization", format!("Bearer {}", token))
-        .send().await
+        .send()
+        .await
         .map_err(|e| format!("Network error: {}", e))?;
-    if resp.status().is_success() { Ok(()) } else { Err(format!("Server error: {}", resp.status())) }
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        Err(format!("Server error: {}", resp.status()))
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async fn admin_post(path: &str, body: serde_json::Value, token: &str) -> Result<serde_json::Value, String> {
+async fn admin_post(
+    path: &str,
+    body: serde_json::Value,
+    token: &str,
+) -> Result<serde_json::Value, String> {
     let url = format!("{}{}", api_base(), path);
     let mut req = reqwest::Client::new().post(&url).json(&body);
     if !token.is_empty() {
         req = req.header("Authorization", format!("Bearer {}", token));
     }
-    req.send().await
+    req.send()
+        .await
         .map_err(|e| format!("Network error: {}", e))?
-        .json::<serde_json::Value>().await
+        .json::<serde_json::Value>()
+        .await
         .map_err(|e| format!("Parse error: {}", e))
 }

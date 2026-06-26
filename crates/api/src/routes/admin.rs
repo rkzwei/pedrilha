@@ -443,9 +443,7 @@ pub async fn trigger_seed(
 /// Returns which external services are configured. Used by the frontend to
 /// conditionally hide sign-in (if SMTP is absent) and show admin warnings.
 /// No auth required — contains no secrets, only boolean capability flags.
-pub async fn get_status(
-    State(state): State<AppState>,
-) -> Json<serde_json::Value> {
+pub async fn get_status(State(state): State<AppState>) -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "smtp_configured":  state.smtp_configured,
         "tmdb_configured":  !state.tmdb_api_key.is_empty(),

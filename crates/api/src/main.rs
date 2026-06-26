@@ -93,8 +93,8 @@ struct AppState {
     passkey_reg_challenges: ChallengeStore<PasskeyRegistration>,
     /// Pending WebAuthn passkey authentication challenges keyed by session key.
     passkey_auth_challenges: ChallengeStore<PasskeyAuthentication>,
- /// Rate limiter for magic link requests: email -> Vec<Instant> of recent sends.
- magic_link_limiter: Arc<Mutex<HashMap<String, Vec<std::time::Instant>>>>,
+    /// Rate limiter for magic link requests: email -> Vec<Instant> of recent sends.
+    magic_link_limiter: Arc<Mutex<HashMap<String, Vec<std::time::Instant>>>>,
 }
 
 #[derive(Deserialize)]
@@ -238,8 +238,8 @@ async fn main() {
     // WebAuthn relying-party configuration.
     let webauthn_rp_id =
         std::env::var("WEBAUTHN_RP_ID").unwrap_or_else(|_| "localhost".to_string());
-    let webauthn_origin = std::env::var("WEBAUTHN_ORIGIN")
-        .unwrap_or_else(|_| "http://localhost:3000".to_string());
+    let webauthn_origin =
+        std::env::var("WEBAUTHN_ORIGIN").unwrap_or_else(|_| "http://localhost:3000".to_string());
 
     let webauthn_origin_url =
         Url::parse(&webauthn_origin).expect("WEBAUTHN_ORIGIN must be a valid URL");
@@ -263,21 +263,27 @@ async fn main() {
     };
 
     // CORS: allow origins from CORS_ORIGINS env var (comma-separated). Falls back to permissive in dev.
- let allowed_origins: Vec<axum::http::HeaderValue> = std::env::var("CORS_ORIGINS")
- .unwrap_or_default()
- .split(',')
- .filter(|s| !s.trim().is_empty())
- .filter_map(|s| s.trim().parse().ok())
- .collect();
- let cors = if allowed_origins.is_empty() {
- CorsLayer::permissive()
- } else {
- CorsLayer::new()
- .allow_origin(allowed_origins)
- .allow_methods([axum::http::Method::GET, axum::http::Method::POST, axum::http::Method::PUT, axum::http::Method::DELETE, axum::http::Method::OPTIONS])
- .allow_headers(tower_http::cors::Any)
- };
- let router = Router::new()
+    let allowed_origins: Vec<axum::http::HeaderValue> = std::env::var("CORS_ORIGINS")
+        .unwrap_or_default()
+        .split(',')
+        .filter(|s| !s.trim().is_empty())
+        .filter_map(|s| s.trim().parse().ok())
+        .collect();
+    let cors = if allowed_origins.is_empty() {
+        CorsLayer::permissive()
+    } else {
+        CorsLayer::new()
+            .allow_origin(allowed_origins)
+            .allow_methods([
+                axum::http::Method::GET,
+                axum::http::Method::POST,
+                axum::http::Method::PUT,
+                axum::http::Method::DELETE,
+                axum::http::Method::OPTIONS,
+            ])
+            .allow_headers(tower_http::cors::Any)
+    };
+    let router = Router::new()
         .route("/health", get(health_check))
         .route("/api/gems", get(get_gems))
         .route("/api/acclaimed", get(get_acclaimed))
@@ -334,12 +340,12 @@ async fn main() {
         .layer(cors);
 
     // Clone state fields needed by the scheduled sync task BEFORE state is moved into the router.
-    let sched_db_pre    = state.db.clone();
-    let sched_tmdb_pre  = state.tmdb_api_key.clone();
-    let sched_omdb_pre  = state.omdb_api_key.clone();
-    let sched_busy_pre  = state.admin_busy.clone();
+    let sched_db_pre = state.db.clone();
+    let sched_tmdb_pre = state.tmdb_api_key.clone();
+    let sched_omdb_pre = state.omdb_api_key.clone();
+    let sched_busy_pre = state.admin_busy.clone();
     let sched_cache_pre = state.movie_cache.clone();
-    let cleanup_db_pre  = state.db.clone();
+    let cleanup_db_pre = state.db.clone();
 
     let router = router.with_state(state);
 
@@ -366,11 +372,11 @@ async fn main() {
     // Scheduled sync — runs every SYNC_INTERVAL_HOURS (default 24).
     // Skipped silently if TMDB_API_KEY is absent or another admin op is already running.
     {
-        let sched_db     = sched_db_pre.clone();
-        let sched_tmdb   = sched_tmdb_pre.clone();
-        let sched_omdb   = sched_omdb_pre.clone();
-        let sched_busy   = sched_busy_pre.clone();
-        let sched_cache  = sched_cache_pre.clone();
+        let sched_db = sched_db_pre.clone();
+        let sched_tmdb = sched_tmdb_pre.clone();
+        let sched_omdb = sched_omdb_pre.clone();
+        let sched_busy = sched_busy_pre.clone();
+        let sched_cache = sched_cache_pre.clone();
 
         let interval_hours: u64 = std::env::var("SYNC_INTERVAL_HOURS")
             .ok()
@@ -403,7 +409,8 @@ async fn main() {
                         }
                     };
 
-                    let mut svc = crate::services::tmdb_sync::TmdbSyncService::new(sched_tmdb.clone());
+                    let mut svc =
+                        crate::services::tmdb_sync::TmdbSyncService::new(sched_tmdb.clone());
                     if let Err(e) = svc.init_config().await {
                         tracing::error!("scheduled_sync: init_config failed: {}", e);
                         continue;
@@ -428,7 +435,9 @@ async fn main() {
                     }
 
                     if !sched_omdb.is_empty() {
-                        let omdb = crate::services::omdb_sync::OmdbEnrichmentService::new(sched_omdb.clone());
+                        let omdb = crate::services::omdb_sync::OmdbEnrichmentService::new(
+                            sched_omdb.clone(),
+                        );
                         if let Err(e) = omdb.enrich_movies(&conn, i64::MAX).await {
                             tracing::warn!("scheduled_sync: enrich failed: {}", e);
                         }
@@ -447,9 +456,12 @@ async fn main() {
                     sched_cache.write().await.invalidate();
                     tracing::info!("scheduled_sync: complete, cache invalidated");
                     let _ = gem_finder_db::models::insert_run_log(
-                        &conn, "info", "scheduled_sync_complete",
+                        &conn,
+                        "info",
+                        "scheduled_sync_complete",
                         &format!("Scheduled sync complete (interval: {}h)", interval_hours),
-                    ).await;
+                    )
+                    .await;
                 }
             });
             tracing::info!("Scheduled sync enabled — interval: {}h", interval_hours);
@@ -490,7 +502,10 @@ async fn main() {
                 }
             }
         });
-        tracing::info!("Scheduled cleanup enabled — interval: {}h", cleanup_interval_hours);
+        tracing::info!(
+            "Scheduled cleanup enabled — interval: {}h",
+            cleanup_interval_hours
+        );
     }
 
     axum::serve(listener, app).await.expect("Server failed");
@@ -821,14 +836,14 @@ async fn get_gems(
                     .collect();
                 if !selected.is_empty() {
                     let movie_genres = m.genre.as_deref().unwrap_or("").to_lowercase();
- let movie_keywords = m.keywords.as_deref().unwrap_or("").to_lowercase();
+                    let movie_keywords = m.keywords.as_deref().unwrap_or("").to_lowercase();
                     if !selected.iter().any(|sel| {
- if sel == "musical" {
- movie_keywords.contains("musical")
- } else {
- movie_genres.contains(sel.as_str())
- }
- }) {
+                        if sel == "musical" {
+                            movie_keywords.contains("musical")
+                        } else {
+                            movie_genres.contains(sel.as_str())
+                        }
+                    }) {
                         return false;
                     }
                 }
@@ -901,7 +916,9 @@ async fn get_acclaimed(
         .iter()
         .filter(|m| {
             if let Some(min_y) = query.min_year {
-                if m.year.map_or(true, |y| y < min_y) { return false; }
+                if m.year.map_or(true, |y| y < min_y) {
+                    return false;
+                }
             }
             if let Some(ref g) = query.genres {
                 let selected: Vec<String> = g
@@ -911,20 +928,22 @@ async fn get_acclaimed(
                     .collect();
                 if !selected.is_empty() {
                     let movie_genres = m.genre.as_deref().unwrap_or("").to_lowercase();
- let movie_keywords = m.keywords.as_deref().unwrap_or("").to_lowercase();
+                    let movie_keywords = m.keywords.as_deref().unwrap_or("").to_lowercase();
                     if !selected.iter().any(|sel| {
- if sel == "musical" {
- movie_keywords.contains("musical")
- } else {
- movie_genres.contains(sel.as_str())
- }
- }) {
+                        if sel == "musical" {
+                            movie_keywords.contains("musical")
+                        } else {
+                            movie_genres.contains(sel.as_str())
+                        }
+                    }) {
                         return false;
                     }
                 }
             }
             if let Some(ref q) = query.q {
-                if !m.title.to_lowercase().contains(&q.to_lowercase()) { return false; }
+                if !m.title.to_lowercase().contains(&q.to_lowercase()) {
+                    return false;
+                }
             }
             true
         })
@@ -987,7 +1006,9 @@ async fn get_wildcards(
         .iter()
         .filter(|m| {
             if let Some(min_y) = query.min_year {
-                if m.year.map_or(true, |y| y < min_y) { return false; }
+                if m.year.map_or(true, |y| y < min_y) {
+                    return false;
+                }
             }
             if let Some(ref g) = query.genres {
                 let selected: Vec<String> = g
@@ -997,20 +1018,22 @@ async fn get_wildcards(
                     .collect();
                 if !selected.is_empty() {
                     let movie_genres = m.genre.as_deref().unwrap_or("").to_lowercase();
- let movie_keywords = m.keywords.as_deref().unwrap_or("").to_lowercase();
+                    let movie_keywords = m.keywords.as_deref().unwrap_or("").to_lowercase();
                     if !selected.iter().any(|sel| {
- if sel == "musical" {
- movie_keywords.contains("musical")
- } else {
- movie_genres.contains(sel.as_str())
- }
- }) {
+                        if sel == "musical" {
+                            movie_keywords.contains("musical")
+                        } else {
+                            movie_genres.contains(sel.as_str())
+                        }
+                    }) {
                         return false;
                     }
                 }
             }
             if let Some(ref q) = query.q {
-                if !m.title.to_lowercase().contains(&q.to_lowercase()) { return false; }
+                if !m.title.to_lowercase().contains(&q.to_lowercase()) {
+                    return false;
+                }
             }
             true
         })

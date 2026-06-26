@@ -1,5 +1,7 @@
 use anyhow::Result;
-use gem_finder_shared::types::{Movie, MovieSummary, RunLogEntry, User, WatchlistEntry, WatchState};
+use gem_finder_shared::types::{
+    Movie, MovieSummary, RunLogEntry, User, WatchState, WatchlistEntry,
+};
 use turso::{params, Connection, Value};
 
 /// Helper to extract an Option<String> from a Value.
@@ -977,10 +979,7 @@ pub async fn get_watchlist_entry(
 }
 
 /// Fetch all watchlist entries for a user, ordered by most recently updated.
-pub async fn get_user_watchlist(
-    conn: &Connection,
-    user_id: &str,
-) -> Result<Vec<WatchlistEntry>> {
+pub async fn get_user_watchlist(conn: &Connection, user_id: &str) -> Result<Vec<WatchlistEntry>> {
     let mut stmt = conn
         .prepare(
             "SELECT id, user_id, movie_id, state, user_rating, created_at, updated_at
@@ -1017,11 +1016,7 @@ pub async fn upsert_watchlist_entry(
 }
 
 /// Remove a watchlist entry. Silently succeeds if the entry does not exist.
-pub async fn delete_watchlist_entry(
-    conn: &Connection,
-    user_id: &str,
-    movie_id: i64,
-) -> Result<()> {
+pub async fn delete_watchlist_entry(conn: &Connection, user_id: &str, movie_id: i64) -> Result<()> {
     conn.execute(
         "DELETE FROM watchlist WHERE user_id = ?1 AND movie_id = ?2",
         params![user_id, movie_id],
@@ -1031,13 +1026,13 @@ pub async fn delete_watchlist_entry(
 }
 
 fn row_to_watchlist_entry(row: &turso::Row) -> Result<WatchlistEntry> {
-    let id          = value_to_opt_i64(row.get_value(0)?);
-    let user_id     = value_to_opt_string(row.get_value(1)?).unwrap_or_default();
-    let movie_id    = value_to_opt_i64(row.get_value(2)?).unwrap_or(0);
-    let state_str   = value_to_opt_string(row.get_value(3)?).unwrap_or_default();
+    let id = value_to_opt_i64(row.get_value(0)?);
+    let user_id = value_to_opt_string(row.get_value(1)?).unwrap_or_default();
+    let movie_id = value_to_opt_i64(row.get_value(2)?).unwrap_or(0);
+    let state_str = value_to_opt_string(row.get_value(3)?).unwrap_or_default();
     let user_rating = value_to_opt_i32(row.get_value(4)?);
-    let created_at  = value_to_opt_string(row.get_value(5)?);
-    let updated_at  = value_to_opt_string(row.get_value(6)?);
+    let created_at = value_to_opt_string(row.get_value(5)?);
+    let updated_at = value_to_opt_string(row.get_value(6)?);
 
     let state = WatchState::try_from(state_str.as_str())?;
 

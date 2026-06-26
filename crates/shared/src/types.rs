@@ -160,9 +160,17 @@ pub struct UsernameUpdate {
 impl UsernameUpdate {
     pub fn validate(&self) -> Result<(), &'static str> {
         let len = self.username.len();
-        if len < 3 { return Err("Username must be at least 3 characters"); }
-        if len > 30 { return Err("Username must be 30 characters or fewer"); }
-        if !self.username.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        if len < 3 {
+            return Err("Username must be at least 3 characters");
+        }
+        if len > 30 {
+            return Err("Username must be 30 characters or fewer");
+        }
+        if !self
+            .username
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
             return Err("Username may only contain letters, numbers, and underscores");
         }
         Ok(())
@@ -387,7 +395,6 @@ pub struct OmdbRating {
     pub source: Option<String>,
     pub value: Option<String>,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TmdbKeywordsResponse {

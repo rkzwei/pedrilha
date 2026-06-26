@@ -45,18 +45,30 @@ fn build_url(
     q: &Option<String>,
 ) -> String {
     let mut url = format!("{}?page={}", path, page);
-    if let Some(g) = genres { url.push_str(&format!("&genres={}", g)); }
-    if let Some(y) = year   { url.push_str(&format!("&year={}", y)); }
-    if let Some(s) = q      { url.push_str(&format!("&q={}", s)); }
+    if let Some(g) = genres {
+        url.push_str(&format!("&genres={}", g));
+    }
+    if let Some(y) = year {
+        url.push_str(&format!("&year={}", y));
+    }
+    if let Some(s) = q {
+        url.push_str(&format!("&q={}", s));
+    }
     url
 }
 
 // ── Client-side email validation ──────────────────────────────────────────────
 fn is_valid_email_client(email: &str) -> bool {
-    let Some(at) = email.find('@') else { return false; };
-    if at == 0 { return false; }
+    let Some(at) = email.find('@') else {
+        return false;
+    };
+    if at == 0 {
+        return false;
+    }
     let domain = &email[at + 1..];
-    let Some(dot) = domain.rfind('.') else { return false; };
+    let Some(dot) = domain.rfind('.') else {
+        return false;
+    };
     dot != 0 && dot != domain.len() - 1 && (domain.len() - dot) >= 3
 }
 
@@ -260,29 +272,56 @@ fn PaginationBar(
 // ── Home page ─────────────────────────────────────────────────────────────────
 #[component]
 pub fn HomePage() -> impl IntoView {
-    let query    = use_query_map();
+    let query = use_query_map();
     let navigate = use_navigate();
 
-    let page    = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
-    let year    = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
-    let genres  = move || query.with(|q| {
-        q.get("genres").map(|v| v.split(',').filter(|s| !s.is_empty()).map(String::from).collect::<Vec<_>>()).unwrap_or_default()
-    });
-    let search  = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
-    let gstr    = move || { let g = genres(); if g.is_empty() { None } else { Some(g.join(",")) } };
+    let page = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
+    let year = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
+    let genres = move || {
+        query.with(|q| {
+            q.get("genres")
+                .map(|v| {
+                    v.split(',')
+                        .filter(|s| !s.is_empty())
+                        .map(String::from)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        })
+    };
+    let search = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let gstr = move || {
+        let g = genres();
+        if g.is_empty() {
+            None
+        } else {
+            Some(g.join(","))
+        }
+    };
 
-    let (movies,  set_movies)  = signal(Vec::<MovieSummary>::new());
-    let (total,   set_total)   = signal(0i64);
+    let (movies, set_movies) = signal(Vec::<MovieSummary>::new());
+    let (total, set_total) = signal(0i64);
     let (loading, set_loading) = signal(true);
-    let (error,   set_error)   = signal(Option::<String>::None);
+    let (error, set_error) = signal(Option::<String>::None);
 
     Effect::new(move |_| {
-        let p = page(); let y = year(); let g = gstr(); let s = search();
-        set_loading.set(true); set_error.set(None);
+        let p = page();
+        let y = year();
+        let g = gstr();
+        let s = search();
+        set_loading.set(true);
+        set_error.set(None);
         spawn_local(async move {
             match api::fetch_gems(p, PER_PAGE, y, g, s).await {
-                Ok(r) => { set_movies.set(r.data); set_total.set(r.total); set_loading.set(false); }
-                Err(e) => { set_error.set(Some(e)); set_loading.set(false); }
+                Ok(r) => {
+                    set_movies.set(r.data);
+                    set_total.set(r.total);
+                    set_loading.set(false);
+                }
+                Err(e) => {
+                    set_error.set(Some(e));
+                    set_loading.set(false);
+                }
             }
         });
     });
@@ -291,16 +330,38 @@ pub fn HomePage() -> impl IntoView {
 
     let n1 = navigate.clone();
     let on_genres_cb = Callback::new(move |gs: Vec<String>| {
-        let s = if gs.is_empty() { None } else { Some(gs.join(",")) };
-        n1(&build_url("/", 1, &s, &year(), &search()), NavigateOptions { replace: true, ..Default::default() });
+        let s = if gs.is_empty() {
+            None
+        } else {
+            Some(gs.join(","))
+        };
+        n1(
+            &build_url("/", 1, &s, &year(), &search()),
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        );
     });
     let n2 = navigate.clone();
     let on_year_cb = Callback::new(move |y: Option<i32>| {
-        n2(&build_url("/", 1, &gstr(), &y, &search()), NavigateOptions { replace: true, ..Default::default() });
+        n2(
+            &build_url("/", 1, &gstr(), &y, &search()),
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        );
     });
     let n3 = navigate.clone();
     let on_search_cb = Callback::new(move |s: Option<String>| {
-        n3(&build_url("/", 1, &gstr(), &year(), &s), NavigateOptions { replace: true, ..Default::default() });
+        n3(
+            &build_url("/", 1, &gstr(), &year(), &s),
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        );
     });
     let nav_pg = navigate;
 
@@ -331,29 +392,56 @@ pub fn HomePage() -> impl IntoView {
 // ── Acclaimed page ────────────────────────────────────────────────────────────
 #[component]
 pub fn AcclaimedPage() -> impl IntoView {
-    let query    = use_query_map();
+    let query = use_query_map();
     let navigate = use_navigate();
 
-    let page    = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
-    let year    = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
-    let genres  = move || query.with(|q| {
-        q.get("genres").map(|v| v.split(',').filter(|s| !s.is_empty()).map(String::from).collect::<Vec<_>>()).unwrap_or_default()
-    });
-    let search  = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
-    let gstr    = move || { let g = genres(); if g.is_empty() { None } else { Some(g.join(",")) } };
+    let page = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
+    let year = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
+    let genres = move || {
+        query.with(|q| {
+            q.get("genres")
+                .map(|v| {
+                    v.split(',')
+                        .filter(|s| !s.is_empty())
+                        .map(String::from)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        })
+    };
+    let search = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let gstr = move || {
+        let g = genres();
+        if g.is_empty() {
+            None
+        } else {
+            Some(g.join(","))
+        }
+    };
 
-    let (movies,  set_movies)  = signal(Vec::<MovieSummary>::new());
-    let (total,   set_total)   = signal(0i64);
+    let (movies, set_movies) = signal(Vec::<MovieSummary>::new());
+    let (total, set_total) = signal(0i64);
     let (loading, set_loading) = signal(true);
-    let (error,   set_error)   = signal(Option::<String>::None);
+    let (error, set_error) = signal(Option::<String>::None);
 
     Effect::new(move |_| {
-        let p = page(); let y = year(); let g = gstr(); let s = search();
-        set_loading.set(true); set_error.set(None);
+        let p = page();
+        let y = year();
+        let g = gstr();
+        let s = search();
+        set_loading.set(true);
+        set_error.set(None);
         spawn_local(async move {
             match api::fetch_acclaimed(p, PER_PAGE, y, g, s).await {
-                Ok(r) => { set_movies.set(r.data); set_total.set(r.total); set_loading.set(false); }
-                Err(e) => { set_error.set(Some(e)); set_loading.set(false); }
+                Ok(r) => {
+                    set_movies.set(r.data);
+                    set_total.set(r.total);
+                    set_loading.set(false);
+                }
+                Err(e) => {
+                    set_error.set(Some(e));
+                    set_loading.set(false);
+                }
             }
         });
     });
@@ -362,16 +450,38 @@ pub fn AcclaimedPage() -> impl IntoView {
 
     let n1 = navigate.clone();
     let on_genres_cb = Callback::new(move |gs: Vec<String>| {
-        let s = if gs.is_empty() { None } else { Some(gs.join(",")) };
-        n1(&build_url("/acclaimed", 1, &s, &year(), &search()), NavigateOptions { replace: true, ..Default::default() });
+        let s = if gs.is_empty() {
+            None
+        } else {
+            Some(gs.join(","))
+        };
+        n1(
+            &build_url("/acclaimed", 1, &s, &year(), &search()),
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        );
     });
     let n2 = navigate.clone();
     let on_year_cb = Callback::new(move |y: Option<i32>| {
-        n2(&build_url("/acclaimed", 1, &gstr(), &y, &search()), NavigateOptions { replace: true, ..Default::default() });
+        n2(
+            &build_url("/acclaimed", 1, &gstr(), &y, &search()),
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        );
     });
     let n3 = navigate.clone();
     let on_search_cb = Callback::new(move |s: Option<String>| {
-        n3(&build_url("/acclaimed", 1, &gstr(), &year(), &s), NavigateOptions { replace: true, ..Default::default() });
+        n3(
+            &build_url("/acclaimed", 1, &gstr(), &year(), &s),
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        );
     });
     let nav_pg = navigate;
 
@@ -402,29 +512,56 @@ pub fn AcclaimedPage() -> impl IntoView {
 // ── Wildcards page ────────────────────────────────────────────────────────────
 #[component]
 pub fn WildcardsPage() -> impl IntoView {
-    let query    = use_query_map();
+    let query = use_query_map();
     let navigate = use_navigate();
 
-    let page    = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
-    let year    = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
-    let genres  = move || query.with(|q| {
-        q.get("genres").map(|v| v.split(',').filter(|s| !s.is_empty()).map(String::from).collect::<Vec<_>>()).unwrap_or_default()
-    });
-    let search  = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
-    let gstr    = move || { let g = genres(); if g.is_empty() { None } else { Some(g.join(",")) } };
+    let page = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
+    let year = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
+    let genres = move || {
+        query.with(|q| {
+            q.get("genres")
+                .map(|v| {
+                    v.split(',')
+                        .filter(|s| !s.is_empty())
+                        .map(String::from)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        })
+    };
+    let search = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let gstr = move || {
+        let g = genres();
+        if g.is_empty() {
+            None
+        } else {
+            Some(g.join(","))
+        }
+    };
 
-    let (movies,  set_movies)  = signal(Vec::<MovieSummary>::new());
-    let (total,   set_total)   = signal(0i64);
+    let (movies, set_movies) = signal(Vec::<MovieSummary>::new());
+    let (total, set_total) = signal(0i64);
     let (loading, set_loading) = signal(true);
-    let (error,   set_error)   = signal(Option::<String>::None);
+    let (error, set_error) = signal(Option::<String>::None);
 
     Effect::new(move |_| {
-        let p = page(); let y = year(); let g = gstr(); let s = search();
-        set_loading.set(true); set_error.set(None);
+        let p = page();
+        let y = year();
+        let g = gstr();
+        let s = search();
+        set_loading.set(true);
+        set_error.set(None);
         spawn_local(async move {
             match api::fetch_wildcards(p, PER_PAGE, y, g, s).await {
-                Ok(r) => { set_movies.set(r.data); set_total.set(r.total); set_loading.set(false); }
-                Err(e) => { set_error.set(Some(e)); set_loading.set(false); }
+                Ok(r) => {
+                    set_movies.set(r.data);
+                    set_total.set(r.total);
+                    set_loading.set(false);
+                }
+                Err(e) => {
+                    set_error.set(Some(e));
+                    set_loading.set(false);
+                }
             }
         });
     });
@@ -433,16 +570,38 @@ pub fn WildcardsPage() -> impl IntoView {
 
     let n1 = navigate.clone();
     let on_genres_cb = Callback::new(move |gs: Vec<String>| {
-        let s = if gs.is_empty() { None } else { Some(gs.join(",")) };
-        n1(&build_url("/wildcards", 1, &s, &year(), &search()), NavigateOptions { replace: true, ..Default::default() });
+        let s = if gs.is_empty() {
+            None
+        } else {
+            Some(gs.join(","))
+        };
+        n1(
+            &build_url("/wildcards", 1, &s, &year(), &search()),
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        );
     });
     let n2 = navigate.clone();
     let on_year_cb = Callback::new(move |y: Option<i32>| {
-        n2(&build_url("/wildcards", 1, &gstr(), &y, &search()), NavigateOptions { replace: true, ..Default::default() });
+        n2(
+            &build_url("/wildcards", 1, &gstr(), &y, &search()),
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        );
     });
     let n3 = navigate.clone();
     let on_search_cb = Callback::new(move |s: Option<String>| {
-        n3(&build_url("/wildcards", 1, &gstr(), &year(), &s), NavigateOptions { replace: true, ..Default::default() });
+        n3(
+            &build_url("/wildcards", 1, &gstr(), &year(), &s),
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        );
     });
     let nav_pg = navigate;
 
@@ -474,12 +633,12 @@ pub fn WildcardsPage() -> impl IntoView {
 // ── Sign-in page ──────────────────────────────────────────────────────────────
 #[component]
 pub fn SignInPage() -> impl IntoView {
-    let auth     = use_context::<RwSignal<Option<AuthState>>>().expect("auth context missing");
+    let auth = use_context::<RwSignal<Option<AuthState>>>().expect("auth context missing");
     let navigate = use_navigate();
 
-    let (email,   set_email)   = signal(String::new());
-    let (sent,    set_sent)    = signal(false);
-    let (error,   set_error)   = signal(Option::<String>::None);
+    let (email, set_email) = signal(String::new());
+    let (sent, set_sent) = signal(false);
+    let (error, set_error) = signal(Option::<String>::None);
     let (loading, set_loading) = signal(false);
 
     Effect::new(move |_| {
@@ -602,13 +761,13 @@ pub fn SignInPage() -> impl IntoView {
 pub fn MovieDetail() -> impl IntoView {
     let params = use_params_map();
     let _navigate = use_navigate();
-    let (movie,   set_movie)   = signal(Option::<gem_finder_shared::types::Movie>::None);
+    let (movie, set_movie) = signal(Option::<gem_finder_shared::types::Movie>::None);
     let (loading, set_loading) = signal(true);
-    let (error,   set_error)   = signal(Option::<String>::None);
+    let (error, set_error) = signal(Option::<String>::None);
 
-    let (wl_state,   set_wl_state)   = signal(Option::<WatchState>::None);
+    let (wl_state, set_wl_state) = signal(Option::<WatchState>::None);
     let (wl_loading, set_wl_loading) = signal(false);
-    let (wl_error,   set_wl_error)   = signal(Option::<String>::None);
+    let (wl_error, set_wl_error) = signal(Option::<String>::None);
 
     let auth = use_context::<RwSignal<Option<AuthState>>>().unwrap_or_else(|| RwSignal::new(None));
 
@@ -616,7 +775,10 @@ pub fn MovieDetail() -> impl IntoView {
 
     spawn_local(async move {
         match movie_id() {
-            None => { set_error.set(Some("Invalid movie ID".into())); set_loading.set(false); }
+            None => {
+                set_error.set(Some("Invalid movie ID".into()));
+                set_loading.set(false);
+            }
             Some(id) => match api::fetch_movie(&id).await {
                 Ok(m) => {
                     if let Some(a) = auth.get_untracked() {
@@ -629,7 +791,10 @@ pub fn MovieDetail() -> impl IntoView {
                     set_movie.set(Some(m));
                     set_loading.set(false);
                 }
-                Err(e) => { set_error.set(Some(e)); set_loading.set(false); }
+                Err(e) => {
+                    set_error.set(Some(e));
+                    set_loading.set(false);
+                }
             },
         }
     });
@@ -847,19 +1012,26 @@ pub fn MovieDetail() -> impl IntoView {
 }
 
 // ── Shared movie grid renderer ────────────────────────────────────────────────
-fn render_movie_grid(loading: bool, error: Option<String>, movies: Vec<MovieSummary>) -> impl IntoView {
+fn render_movie_grid(
+    loading: bool,
+    error: Option<String>,
+    movies: Vec<MovieSummary>,
+) -> impl IntoView {
     if loading {
-        view!{ <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        view! { <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {(0..10).map(|_| view!{ <SkeletonCard /> }).collect::<Vec<_>>()}
-        </div> }.into_any()
+        </div> }
+        .into_any()
     } else if let Some(err) = error {
-        view!{ <div class="py-16 text-center"><p class="text-red-400">{err}</p></div> }.into_any()
+        view! { <div class="py-16 text-center"><p class="text-red-400">{err}</p></div> }.into_any()
     } else if movies.is_empty() {
-        view!{ <div class="py-16 text-center text-stone-500">"No films match your filters."</div> }.into_any()
+        view! { <div class="py-16 text-center text-stone-500">"No films match your filters."</div> }
+            .into_any()
     } else {
-        view!{ <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        view! { <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {movies.into_iter().map(|m| view!{ <MovieCard movie=m /> }).collect::<Vec<_>>()}
-        </div> }.into_any()
+        </div> }
+        .into_any()
     }
 }
 
@@ -880,17 +1052,17 @@ fn SkeletonCard() -> impl IntoView {
 // ── Movie card ────────────────────────────────────────────────────────────────
 #[component]
 fn MovieCard(movie: MovieSummary) -> impl IntoView {
-    let navigate  = use_navigate();
-    let href      = format!("/movie/{}", encode_movie_id(movie.id));
-    let href_nav  = href.clone();
-    let poster    = movie.poster_url.clone().unwrap_or_default();
+    let navigate = use_navigate();
+    let href = format!("/movie/{}", encode_movie_id(movie.id));
+    let href_nav = href.clone();
+    let poster = movie.poster_url.clone().unwrap_or_default();
     let has_poster = !poster.is_empty();
     let gem_score = movie.gem_score.map(|s| format!("{:.0}%", s * 100.0));
-    let year      = movie.year.map(|y| y.to_string()).unwrap_or_default();
-    let title     = movie.title.clone();
-    let director  = movie.director.clone().unwrap_or_default();
-    let imdb      = movie.imdb_rating.map(|r| format!("{:.1}", r));
-    let rt        = movie.rt_critic_score.map(|r| format!("{}%", r));
+    let year = movie.year.map(|y| y.to_string()).unwrap_or_default();
+    let title = movie.title.clone();
+    let director = movie.director.clone().unwrap_or_default();
+    let imdb = movie.imdb_rating.map(|r| format!("{:.1}", r));
+    let rt = movie.rt_critic_score.map(|r| format!("{}%", r));
 
     view! {
         <a
@@ -932,14 +1104,19 @@ fn MovieCard(movie: MovieSummary) -> impl IntoView {
 
 // ── Admin page ────────────────────────────────────────────────────────────────
 #[derive(Clone, PartialEq)]
-enum ActionState { Idle, Running, Done(String), Failed(String) }
+enum ActionState {
+    Idle,
+    Running,
+    Done(String),
+    Failed(String),
+}
 
 // ── Auth verify page ──────────────────────────────────────────────────────────
 #[component]
 pub fn VerifyPage() -> impl IntoView {
-    let query    = use_query_map();
+    let query = use_query_map();
     let navigate = use_navigate();
-    let auth     = use_context::<RwSignal<Option<AuthState>>>().expect("auth context missing");
+    let auth = use_context::<RwSignal<Option<AuthState>>>().expect("auth context missing");
     let (status, set_status) = signal("Verifying…".to_string());
 
     let token_val = query.with_untracked(|q| q.get("token").unwrap_or_default().to_string());
@@ -974,19 +1151,19 @@ pub fn VerifyPage() -> impl IntoView {
 
 #[component]
 pub fn AdminPage() -> impl IntoView {
-    let (admin_token,  set_admin_token)  = signal(String::new());
-    let (seed_state,   set_seed_state)   = signal(ActionState::Idle);
-    let (sync_state,   set_sync_state)   = signal(ActionState::Idle);
+    let (admin_token, set_admin_token) = signal(String::new());
+    let (seed_state, set_seed_state) = signal(ActionState::Idle);
+    let (sync_state, set_sync_state) = signal(ActionState::Idle);
     let (enrich_state, set_enrich_state) = signal(ActionState::Idle);
-    let (score_state,  set_score_state)  = signal(ActionState::Idle);
+    let (score_state, set_score_state) = signal(ActionState::Idle);
     let (enrich_limit, set_enrich_limit) = signal(10_000i64);
-    let (logs,         set_logs)         = signal(Vec::<serde_json::Value>::new());
+    let (logs, set_logs) = signal(Vec::<serde_json::Value>::new());
     let (logs_loading, set_logs_loading) = signal(false);
 
-    let (smtp_warn,  set_smtp_warn)  = signal(false);
-    let (tmdb_warn,  set_tmdb_warn)  = signal(false);
-    let (omdb_warn,  set_omdb_warn)  = signal(false);
- let (log_rotation, set_log_rotation) = signal("never".to_string());
+    let (smtp_warn, set_smtp_warn) = signal(false);
+    let (tmdb_warn, set_tmdb_warn) = signal(false);
+    let (omdb_warn, set_omdb_warn) = signal(false);
+    let (log_rotation, set_log_rotation) = signal("never".to_string());
 
     let fetch_logs = move || {
         let tok = admin_token.get_untracked();
@@ -1005,13 +1182,27 @@ pub fn AdminPage() -> impl IntoView {
         fetch_logs();
         spawn_local(async move {
             if let Ok(status) = api::fetch_admin_status().await {
-                let smtp = status.get("smtp_configured").and_then(|v| v.as_bool()).unwrap_or(true);
-                let tmdb = status.get("tmdb_configured").and_then(|v| v.as_bool()).unwrap_or(true);
-                let omdb = status.get("omdb_configured").and_then(|v| v.as_bool()).unwrap_or(true);
+                let smtp = status
+                    .get("smtp_configured")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+                let tmdb = status
+                    .get("tmdb_configured")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+                let omdb = status
+                    .get("omdb_configured")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
                 set_smtp_warn.set(!smtp);
                 set_tmdb_warn.set(!tmdb);
                 set_omdb_warn.set(!omdb);
- let rot = status.get("log_rotation").and_then(|v| v.as_str()).unwrap_or("never").to_string(); set_log_rotation.set(rot);
+                let rot = status
+                    .get("log_rotation")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("never")
+                    .to_string();
+                set_log_rotation.set(rot);
             }
         });
     });
@@ -1021,7 +1212,7 @@ pub fn AdminPage() -> impl IntoView {
         set_seed_state.set(ActionState::Running);
         spawn_local(async move {
             match api::admin_seed(&tok).await {
-                Ok(_)  => set_seed_state.set(ActionState::Done("Started — watch logs below".into())),
+                Ok(_) => set_seed_state.set(ActionState::Done("Started — watch logs below".into())),
                 Err(e) => set_seed_state.set(ActionState::Failed(e)),
             }
         });
@@ -1031,7 +1222,7 @@ pub fn AdminPage() -> impl IntoView {
         set_sync_state.set(ActionState::Running);
         spawn_local(async move {
             match api::admin_sync(&tok).await {
-                Ok(_)  => set_sync_state.set(ActionState::Done("Started — watch logs below".into())),
+                Ok(_) => set_sync_state.set(ActionState::Done("Started — watch logs below".into())),
                 Err(e) => set_sync_state.set(ActionState::Failed(e)),
             }
         });
@@ -1042,7 +1233,9 @@ pub fn AdminPage() -> impl IntoView {
         set_enrich_state.set(ActionState::Running);
         spawn_local(async move {
             match api::admin_enrich(limit, &tok).await {
-                Ok(_)  => set_enrich_state.set(ActionState::Done("Started — watch logs below".into())),
+                Ok(_) => {
+                    set_enrich_state.set(ActionState::Done("Started — watch logs below".into()))
+                }
                 Err(e) => set_enrich_state.set(ActionState::Failed(e)),
             }
         });
@@ -1052,7 +1245,9 @@ pub fn AdminPage() -> impl IntoView {
         set_score_state.set(ActionState::Running);
         spawn_local(async move {
             match api::admin_score(&tok).await {
-                Ok(_)  => set_score_state.set(ActionState::Done("Started — watch logs below".into())),
+                Ok(_) => {
+                    set_score_state.set(ActionState::Done("Started — watch logs below".into()))
+                }
                 Err(e) => set_score_state.set(ActionState::Failed(e)),
             }
         });
@@ -1250,35 +1445,44 @@ struct WatchlistItem {
 pub fn WatchlistPage() -> impl IntoView {
     let auth = use_context::<RwSignal<Option<AuthState>>>().expect("auth context missing");
 
-    let (items,   set_items)   = signal(Vec::<WatchlistItem>::new());
+    let (items, set_items) = signal(Vec::<WatchlistItem>::new());
     let (loading, set_loading) = signal(false);
-    let (error,   set_error)   = signal(Option::<String>::None);
+    let (error, set_error) = signal(Option::<String>::None);
 
-    Effect::new(move |_| {
-        match auth.get() {
-            None => { set_items.set(vec![]); set_loading.set(false); }
-            Some(a) => {
-                let token = a.token.clone();
-                set_loading.set(true);
-                set_error.set(None);
-                spawn_local(async move {
-                    match api::get_watchlist(&token).await {
-                        Err(e) => { set_error.set(Some(e)); set_loading.set(false); }
-                        Ok(entries) => {
-                            let mut results = Vec::new();
-                            for entry in entries {
-                                if entry.state == WatchState::NotInterested { continue; }
-                                let encoded = encode_movie_id(entry.movie_id);
-                                if let Ok(movie) = api::fetch_movie(&encoded).await {
-                                    results.push(WatchlistItem { movie, state: entry.state });
-                                }
-                            }
-                            set_items.set(results);
-                            set_loading.set(false);
-                        }
+    Effect::new(move |_| match auth.get() {
+        None => {
+            set_items.set(vec![]);
+            set_loading.set(false);
+        }
+        Some(a) => {
+            let token = a.token.clone();
+            set_loading.set(true);
+            set_error.set(None);
+            spawn_local(async move {
+                match api::get_watchlist(&token).await {
+                    Err(e) => {
+                        set_error.set(Some(e));
+                        set_loading.set(false);
                     }
-                });
-            }
+                    Ok(entries) => {
+                        let mut results = Vec::new();
+                        for entry in entries {
+                            if entry.state == WatchState::NotInterested {
+                                continue;
+                            }
+                            let encoded = encode_movie_id(entry.movie_id);
+                            if let Ok(movie) = api::fetch_movie(&encoded).await {
+                                results.push(WatchlistItem {
+                                    movie,
+                                    state: entry.state,
+                                });
+                            }
+                        }
+                        set_items.set(results);
+                        set_loading.set(false);
+                    }
+                }
+            });
         }
     });
 
@@ -1334,21 +1538,27 @@ pub fn WatchlistPage() -> impl IntoView {
 // ── Watchlist card ────────────────────────────────────────────────────────────
 #[component]
 fn WatchlistCard(item: WatchlistItem) -> impl IntoView {
-    let navigate   = use_navigate();
-    let href       = format!("/movie/{}", encode_movie_id(item.movie.id.unwrap_or(0)));
-    let href_nav   = href.clone();
-    let poster     = item.movie.poster_url.clone().unwrap_or_default();
+    let navigate = use_navigate();
+    let href = format!("/movie/{}", encode_movie_id(item.movie.id.unwrap_or(0)));
+    let href_nav = href.clone();
+    let poster = item.movie.poster_url.clone().unwrap_or_default();
     let has_poster = !poster.is_empty();
-    let title      = item.movie.title.clone();
-    let year       = item.movie.year.map(|y| y.to_string()).unwrap_or_default();
-    let director   = item.movie.director.clone().unwrap_or_default();
-    let imdb       = item.movie.imdb_rating.map(|r| format!("{:.1}", r));
-    let gem_score  = item.movie.gem_score.map(|s| format!("{:.0}%", s * 100.0));
+    let title = item.movie.title.clone();
+    let year = item.movie.year.map(|y| y.to_string()).unwrap_or_default();
+    let director = item.movie.director.clone().unwrap_or_default();
+    let imdb = item.movie.imdb_rating.map(|r| format!("{:.1}", r));
+    let gem_score = item.movie.gem_score.map(|s| format!("{:.0}%", s * 100.0));
 
     let (badge_label, badge_class) = match item.state {
-        WatchState::WantToWatch   => ("🔖 Want to watch", "bg-sc-accent-deep border-sc-accent text-sc-accent"),
-        WatchState::Watched       => ("✓ Watched",        "bg-green-950 border-green-700 text-green-400"),
-        WatchState::NotInterested => ("✗ Not interested", "bg-stone-800 border-stone-600 text-stone-400"),
+        WatchState::WantToWatch => (
+            "🔖 Want to watch",
+            "bg-sc-accent-deep border-sc-accent text-sc-accent",
+        ),
+        WatchState::Watched => ("✓ Watched", "bg-green-950 border-green-700 text-green-400"),
+        WatchState::NotInterested => (
+            "✗ Not interested",
+            "bg-stone-800 border-stone-600 text-stone-400",
+        ),
     };
 
     view! {
