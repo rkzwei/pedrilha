@@ -21,6 +21,9 @@ pub struct Movie {
     pub gem_score: Option<f64>,
     pub gem_rank: Option<i64>,
     pub release_date: Option<String>,
+    pub revenue: Option<i64>,
+    pub collection_id: Option<i64>,
+    pub keywords: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }
@@ -266,6 +269,14 @@ pub struct TmdbMovieDetail {
     pub poster_path: Option<String>,
     pub genres: Vec<TmdbGenre>,
     pub runtime: Option<i32>,
+    pub revenue: Option<i64>,
+    pub belongs_to_collection: Option<TmdbCollection>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TmdbCollection {
+    pub id: i64,
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -375,4 +386,16 @@ pub struct OmdbResponse {
 pub struct OmdbRating {
     pub source: Option<String>,
     pub value: Option<String>,
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TmdbKeywordsResponse {
+    pub keywords: Vec<TmdbKeyword>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TmdbKeyword {
+    pub id: i64,
+    pub name: String,
 }

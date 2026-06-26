@@ -19,7 +19,10 @@ pub async fn send_magic_link(to_email: &str, token: &str, next: Option<&str>) ->
     let user = std::env::var("SMTP_USER").context("SMTP_USER not set")?;
     let password = std::env::var("SMTP_PASSWORD").context("SMTP_PASSWORD not set")?;
     let from = std::env::var("SMTP_FROM").unwrap_or_else(|_| user.clone());
-    let app_url = std::env::var("APP_URL").unwrap_or_else(|_| "http://localhost:8080".into());
+    let app_url = std::env::var("APP_URL").unwrap_or_else(|_| {
+        tracing::warn!("APP_URL not set — magic-link emails will contain localhost URLs. Set APP_URL=https://yourdomain.com in production.");
+        "http://localhost:8080".into()
+    });
 
     let magic_url = match next.filter(|n| !n.is_empty()) {
         Some(n) => format!(

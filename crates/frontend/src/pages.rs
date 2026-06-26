@@ -108,7 +108,7 @@ fn FilterBar(
                     view! { <div /> }.into_any()
                 } else {
                     view! {
-                        <div class="flex flex-wrap gap-1.5 mt-2">
+                        <div class="flex flex-wrap gap-3 mt-2">
                             {gs.iter().cloned().map(|g| {
                                 let g_rm = g.clone();
                                 view! {
@@ -179,7 +179,7 @@ fn FilterBar(
                             </div>
                             <div class="flex-1 min-w-0">
                                 <p class="text-xs uppercase tracking-widest text-stone-500 mb-2">"Genre"</p>
-                                <div class="flex flex-wrap gap-1.5">
+                                <div class="flex flex-wrap gap-3">
                                     {GENRES.iter().map(|g| {
                                         let gs = g.to_string();
                                         let gs_click = gs.clone();
@@ -986,6 +986,7 @@ pub fn AdminPage() -> impl IntoView {
     let (smtp_warn,  set_smtp_warn)  = signal(false);
     let (tmdb_warn,  set_tmdb_warn)  = signal(false);
     let (omdb_warn,  set_omdb_warn)  = signal(false);
+ let (log_rotation, set_log_rotation) = signal("never".to_string());
 
     let fetch_logs = move || {
         let tok = admin_token.get_untracked();
@@ -1010,6 +1011,7 @@ pub fn AdminPage() -> impl IntoView {
                 set_smtp_warn.set(!smtp);
                 set_tmdb_warn.set(!tmdb);
                 set_omdb_warn.set(!omdb);
+ let rot = status.get("log_rotation").and_then(|v| v.as_str()).unwrap_or("never").to_string(); set_log_rotation.set(rot);
             }
         });
     });
@@ -1103,6 +1105,7 @@ pub fn AdminPage() -> impl IntoView {
                 }.into_any()
             }}
 
+                <div class="mb-4 p-3 bg-sc-panel rounded border border-sc-border text-xs text-stone-400 flex gap-4 items-center"><span class="uppercase tracking-widest">"Log rotation"</span><span class="text-stone-200">{move || log_rotation.get()}</span><span class="text-stone-600">"set LOG_ROTATION=never|daily|hourly in .env, restart to apply"</span></div>
             <div class="mb-6 p-4 bg-sc-panel rounded border border-sc-accent-border">
                 <div class="flex items-start justify-between gap-4">
                     <div class="flex-1 min-w-0">

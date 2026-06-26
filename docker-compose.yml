@@ -17,12 +17,29 @@ services:
       # Always local SQLite — no cloud database in Docker
       - TURSO_DATABASE_URL=
       - TURSO_AUTH_TOKEN=
-      - DATABASE_URL=
+      # DB lives in the named volume so it persists across rebuilds
+      - DATABASE_URL=/app/data/gem_finder.db
+      # Admin panel protection — REQUIRED in production
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+      # Public-facing URL for magic-link emails
+      - APP_URL=${APP_URL:-http://localhost:3000}
+      # SMTP (magic-link email delivery)
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-465}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_FROM=${SMTP_FROM}
+      # JWT session signing — REQUIRED
+      - JWT_SECRET=${JWT_SECRET}
+      # WebAuthn / Passkeys
+      - WEBAUTHN_ORIGIN=${WEBAUTHN_ORIGIN:-http://localhost:3000}
+      - WEBAUTHN_RP_ID=${WEBAUTHN_RP_ID:-localhost}
     volumes:
       # Named volume — persists gem_finder.db across image rebuilds.
+      # Mounted at /app/data so the binary and dist/ in /app are NOT shadowed.
       # Data survives `docker compose build` and `docker compose up/down`.
       # Only lost on `docker compose down -v` (explicit volume deletion).
-      - gem-data:/app
+      - gem-data:/app/data
     restart: unless-stopped
 
 volumes:

@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     routing::{get, post},
     Json, Router,
 };
@@ -93,6 +93,8 @@ struct AppState {
     passkey_reg_challenges: ChallengeStore<PasskeyRegistration>,
     /// Pending WebAuthn passkey authentication challenges keyed by session key.
     passkey_auth_challenges: ChallengeStore<PasskeyAuthentication>,
+ /// Rate limiter for magic link requests: email -> Vec<Instant> of recent sends.
+ magic_link_limiter: Arc<Mutex<HashMap<String, Vec<std::time::Instant>>>>,
 }
 
 #[derive(Deserialize)]
@@ -127,7 +129,12 @@ async fn main() {
     dotenvy::dotenv().ok();
     // Initialize tracing: write to BOTH stdout and gem_finder.log.
     // Two separate fmt layers share the same filter via registry().
-    let log_file = tracing_appender::rolling::never(".", "gem_finder.log");
+    let log_rotation = std::env::var("LOG_ROTATION").unwrap_or_else(|_| "never".to_string());
+    let log_file = match log_rotation.to_lowercase().as_str() {
+        "daily" => tracing_appender::rolling::daily(".", "gem_finder.log"),
+        "hourly" => tracing_appender::rolling::hourly(".", "gem_finder.log"),
+        _ => tracing_appender::rolling::never(".", "gem_finder.log"),
+    };
     let (file_writer, _guard) = tracing_appender::non_blocking(log_file);
 
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
@@ -213,10 +220,19 @@ async fn main() {
         tracing::warn!("SMTP_HOST/SMTP_USER not set — magic-link email will be unavailable");
     }
 
-    // JWT secret — required for auth to function.
+    // JWT secret — optional. Auth endpoints need it; film discovery works without it.
+    // If unset and SMTP is configured, warn loudly: tokens will be invalid on restart.
+    // If unset and SMTP is not configured, silently use a random per-boot value —
+    // auth is disabled anyway, so no one will mint tokens against this secret.
     let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| {
-        tracing::warn!("JWT_SECRET not set — using insecure default (set this in production!)");
-        "change-me-in-production".to_string()
+        if smtp_configured {
+            tracing::warn!(
+                "JWT_SECRET not set but SMTP is configured — auth will be broken. \
+                 Tokens will be invalid after every restart. Set JWT_SECRET."
+            );
+        }
+        // Random per-boot secret — safe for auth-disabled deployments.
+        uuid::Uuid::new_v4().to_string()
     });
 
     // WebAuthn relying-party configuration.
@@ -246,7 +262,22 @@ async fn main() {
         passkey_auth_challenges: Arc::new(Mutex::new(HashMap::new())),
     };
 
-    let router = Router::new()
+    // CORS: allow origins from CORS_ORIGINS env var (comma-separated). Falls back to permissive in dev.
+ let allowed_origins: Vec<axum::http::HeaderValue> = std::env::var("CORS_ORIGINS")
+ .unwrap_or_default()
+ .split(',')
+ .filter(|s| !s.trim().is_empty())
+ .filter_map(|s| s.trim().parse().ok())
+ .collect();
+ let cors = if allowed_origins.is_empty() {
+ CorsLayer::permissive()
+ } else {
+ CorsLayer::new()
+ .allow_origin(allowed_origins)
+ .allow_methods([axum::http::Method::GET, axum::http::Method::POST, axum::http::Method::PUT, axum::http::Method::DELETE, axum::http::Method::OPTIONS])
+ .allow_headers(tower_http::cors::Any)
+ };
+ let router = Router::new()
         .route("/health", get(health_check))
         .route("/api/gems", get(get_gems))
         .route("/api/acclaimed", get(get_acclaimed))
@@ -300,7 +331,7 @@ async fn main() {
         .route("/api/admin/logs", get(routes::admin::get_run_logs))
         .route("/api/admin/status", get(routes::admin::get_status))
         .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive());
+        .layer(cors);
 
     // Clone state fields needed by the scheduled sync task BEFORE state is moved into the router.
     let sched_db_pre    = state.db.clone();
@@ -790,7 +821,14 @@ async fn get_gems(
                     .collect();
                 if !selected.is_empty() {
                     let movie_genres = m.genre.as_deref().unwrap_or("").to_lowercase();
-                    if !selected.iter().any(|sel| movie_genres.contains(sel.as_str())) {
+ let movie_keywords = m.keywords.as_deref().unwrap_or("").to_lowercase();
+                    if !selected.iter().any(|sel| {
+ if sel == "musical" {
+ movie_keywords.contains("musical")
+ } else {
+ movie_genres.contains(sel.as_str())
+ }
+ }) {
                         return false;
                     }
                 }
@@ -873,7 +911,14 @@ async fn get_acclaimed(
                     .collect();
                 if !selected.is_empty() {
                     let movie_genres = m.genre.as_deref().unwrap_or("").to_lowercase();
-                    if !selected.iter().any(|sel| movie_genres.contains(sel.as_str())) {
+ let movie_keywords = m.keywords.as_deref().unwrap_or("").to_lowercase();
+                    if !selected.iter().any(|sel| {
+ if sel == "musical" {
+ movie_keywords.contains("musical")
+ } else {
+ movie_genres.contains(sel.as_str())
+ }
+ }) {
                         return false;
                     }
                 }
@@ -952,7 +997,14 @@ async fn get_wildcards(
                     .collect();
                 if !selected.is_empty() {
                     let movie_genres = m.genre.as_deref().unwrap_or("").to_lowercase();
-                    if !selected.iter().any(|sel| movie_genres.contains(sel.as_str())) {
+ let movie_keywords = m.keywords.as_deref().unwrap_or("").to_lowercase();
+                    if !selected.iter().any(|sel| {
+ if sel == "musical" {
+ movie_keywords.contains("musical")
+ } else {
+ movie_genres.contains(sel.as_str())
+ }
+ }) {
                         return false;
                     }
                 }
@@ -1006,7 +1058,11 @@ async fn get_movie(
 }
 
 /// POST /api/score — run batch scoring synchronously (used from admin UI).
-async fn run_scoring(State(state): State<AppState>) -> Result<Json<serde_json::Value>, StatusCode> {
+async fn run_scoring(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    routes::admin::check_admin_token(&headers)?;
     let conn = state
         .db
         .connect()

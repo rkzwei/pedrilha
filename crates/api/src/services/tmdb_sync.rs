@@ -3,7 +3,7 @@ use gem_finder_db::models;
 use gem_finder_shared::{
     constants::{tmdb_rate_limit, SEEDED_GEMS},
     types::{
-        Movie, TmdbConfig, TmdbCredits, TmdbDiscoverResponse, TmdbFindResponse, TmdbMovieDetail,
+        Movie, TmdbConfig, TmdbCredits, TmdbDiscoverResponse, TmdbFindResponse, TmdbKeywordsResponse, TmdbMovieDetail,
     },
 };
 use reqwest::Client;
@@ -230,6 +230,9 @@ impl TmdbSyncService {
                             gem_score: None,
                             gem_rank: None,
                             release_date: tmdb_movie.release_date.clone(),
+                            revenue: None,
+                            collection_id: None,
+                            keywords: None,
                             created_at: None,
                             updated_at: None,
                         };
@@ -631,6 +634,11 @@ impl TmdbSyncService {
             self.base_url, tmdb_id, self.api_key
         );
         let credits: TmdbCredits = self.client.get(&credits_url).send().await?.json().await?;
+        // Fetch keywords for Musical and other tag-based filtering.
+        let keywords_url = format!("{}/movie/{}/keywords?api_key={}", self.base_url, tmdb_id, self.api_key);
+        let keywords_resp: TmdbKeywordsResponse = self.client.get(&keywords_url).send().await?.json().await?;
+        let keywords_str = keywords_resp.keywords.iter().map(|k| k.name.clone()).collect::<Vec<_>>().join(", ");
+
         let director = credits
             .crew
             .iter()
@@ -676,6 +684,9 @@ impl TmdbSyncService {
             gem_score: None,
             gem_rank: None,
             release_date: detail.release_date,
+            revenue: detail.revenue,
+            collection_id: detail.belongs_to_collection.map(|c| c.id),
+ keywords: if keywords_str.is_empty() { None } else { Some(keywords_str) },
             created_at: None,
             updated_at: None,
         };

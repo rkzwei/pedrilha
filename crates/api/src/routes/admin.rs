@@ -37,7 +37,7 @@ pub struct EnrichQuery {
 }
 
 /// Minimal bearer-token guard.
-fn check_admin_token(headers: &HeaderMap) -> Result<(), StatusCode> {
+pub(crate) fn check_admin_token(headers: &HeaderMap) -> Result<(), StatusCode> {
     let expected = env::var("ADMIN_TOKEN").unwrap_or_default();
     if expected.is_empty() {
         tracing::warn!("ADMIN_TOKEN is not set; admin endpoints are unprotected");
@@ -450,6 +450,7 @@ pub async fn get_status(
         "smtp_configured":  state.smtp_configured,
         "tmdb_configured":  !state.tmdb_api_key.is_empty(),
         "omdb_configured":  !state.omdb_api_key.is_empty(),
+        "log_rotation": std::env::var("LOG_ROTATION").unwrap_or_else(|_| "never".to_string()),
     }))
 }
 

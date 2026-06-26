@@ -28,10 +28,11 @@ fn value_to_opt_i32(v: Value) -> Option<i32> {
 pub async fn upsert_movie(conn: &Connection, movie: &Movie) -> Result<i64> {
     let mut stmt = conn
         .prepare(
-            "INSERT INTO movies (tmdb_id, imdb_id, title, year, genre, director, overview, 
+            "INSERT INTO movies (tmdb_id, imdb_id, title, year, genre, director, overview,
              poster_url, tmdb_rating, tmdb_vote_count, imdb_rating, imdb_vote_count,
-             rt_critic_score, rt_audience_score, gem_score, gem_rank, release_date)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+             rt_critic_score, rt_audience_score, gem_score, gem_rank, release_date,
+             revenue, collection_id, keywords)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
              ON CONFLICT(tmdb_id) DO UPDATE SET
              imdb_id = COALESCE(excluded.imdb_id, movies.imdb_id),
              title = excluded.title,
@@ -46,6 +47,9 @@ pub async fn upsert_movie(conn: &Connection, movie: &Movie) -> Result<i64> {
              imdb_vote_count = COALESCE(excluded.imdb_vote_count, movies.imdb_vote_count),
              gem_score = COALESCE(excluded.gem_score, movies.gem_score),
              gem_rank = COALESCE(excluded.gem_rank, movies.gem_rank),
+             revenue = COALESCE(excluded.revenue, movies.revenue),
+             collection_id = COALESCE(excluded.collection_id, movies.collection_id),
+ keywords = COALESCE(excluded.keywords, movies.keywords),
              updated_at = datetime('now')
              RETURNING id",
         )
@@ -70,6 +74,9 @@ pub async fn upsert_movie(conn: &Connection, movie: &Movie) -> Result<i64> {
             movie.gem_score,
             movie.gem_rank,
             movie.release_date.as_deref(),
+            movie.revenue,
+            movie.collection_id,
+            movie.keywords.as_deref(),
         ])
         .await?;
 
@@ -168,6 +175,9 @@ pub async fn get_movie_by_id(conn: &Connection, id: i64) -> Result<Option<Movie>
             release_date: value_to_opt_string(row.get_value(17)?),
             created_at: value_to_opt_string(row.get_value(18)?),
             updated_at: value_to_opt_string(row.get_value(19)?),
+            revenue: value_to_opt_i64(row.get_value(20)?),
+            collection_id: value_to_opt_i64(row.get_value(21)?),
+            keywords: value_to_opt_string(row.get_value(22)?),
         }))
     } else {
         Ok(None)
@@ -183,7 +193,7 @@ pub async fn get_all_movies_for_scoring(conn: &Connection) -> Result<Vec<Movie>>
             "SELECT id, tmdb_id, imdb_id, title, year, genre, director, overview, poster_url,
              tmdb_rating, tmdb_vote_count, imdb_rating, imdb_vote_count,
              rt_critic_score, rt_audience_score, gem_score, gem_rank, release_date,
-             created_at, updated_at FROM movies
+             created_at, updated_at, revenue, collection_id, keywords FROM movies
              WHERE id NOT IN (SELECT movie_id FROM big_hits WHERE movie_id IS NOT NULL)",
         )
         .await?;
@@ -212,6 +222,9 @@ pub async fn get_all_movies_for_scoring(conn: &Connection) -> Result<Vec<Movie>>
             release_date: value_to_opt_string(row.get_value(17)?),
             created_at: value_to_opt_string(row.get_value(18)?),
             updated_at: value_to_opt_string(row.get_value(19)?),
+            revenue: value_to_opt_i64(row.get_value(20)?),
+            collection_id: value_to_opt_i64(row.get_value(21)?),
+            keywords: value_to_opt_string(row.get_value(22)?),
         });
     }
     Ok(results)

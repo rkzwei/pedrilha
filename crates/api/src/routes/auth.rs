@@ -77,7 +77,17 @@ pub async fn magic_link_request(
         );
     }
 
-    let conn = match state.db.connect().await {
+    // Rate limit: 5 magic links per email per 10 min
+ {
+ let mut lim = state.magic_link_limiter.lock().await;
+ let now = std::time::Instant::now();
+ let win = std::time::Duration::from_secs(600);
+ let e = lim.entry(email.clone()).or_insert_with(Vec::new);
+ e.retain(|t| now.duration_since(*t) < win);
+ if e.len() >= 5 { return (StatusCode::TOO_MANY_REQUESTS, Json(json!({ "error": "rate limited" }))); }
+ e.push(now);
+ }
+ let conn = match state.db.connect().await {
         Ok(c) => c,
         Err(_) => {
             return (
@@ -136,7 +146,17 @@ pub async fn magic_link_verify(
         );
     }
 
-    let conn = match state.db.connect().await {
+    // Rate limit: 5 magic links per email per 10 min
+ {
+ let mut lim = state.magic_link_limiter.lock().await;
+ let now = std::time::Instant::now();
+ let win = std::time::Duration::from_secs(600);
+ let e = lim.entry(email.clone()).or_insert_with(Vec::new);
+ e.retain(|t| now.duration_since(*t) < win);
+ if e.len() >= 5 { return (StatusCode::TOO_MANY_REQUESTS, Json(json!({ "error": "rate limited" }))); }
+ e.push(now);
+ }
+ let conn = match state.db.connect().await {
         Ok(c) => c,
         Err(_) => {
             return (
@@ -221,7 +241,17 @@ pub async fn check_username(
         );
     }
 
-    let conn = match state.db.connect().await {
+    // Rate limit: 5 magic links per email per 10 min
+ {
+ let mut lim = state.magic_link_limiter.lock().await;
+ let now = std::time::Instant::now();
+ let win = std::time::Duration::from_secs(600);
+ let e = lim.entry(email.clone()).or_insert_with(Vec::new);
+ e.retain(|t| now.duration_since(*t) < win);
+ if e.len() >= 5 { return (StatusCode::TOO_MANY_REQUESTS, Json(json!({ "error": "rate limited" }))); }
+ e.push(now);
+ }
+ let conn = match state.db.connect().await {
         Ok(c) => c,
         Err(_) => {
             return (
@@ -271,7 +301,17 @@ pub async fn set_username(
         );
     }
 
-    let conn = match state.db.connect().await {
+    // Rate limit: 5 magic links per email per 10 min
+ {
+ let mut lim = state.magic_link_limiter.lock().await;
+ let now = std::time::Instant::now();
+ let win = std::time::Duration::from_secs(600);
+ let e = lim.entry(email.clone()).or_insert_with(Vec::new);
+ e.retain(|t| now.duration_since(*t) < win);
+ if e.len() >= 5 { return (StatusCode::TOO_MANY_REQUESTS, Json(json!({ "error": "rate limited" }))); }
+ e.push(now);
+ }
+ let conn = match state.db.connect().await {
         Ok(c) => c,
         Err(_) => {
             return (
@@ -407,7 +447,17 @@ pub async fn passkey_register_finish(
         }
     };
 
-    let conn = match state.db.connect().await {
+    // Rate limit: 5 magic links per email per 10 min
+ {
+ let mut lim = state.magic_link_limiter.lock().await;
+ let now = std::time::Instant::now();
+ let win = std::time::Duration::from_secs(600);
+ let e = lim.entry(email.clone()).or_insert_with(Vec::new);
+ e.retain(|t| now.duration_since(*t) < win);
+ if e.len() >= 5 { return (StatusCode::TOO_MANY_REQUESTS, Json(json!({ "error": "rate limited" }))); }
+ e.push(now);
+ }
+ let conn = match state.db.connect().await {
         Ok(c) => c,
         Err(_) => {
             return (
@@ -438,7 +488,17 @@ pub async fn passkey_auth_start(
 ) -> (StatusCode, Json<Value>) {
     let email = body.email.trim().to_lowercase();
 
-    let conn = match state.db.connect().await {
+    // Rate limit: 5 magic links per email per 10 min
+ {
+ let mut lim = state.magic_link_limiter.lock().await;
+ let now = std::time::Instant::now();
+ let win = std::time::Duration::from_secs(600);
+ let e = lim.entry(email.clone()).or_insert_with(Vec::new);
+ e.retain(|t| now.duration_since(*t) < win);
+ if e.len() >= 5 { return (StatusCode::TOO_MANY_REQUESTS, Json(json!({ "error": "rate limited" }))); }
+ e.push(now);
+ }
+ let conn = match state.db.connect().await {
         Ok(c) => c,
         Err(_) => {
             return (
@@ -562,7 +622,17 @@ pub async fn passkey_auth_finish(
         }
     };
 
-    let conn = match state.db.connect().await {
+    // Rate limit: 5 magic links per email per 10 min
+ {
+ let mut lim = state.magic_link_limiter.lock().await;
+ let now = std::time::Instant::now();
+ let win = std::time::Duration::from_secs(600);
+ let e = lim.entry(email.clone()).or_insert_with(Vec::new);
+ e.retain(|t| now.duration_since(*t) < win);
+ if e.len() >= 5 { return (StatusCode::TOO_MANY_REQUESTS, Json(json!({ "error": "rate limited" }))); }
+ e.push(now);
+ }
+ let conn = match state.db.connect().await {
         Ok(c) => c,
         Err(_) => {
             return (

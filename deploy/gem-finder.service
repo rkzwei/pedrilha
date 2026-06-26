@@ -1,0 +1,28 @@
+[Unit]
+Description=Gem Finder — Hidden film discovery app
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=gem-finder
+WorkingDirectory=/opt/gem-finder
+EnvironmentFile=/opt/gem-finder/.env
+ExecStart=/opt/gem-finder/gem-finder-api
+Restart=on-failure
+RestartSec=5s
+
+# Logging — stdout goes to journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gem-finder
+
+# Sandboxing (optional hardening)
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/gem-finder
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,27 @@
+yourdomain.com {
+    reverse_proxy localhost:3000
+
+    # Compression — remove if Axum's CompressionLayer is active (avoid double-encoding)
+    encode gzip zstd
+
+    # Cache headers for hashed static assets (trunk outputs fingerprinted filenames)
+    @static {
+        path *.wasm *.js *.css *.ico *.png *.svg *.woff2
+    }
+    header @static Cache-Control "public, max-age=31536000, immutable"
+
+    # index.html must not be cached (SPA entry point changes on redeploy)
+    @index {
+        path /index.html /
+    }
+    header @index Cache-Control "no-cache, no-store, must-revalidate"
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Frame-Options "DENY"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+}

@@ -20,11 +20,19 @@ pub async fn run(conn: &Connection) -> Result<()> {
         migrate_v3(conn).await?;
         record_version(conn, 3).await?;
     }
+    if !applied.contains(&4) {
+        migrate_v4(conn).await?;
+        record_version(conn, 4).await?;
+    }
+    if !applied.contains(&5) {
+        migrate_v5(conn).await?;
+        record_version(conn, 5).await?;
+    }
 
     Ok(())
 }
 
-// ── Migration bookkeeping ─────────────────────────────────────────────────────
+// ── Migration bookkeeping ────────────────────────────────────────────────────
 
 async fn bootstrap_migrations_table(conn: &Connection) -> Result<()> {
     conn.execute(
@@ -61,7 +69,7 @@ async fn record_version(conn: &Connection, version: i64) -> Result<()> {
     Ok(())
 }
 
-// ── Migration v1: core tables (phases 1–6) ────────────────────────────────────
+// ── Migration v1: core tables (phases 1–6) ──────────────────────────────────
 
 async fn migrate_v1(conn: &Connection) -> Result<()> {
     // movies
@@ -92,7 +100,7 @@ async fn migrate_v1(conn: &Connection) -> Result<()> {
     )
     .await?;
 
-    // big_hits — blockbusters used to compute obscured-by signal
+    // big_hits – blockbusters used to compute obscured-by signal
     conn.execute(
         "CREATE TABLE IF NOT EXISTS big_hits (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,7 +113,7 @@ async fn migrate_v1(conn: &Connection) -> Result<()> {
     )
     .await?;
 
-    // acclaimed — movies meeting the high-bar critic + community threshold
+    // acclaimed – movies meeting the high-bar critic + community threshold
     conn.execute(
         "CREATE TABLE IF NOT EXISTS acclaimed (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -117,7 +125,7 @@ async fn migrate_v1(conn: &Connection) -> Result<()> {
     )
     .await?;
 
-    // wildcards — algorithmically strong but low RT critic score
+    // wildcards – algorithmically strong but low RT critic score
     conn.execute(
         "CREATE TABLE IF NOT EXISTS wildcards (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -129,7 +137,7 @@ async fn migrate_v1(conn: &Connection) -> Result<()> {
     )
     .await?;
 
-    // run_logs — admin operation history
+    // run_logs – admin operation history
     conn.execute(
         "CREATE TABLE IF NOT EXISTS run_logs (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -152,18 +160,19 @@ async fn migrate_v1(conn: &Connection) -> Result<()> {
         conn.execute(ddl, turso::params![]).await?;
     }
 
+    tracing::info!("Applied migration v1: core tables");
     Ok(())
 }
 
-// ── Migration v2: user accounts + watchlist (phase 8) ────────────────────────
+// ── Migration v2: user accounts + watchlist (phase 8) ───────────────────────
 
 async fn migrate_v2(conn: &Connection) -> Result<()> {
-    // Drop legacy Phase-1 placeholder watchlist (wrong schema — no user_id,
+    // Drop legacy Phase-1 placeholder watchlist (wrong schema – no user_id,
     // wrong state values, no user_rating). No production data to preserve.
     conn.execute("DROP TABLE IF EXISTS watchlist", turso::params![])
         .await?;
 
-    // users — one row per registered email address
+    // users – one row per registered email address
     conn.execute(
         "CREATE TABLE IF NOT EXISTS users (
             id         TEXT PRIMARY KEY,          -- UUID v4
@@ -176,7 +185,7 @@ async fn migrate_v2(conn: &Connection) -> Result<()> {
     )
     .await?;
 
-    // magic_tokens — one-time passwordless auth tokens
+    // magic_tokens – one-time passwordless auth tokens
     conn.execute(
         "CREATE TABLE IF NOT EXISTS magic_tokens (
             token      TEXT PRIMARY KEY,          -- UUID v4, unguessable
@@ -189,7 +198,7 @@ async fn migrate_v2(conn: &Connection) -> Result<()> {
     )
     .await?;
 
-    // watchlist — user × movie relationship with optional 1-10 rating
+    // watchlist – user ↔ movie relationship with optional 1-10 rating
     conn.execute(
         "CREATE TABLE IF NOT EXISTS watchlist (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -205,7 +214,7 @@ async fn migrate_v2(conn: &Connection) -> Result<()> {
     )
     .await?;
 
-    // passkeys — WebAuthn credentials registered by a user after magic-link bootstrap
+    // passkeys – WebAuthn credentials registered by a user after magic-link bootstrap
     conn.execute(
         "CREATE TABLE IF NOT EXISTS passkeys (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -230,10 +239,11 @@ async fn migrate_v2(conn: &Connection) -> Result<()> {
         conn.execute(ddl, turso::params![]).await?;
     }
 
+    tracing::info!("Applied migration v2: user accounts + watchlist");
     Ok(())
 }
 
-// ── Migration v3: cleanup indexes ─────────────────────────────────────────────
+// ── Migration v3: cleanup indexes ───────────────────────────────────────────
 
 async fn migrate_v3(conn: &Connection) -> Result<()> {
     for ddl in [
@@ -244,5 +254,35 @@ async fn migrate_v3(conn: &Connection) -> Result<()> {
     ] {
         conn.execute(ddl, turso::params![]).await?;
     }
+    tracing::info!("Applied migration v3: cleanup indexes");
+    Ok(())
+}
+
+// ── Migration v4: revenue + collection_id columns ───────────────────────────
+
+async fn migrate_v4(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "ALTER TABLE movies ADD COLUMN revenue INTEGER",
+        turso::params![],
+    )
+    .await?;
+    conn.execute(
+        "ALTER TABLE movies ADD COLUMN collection_id INTEGER",
+        turso::params![],
+    )
+    .await?;
+    tracing::info!("Applied migration v4: revenue + collection_id columns");
+    Ok(())
+}
+
+// ── Migration v5: keywords column ───────────────────────────────────────────
+
+async fn migrate_v5(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "ALTER TABLE movies ADD COLUMN keywords TEXT",
+        turso::params![],
+    )
+    .await?;
+    tracing::info!("Applied migration v5: keywords column");
     Ok(())
 }

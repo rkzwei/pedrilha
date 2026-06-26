@@ -74,7 +74,7 @@ impl GemScoreCalculator {
         // True hidden gem = critics endorsed it + audiences missed it (high RT, low votes).
         // Wildcard / divisive = critics panned it + audiences stayed away (low RT, low votes).
         //
-        // Without this multiplier, both patterns produce identical vote_ratio scores —
+        // Without this multiplier, both patterns produce identical vote_ratio scores â€”
         // the algorithm cannot distinguish genuine undiscovery from informed avoidance.
         // Films with rt < WILDCARD_RT_THRESHOLD are scored (not filtered) but classified
         // as wildcards post-scoring and excluded from the main gems listing.
@@ -103,9 +103,9 @@ impl GemScoreCalculator {
         })
     }
 
-    /// Score the IMDb rating being in the hidden gem sweet spot (6.5–7.9).
+    /// Score the IMDb rating being in the hidden gem sweet spot (6.5â€“7.9).
     /// Peaks around 7.2 (center of range) using a quadratic curve.
-    /// At the edges (6.5 or 7.9) → 0.0; at center (7.2) → 1.0.
+    /// At the edges (6.5 or 7.9) â†’ 0.0; at center (7.2) â†’ 1.0.
     fn calc_imdb_rating_score(&self, rating: f64) -> f64 {
         if !(IMDB_GEM_MIN..=IMDB_GEM_MAX).contains(&rating) {
             return 0.0;
@@ -118,31 +118,31 @@ impl GemScoreCalculator {
 
     /// Score from high rating relative to low vote count (undiscovered factor).
     /// Uses rating / log10(votes): high rating + few votes = hidden gem signal.
-    /// Normalization baseline: 7.5 rating at 10,000 votes → ratio ≈ 1.875.
+    /// Normalization baseline: 7.5 rating at 10,000 votes â†’ ratio â‰ˆ 1.875.
     fn calc_vote_ratio_score(&self, rating: f64, votes: i64) -> f64 {
         if votes <= 0 {
             return 0.0;
         }
         let log_votes = (votes as f64).log10().max(1.0);
         let ratio = rating / log_votes;
-        // At ~500 votes (log10=2.7) with 7.9 rating → ratio≈2.93 (high score)
-        // At ~1M votes (log10=6) with 6.5 rating → ratio≈1.08 (low score)
+        // At ~500 votes (log10=2.7) with 7.9 rating â†’ ratioâ‰ˆ2.93 (high score)
+        // At ~1M votes (log10=6) with 6.5 rating â†’ ratioâ‰ˆ1.08 (low score)
         // Cap at 3.0 to normalize to [0, 1]
         (ratio / 3.0).clamp(0.0, 1.0)
     }
 
-    /// Score from year decay — older movies with sustained ratings are forgotten classics.
+    /// Score from year decay â€” older movies with sustained ratings are forgotten classics.
     ///
     /// Uses `(age / 30).clamp(0, 1)` instead of `age / (current_year - DATA_START_YEAR)`.
     /// The old formula spread scores across a 66-year range, giving 3-year-old films a
-    /// nearly identical score (0.045) to 10-year-old films (0.15) — both effectively zero.
+    /// nearly identical score (0.045) to 10-year-old films (0.15) â€” both effectively zero.
     /// The new formula plateaus at 1.0 for films 30+ years old, and gives meaningful
     /// differentiation across the 3-30 year range where most hidden gems live:
-    ///   - 3 years  → 0.10  (recent release, low "forgotten" signal)
-    ///   - 6 years  → 0.20  (e.g. Dinner in America 2020)
-    ///   - 15 years → 0.50
-    ///   - 18 years → 0.60  (e.g. The Hurt Locker 2008)
-    ///   - 30+ years → 1.0  (e.g. Sorcerer 1977)
+    ///   - 3 years  â†’ 0.10  (recent release, low "forgotten" signal)
+    ///   - 6 years  â†’ 0.20  (e.g. Dinner in America 2020)
+    ///   - 15 years â†’ 0.50
+    ///   - 18 years â†’ 0.60  (e.g. The Hurt Locker 2008)
+    ///   - 30+ years â†’ 1.0  (e.g. Sorcerer 1977)
     fn calc_year_decay_score(&self, year: Option<i32>) -> f64 {
         let current_year = chrono::Utc::now().year();
         let start_year = constants::DATA_START_YEAR;
@@ -157,7 +157,7 @@ impl GemScoreCalculator {
     }
 
     /// Score from being obscured by a nearby blockbuster.
-    /// Returns 1.0 if a big hit was released within ±OBSCURED_WINDOW_WEEKS, else 0.0.
+    /// Returns 1.0 if a big hit was released within Â±OBSCURED_WINDOW_WEEKS, else 0.0.
     fn calc_obscured_score(&self, release_date: Option<&str>, big_hit_dates: &[String]) -> f64 {
         let release_date = match release_date {
             Some(d) if !d.is_empty() => d,
@@ -189,23 +189,23 @@ impl GemScoreCalculator {
     /// not genuine undiscovery.
     ///
     /// Mapping:
-    ///   - rt >= 70%  → 1.0  (critics endorsed it — full trust in vote_ratio signal)
-    ///   - rt in [40, 70) → linear 0.0 → 1.0  (partial trust)
-    ///   - rt < 40%   → 0.0  (critics panned it — vote_ratio is misleading)
-    ///   - rt = None  → 0.8  (benefit of doubt; old films often lack RT data)
+    ///   - rt >= 70%  â†’ 1.0  (critics endorsed it â€” full trust in vote_ratio signal)
+    ///   - rt in [40, 70) â†’ linear 0.0 â†’ 1.0  (partial trust)
+    ///   - rt < 40%   â†’ 0.0  (critics panned it â€” vote_ratio is misleading)
+    ///   - rt = None  â†’ 0.8  (benefit of doubt; old films often lack RT data)
     ///
     /// Films with rt < WILDCARD_RT_THRESHOLD (50%) are post-scored into the wildcards
-    /// table — they still receive a gem_score for ranking purposes but are listed
+    /// table â€” they still receive a gem_score for ranking purposes but are listed
     /// separately from hidden gems.
     pub(crate) fn calc_rt_credibility_multiplier(&self, rt_critic: Option<i32>) -> f64 {
         match rt_critic {
-            None => 0.8, // Benefit of doubt — old/obscure films often lack RT data
+            None => 0.8, // Benefit of doubt â€” old/obscure films often lack RT data
             Some(rt) if rt >= RT_CREDIBILITY_HIGH => 1.0,
             Some(rt) if rt >= RT_CREDIBILITY_FLOOR => {
                 (rt as f64 - RT_CREDIBILITY_FLOOR as f64)
                     / (RT_CREDIBILITY_HIGH as f64 - RT_CREDIBILITY_FLOOR as f64)
             }
-            Some(_) => 0.0, // RT < 40% — informed avoidance, not undiscovery
+            Some(_) => 0.0, // RT < 40% â€” informed avoidance, not undiscovery
         }
     }
 
@@ -213,7 +213,7 @@ impl GemScoreCalculator {
     ///
     /// Multiplies together the boosts for every matching genre. Using a product
     /// (rather than taking the max) means a "Drama, Romance" film correctly gets
-    /// 1.1 × 0.85 = 0.935 — the Romance penalty applies even though Drama is present.
+    /// 1.1 Ã— 0.85 = 0.935 â€” the Romance penalty applies even though Drama is present.
     /// With max(), Drama would always win (1.1) and the Romance penalty would be ignored.
     ///
     /// Unmatched genres contribute 1.0 (neutral), so films with genres not in the
@@ -224,7 +224,7 @@ impl GemScoreCalculator {
             None => return 1.0,
         };
 
-        // Use the static slice — no HashMap allocation per movie.
+        // Use the static slice â€” no HashMap allocation per movie.
         constants::genre_boosts::ALL
             .iter()
             .filter(|(name, _)| genre.contains(name))
@@ -263,13 +263,13 @@ pub async fn run_batch_scoring(conn: &Connection) -> Result<usize> {
     // changed) keep their stale gem_score and rank indefinitely.
     //
     // Clearing first means the scored set is always exactly the films that qualify
-    // under the current algorithm and data — no survivors from previous runs.
+    // under the current algorithm and data â€” no survivors from previous runs.
     models::clear_all_gem_scores(conn).await?;
 
     // 2. Load blockbuster release dates from the big_hits table.
     //    These are populated by TmdbSyncService::sync_blockbusters(), which fetches
-    //    top-popularity movies with no rating filter — blockbusters like Star Wars and
-    //    Avengers are above the 6.0–8.0 gem range and would never appear in the gem
+    //    top-popularity movies with no rating filter â€” blockbusters like Star Wars and
+    //    Avengers are above the 6.0â€“8.0 gem range and would never appear in the gem
     //    candidate pool, so deriving big_hit_dates from that pool is always wrong.
     let big_hit_dates = models::get_big_hit_dates(conn).await.unwrap_or_else(|e| {
         tracing::warn!(
@@ -308,7 +308,7 @@ pub async fn run_batch_scoring(conn: &Connection) -> Result<usize> {
     if let Some(&(_, max_score)) = scored.first() {
         if max_score > 0.0 && max_score < 1.0 {
             tracing::info!(
-                "Normalizing {} scores by population max {:.4} (top gem → 100%)",
+                "Normalizing {} scores by population max {:.4} (top gem â†’ 100%)",
                 scored_count,
                 max_score
             );
@@ -343,7 +343,7 @@ mod tests {
     /// Build a test movie. `tmdb_rating` and `imdb_rating` are kept separate:
     /// pass `imdb_rating: None` to simulate TMDB-only data (the common case after ingestion).
     ///
-    /// Leaves `rt_critic_score: None` — the scoring filter only fires when RT data is
+    /// Leaves `rt_critic_score: None` â€” the scoring filter only fires when RT data is
     /// present and below 65, so tests without RT data exercise the "no gate" path.
     fn make_movie(
         id: i64,
@@ -373,12 +373,15 @@ mod tests {
             gem_score: None,
             gem_rank: None,
             release_date: Some(release_date.to_string()),
+            revenue: None,
+            collection_id: None,
+            keywords: None,
             created_at: None,
             updated_at: None,
         }
     }
 
-    // ── Diagnostic: print score breakdown table ─────────────────────────────
+    // â”€â”€ Diagnostic: print score breakdown table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //
     // Run with: cargo test test_score_breakdown -- --nocapture
 
@@ -444,17 +447,17 @@ mod tests {
                 vec![],
             ),
             (
-                "Blockbuster-adjacent (high votes — should score low)",
+                "Blockbuster-adjacent (high votes â€” should score low)",
                 make_movie(4, 7.5, Some(7.5), 1_500_000, 2015, "Action", "2015-04-24"),
                 vec![],
             ),
             (
-                "Below sweet spot (rating 5.8 — filtered out)",
+                "Below sweet spot (rating 5.8 â€” filtered out)",
                 make_movie(5, 5.8, None, 50_000, 2010, "Action", "2010-01-01"),
                 vec![],
             ),
             (
-                "RT critic=45% — wildcard (dampened vote_ratio, still scores)",
+                "RT critic=45% â€” wildcard (dampened vote_ratio, still scores)",
                 {
                     let mut m = make_movie(6, 7.2, None, 8_000, 2015, "Drama", "2015-03-01");
                     m.rt_critic_score = Some(45);
@@ -463,7 +466,7 @@ mod tests {
                 vec![],
             ),
             (
-                "No RT data — multiplier=0.8 (benefit of doubt for old films)",
+                "No RT data â€” multiplier=0.8 (benefit of doubt for old films)",
                 make_movie(7, 7.2, None, 8_000, 2015, "Drama", "2015-03-01"),
                 vec![],
             ),
@@ -502,7 +505,7 @@ mod tests {
         }
         eprintln!("{:-<96}\n", "");
 
-        // Assertions — Sorcerer-profile should score highest, blockbuster lower than it.
+        // Assertions â€” Sorcerer-profile should score highest, blockbuster lower than it.
         let sorcerer = calc.calculate(&cases[0].1, &cases[0].2).unwrap();
         let blockbuster = calc.calculate(&cases[3].1, &cases[3].2).unwrap();
         assert!(
@@ -513,7 +516,7 @@ mod tests {
         );
     }
 
-    // ── Unit: rating sweet spot ──────────────────────────────────────────────
+    // â”€â”€ Unit: rating sweet spot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_imdb_sweet_spot_peaks_at_center() {
@@ -533,7 +536,7 @@ mod tests {
         assert_eq!(outside_low, 0.0, "Below range should be 0");
     }
 
-    // ── Unit: year decay ────────────────────────────────────────────────────
+    // â”€â”€ Unit: year decay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_year_decay_older_scores_higher() {
@@ -559,16 +562,16 @@ mod tests {
         );
     }
 
-    // ── Unit: obscured signal ───────────────────────────────────────────────
+    // â”€â”€ Unit: obscured signal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_obscured_by_big_hit_boosts_score() {
         let calc = GemScoreCalculator::new();
         let movie = make_movie(1, 7.2, None, 8_000, 1977, "Drama", "1977-06-24");
 
-        // Big hit released 1 day after — well within the 4-week window.
+        // Big hit released 1 day after â€” well within the 4-week window.
         let within_window = vec!["1977-06-25".to_string()];
-        // Big hit released 1 year before — outside the window.
+        // Big hit released 1 year before â€” outside the window.
         let outside_window = vec!["1976-06-25".to_string()];
 
         let obscured = calc.calculate(&movie, &within_window).unwrap();
@@ -588,7 +591,7 @@ mod tests {
         assert_eq!(not_obscured.components.obscured_by_big_hit_score, 0.0);
     }
 
-    // ── Unit: movies outside sweet spot are filtered ─────────────────────────
+    // â”€â”€ Unit: movies outside sweet spot are filtered â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_outside_sweet_spot_returns_none() {
@@ -605,15 +608,15 @@ mod tests {
         );
         assert!(
             calc.calculate(&blockbuster, &[]).is_none(),
-            "Rating 8.4 is above the sweet spot ceiling — should return None"
+            "Rating 8.4 is above the sweet spot ceiling â€” should return None"
         );
         // Below sweet spot
         let bad_movie = make_movie(2, 5.5, None, 50_000, 2010, "Action", "2010-01-01");
         assert!(
             calc.calculate(&bad_movie, &[]).is_none(),
-            "Rating 5.5 is below the sweet spot floor — should return None"
+            "Rating 5.5 is below the sweet spot floor â€” should return None"
         );
-        eprintln!("sweet_spot filter: 8.4 → None ✓, 5.5 → None ✓");
+        eprintln!("sweet_spot filter: 8.4 â†’ None âœ“, 5.5 â†’ None âœ“");
     }
 
     #[test]
@@ -624,10 +627,10 @@ mod tests {
             calc.calculate(&low_votes, &[]).is_none(),
             "Fewer than MIN_IMDB_VOTES should return None"
         );
-        eprintln!("min_votes filter: 100 votes → None ✓");
+        eprintln!("min_votes filter: 100 votes â†’ None âœ“");
     }
 
-    // ── Unit: vote ratio — high rating + low votes scores higher ─────────────
+    // â”€â”€ Unit: vote ratio â€” high rating + low votes scores higher â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //
     // NOTE: The population-level acceptance criteria from PHASES.md
     // ("The Sorcerer scores in top 0.1%", "Dinner in America in top 0.5%",
@@ -638,7 +641,7 @@ mod tests {
     #[test]
     fn test_vote_ratio_low_votes_score_higher() {
         let calc = GemScoreCalculator::new();
-        // Same rating, different vote counts — fewer votes = more undiscovered.
+        // Same rating, different vote counts â€” fewer votes = more undiscovered.
         let undiscovered = make_movie(1, 7.5, None, 1_000, 2005, "Drama", "2005-01-01");
         let well_known = make_movie(2, 7.5, None, 500_000, 2005, "Drama", "2005-01-01");
 
@@ -658,14 +661,14 @@ mod tests {
         );
     }
 
-    // ── Unit: RT credibility multiplier ─────────────────────────────────────
+    // â”€â”€ Unit: RT credibility multiplier â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_rt_credibility_multiplier_higher_rt_gives_higher_multiplier() {
         // Higher RT = higher credibility multiplier on vote_ratio.
-        // RT=98% (critics loved it) → multiplier=1.0
-        // RT=55% (critics lukewarm) → multiplier=0.5
-        // RT=30% (critics panned it) → multiplier=0.0
+        // RT=98% (critics loved it) â†’ multiplier=1.0
+        // RT=55% (critics lukewarm) â†’ multiplier=0.5
+        // RT=30% (critics panned it) â†’ multiplier=0.0
         let calc = GemScoreCalculator::new();
 
         let mult_98 = calc.calc_rt_credibility_multiplier(Some(98));
@@ -699,7 +702,7 @@ mod tests {
 
     #[test]
     fn test_low_rt_dampens_vote_ratio_contribution() {
-        // Same film, same votes — but high RT vs low RT.
+        // Same film, same votes â€” but high RT vs low RT.
         // High RT: critics endorsed + audiences missed = true hidden gem signal.
         // Low RT: critics panned + audiences stayed away = informed avoidance.
         // The low-RT film should score lower overall because vote_ratio is dampened.
@@ -709,7 +712,7 @@ mod tests {
         high_rt.rt_critic_score = Some(90);
 
         let mut low_rt = make_movie(2, 7.2, None, 5_000, 2010, "Drama", "2010-05-01");
-        low_rt.rt_critic_score = Some(35); // below credibility floor → multiplier = 0.0
+        low_rt.rt_critic_score = Some(35); // below credibility floor â†’ multiplier = 0.0
 
         let s_high = calc.calculate(&high_rt, &[]).unwrap();
         let s_low = calc.calculate(&low_rt, &[]).unwrap();
@@ -751,8 +754,8 @@ mod tests {
     }
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Integration tests — operate against the real local database (gem_finder.db).
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Integration tests â€” operate against the real local database (gem_finder.db).
 //
 // These tests are READ-ONLY: they never call update_movie_gem_score or any
 // other write function. They fetch the real population, run the calculator
@@ -762,14 +765,14 @@ mod tests {
 //
 //   --nocapture      : required so the score tables print to terminal
 //   --test-threads=1 : required; Turso local SQLite does not support concurrent
-//                      connections from the same process — parallel tests race
+//                      connections from the same process â€” parallel tests race
 //
 // Seed data first (from workspace root):
 //   cargo run -p gem-finder-api -- seed-test-data
 //
 // Skip condition: if the local DB has fewer than 3 scored movies the tests
 // print a diagnostic and return without failing.
-// ────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #[cfg(test)]
 mod db_tests {
     use super::*;
@@ -808,7 +811,7 @@ mod db_tests {
         let db_path = workspace_root.join("gem_finder.db");
 
         if !db_path.exists() {
-            eprintln!("gem_finder.db not found at {} — run `cargo run -p gem-finder-api -- seed-test-data` first",
+            eprintln!("gem_finder.db not found at {} â€” run `cargo run -p gem-finder-api -- seed-test-data` first",
                 db_path.display());
             return None;
         }
@@ -834,7 +837,7 @@ mod db_tests {
                     year: m.year.unwrap_or(0),
                     imdb_id: m.imdb_id.clone(),
                     // Show the actual vote count used in scoring (max of imdb/tmdb),
-                    // not just the TMDB count — they can differ substantially.
+                    // not just the TMDB count â€” they can differ substantially.
                     votes: m
                         .imdb_vote_count
                         .unwrap_or(0)
@@ -859,12 +862,12 @@ mod db_tests {
         let scored = match score_real_population().await {
             Some(s) if !s.is_empty() => s,
             Some(_) | None => {
-                eprintln!("DB has no scored movies — run `cargo run -- seed-test-data` first");
+                eprintln!("DB has no scored movies â€” run `cargo run -- seed-test-data` first");
                 return;
             }
         };
 
-        // total_in_db is derived from the same query as `scored` — no second connection needed.
+        // total_in_db is derived from the same query as `scored` â€” no second connection needed.
         let total_in_db = {
             let conn = match open_db().await {
                 Some(c) => c,
@@ -879,15 +882,15 @@ mod db_tests {
                 .unwrap_or(scored.len())
         };
 
-        eprintln!("\n╔══ Real DB Score Table ═══════════════════════════════════════════════════╗");
+        eprintln!("\nâ•”â•â• Real DB Score Table â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—");
         eprintln!(
-            "║  {} total movies in DB │ {} passed scoring filter",
+            "â•‘  {} total movies in DB â”‚ {} passed scoring filter",
             total_in_db,
             scored.len()
         );
-        eprintln!("╠═════╤══════════════════════════════════════╤══════╤════════╤════════════╣");
-        eprintln!("║Rank │ Title                                │ Year │ Score% │ Votes      ║");
-        eprintln!("╠═════╪══════════════════════════════════════╪══════╪════════╪════════════╣");
+        eprintln!("â• â•â•â•â•â•â•¤â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•¤â•â•â•â•â•â•â•¤â•â•â•â•â•â•â•â•â•¤â•â•â•â•â•â•â•â•â•â•â•â•â•£");
+        eprintln!("â•‘Rank â”‚ Title                                â”‚ Year â”‚ Score% â”‚ Votes      â•‘");
+        eprintln!("â• â•â•â•â•â•â•ªâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•ªâ•â•â•â•â•â•â•ªâ•â•â•â•â•â•â•â•â•ªâ•â•â•â•â•â•â•â•â•â•â•â•â•£");
 
         let known_imdb_ids: std::collections::HashSet<&str> =
             KNOWN_GEMS.iter().map(|(_, id)| *id).collect();
@@ -904,9 +907,9 @@ mod db_tests {
                 printed_gems.insert(m.imdb_id.clone());
             }
             if rank < display_limit || is_gem {
-                let marker = if is_gem { "💎" } else { "  " };
+                let marker = if is_gem { "ðŸ’Ž" } else { "  " };
                 eprintln!(
-                    "║{:>4} │ {}{:<37} │ {:>4} │ {:>5.1}% │ {:>10} ║",
+                    "â•‘{:>4} â”‚ {}{:<37} â”‚ {:>4} â”‚ {:>5.1}% â”‚ {:>10} â•‘",
                     rank + 1,
                     marker,
                     &m.title[..m.title.len().min(37)],
@@ -916,10 +919,10 @@ mod db_tests {
                 );
             }
         }
-        eprintln!("╚═════╧══════════════════════════════════════╧══════╧════════╧════════════╝");
+        eprintln!("â•šâ•â•â•â•â•â•§â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•§â•â•â•â•â•â•â•§â•â•â•â•â•â•â•â•â•§â•â•â•â•â•â•â•â•â•â•â•â•â•");
 
         // Component breakdown for known gems
-        eprintln!("\n── Known Gem Component Breakdown ───────────────────────────────────────────");
+        eprintln!("\nâ”€â”€ Known Gem Component Breakdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€");
         eprintln!(
             "{:<35} {:>6} {:>6} {:>6} {:>6} {:>7} {:>6} {:>7}",
             "Movie", "imdb", "vote_r", "yr_dec", "obscrd", "rt_mult", "boost", "TOTAL%"
@@ -960,20 +963,20 @@ mod db_tests {
         let scored = match score_real_population().await {
             Some(s) => s,
             None => {
-                eprintln!("DB unavailable — skipping");
+                eprintln!("DB unavailable â€” skipping");
                 return;
             }
         };
 
         let total = scored.len();
 
-        // With fewer than 10 movies, the ranking assertions are meaningless —
+        // With fewer than 10 movies, the ranking assertions are meaningless â€”
         // the tier cutoffs collapse to rank 1 or 2, making any 3-way tie a failure.
         // This happens when seed-test-data hasn't been run or the DB only has the
         // 3 seeded gems. Print a diagnostic and skip rather than giving a false pass/fail.
         if total < 10 {
             eprintln!(
-                "⚠️  Only {} scored movies — tier ranking assertions require ≥10 for a meaningful test. \
+                "âš ï¸  Only {} scored movies â€” tier ranking assertions require â‰¥10 for a meaningful test. \
                  Run `seed-test-data` to populate the DB.",
                 total
             );
@@ -987,7 +990,7 @@ mod db_tests {
         let top_25_cutoff = ((total as f64 * 0.25).ceil() as usize).max(1);
 
         eprintln!(
-            "\nPopulation: {} scored movies, top-25% = rank ≤ {}",
+            "\nPopulation: {} scored movies, top-25% = rank â‰¤ {}",
             total, top_25_cutoff
         );
 
@@ -1002,13 +1005,13 @@ mod db_tests {
 
             match result {
                 None => {
-                    eprintln!("⚠️  {} (imdb:{}) NOT found in scored population — not in DB or below filter threshold", label, imdb_id);
-                    // Not a hard failure — movie may not be seeded yet
+                    eprintln!("âš ï¸  {} (imdb:{}) NOT found in scored population â€” not in DB or below filter threshold", label, imdb_id);
+                    // Not a hard failure â€” movie may not be seeded yet
                 }
                 Some((rank_idx, m)) => {
                     let rank = rank_idx + 1;
                     eprintln!(
-                        "💎 {} → rank {}/{} ({:.1}%)",
+                        "ðŸ’Ž {} â†’ rank {}/{} ({:.1}%)",
                         label,
                         rank,
                         total,
@@ -1017,12 +1020,12 @@ mod db_tests {
 
                     assert!(
                         m.score > 0.0,
-                        "{} has gem score 0.0 — scoring algorithm produced no signal",
+                        "{} has gem score 0.0 â€” scoring algorithm produced no signal",
                         label
                     );
                     // Note: we do NOT assert every gem is in top 50%. A recently released
                     // gem (e.g. Dinner in America, 2020) naturally scores lower than
-                    // classic forgotten films (e.g. Sorcerer, 1977) — that is correct
+                    // classic forgotten films (e.g. Sorcerer, 1977) â€” that is correct
                     // algorithm behaviour, not a failure. Only the best known gem needs
                     // to rank in the top 25% as a sanity check.
 
@@ -1036,12 +1039,12 @@ mod db_tests {
         if let Some(best) = best_known_rank {
             assert!(
                 best <= top_25_cutoff,
-                "Best known gem ranked {} — expected at least one gem in top 25% (≤ rank {})",
+                "Best known gem ranked {} â€” expected at least one gem in top 25% (â‰¤ rank {})",
                 best,
                 top_25_cutoff
             );
             eprintln!(
-                "✅ Best known gem: rank {} (top {:.1}%)",
+                "âœ… Best known gem: rank {} (top {:.1}%)",
                 best,
                 (best as f64 / total as f64) * 100.0
             );
