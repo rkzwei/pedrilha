@@ -427,8 +427,23 @@ pub async fn get_movies_needing_enrichment(
 /// Returns the number of rows newly inserted.
 pub async fn classify_acclaimed_films(conn: &Connection) -> Result<i64> {
     use gem_finder_shared::constants::{ACCLAIMED_MIN_IMDB, ACCLAIMED_MIN_RT};
-    // Remove stale entries: films whose scores have dropped below the threshold
-    // (e.g. re-enriched data revised an IMDb rating downward).
+
+    // Franchise/MCU keyword exclusions.
+    // Spider-Verse is kept via the carve-out (NOT LIKE '%spider-verse%').
+    // batman, dark knight, logan, wolverine, pixar are intentionally not excluded here.
+    // COALESCE ensures films with NULL keywords are never wrongly excluded.
+    let kw = "
+      AND COALESCE(keywords, '') NOT LIKE '%marvel cinematic universe%'
+      AND COALESCE(keywords, '') NOT LIKE '%mcu%'
+      AND COALESCE(keywords, '') NOT LIKE '%avengers%'
+      AND NOT (COALESCE(keywords, '') LIKE '%spider-man%'
+               AND COALESCE(keywords, '') NOT LIKE '%spider-verse%')
+      AND COALESCE(keywords, '') NOT LIKE '%deadpool%'
+      AND COALESCE(keywords, '') NOT LIKE '%walt disney animation%'
+      AND COALESCE(keywords, '') NOT LIKE '%dreamworks animation%'";
+
+    // Remove stale entries: scores dropped below threshold, or keywords now match
+    // the franchise exclusion list.
     conn.execute(
         &format!(
             "DELETE FROM acclaimed
@@ -436,19 +451,22 @@ pub async fn classify_acclaimed_films(conn: &Connection) -> Result<i64> {
                  SELECT id FROM movies
                  WHERE imdb_rating >= {}
                    AND rt_critic_score >= {}
+                   {}
              )",
-            ACCLAIMED_MIN_IMDB, ACCLAIMED_MIN_RT
+            ACCLAIMED_MIN_IMDB, ACCLAIMED_MIN_RT, kw
         ),
         turso::params![],
     )
     .await?;
+
     conn.execute(
         &format!(
             "INSERT OR IGNORE INTO acclaimed (movie_id)
              SELECT id FROM movies
              WHERE imdb_rating >= {}
-               AND rt_critic_score >= {}",
-            ACCLAIMED_MIN_IMDB, ACCLAIMED_MIN_RT
+               AND rt_critic_score >= {}
+               {}",
+            ACCLAIMED_MIN_IMDB, ACCLAIMED_MIN_RT, kw
         ),
         turso::params![],
     )
