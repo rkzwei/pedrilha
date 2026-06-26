@@ -1,15 +1,16 @@
+use js_sys;
 use crate::api;
 use crate::{jwt_is_admin, save_auth_to_storage, AuthState};
 use gem_finder_shared::id_encode::encode_movie_id;
 use gem_finder_shared::types::{Movie, MovieSummary, WatchState};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use wasm_bindgen::prelude::*;
 use leptos_router::{
     components::A,
     hooks::{use_navigate, use_params_map, use_query_map},
     NavigateOptions,
 };
+use wasm_bindgen::prelude::*;
 
 const GENRES: &[&str] = &[
     "Action",
