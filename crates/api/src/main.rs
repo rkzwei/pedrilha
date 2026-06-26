@@ -47,20 +47,11 @@ impl<T> Cached<T> {
 /// Each list changes only when the admin runs a scoring or sync job. Caching
 /// the full sorted list and applying user filters + pagination in memory means
 /// the DB is hit at most once per CACHE_TTL period regardless of concurrency.
+#[derive(Default)]
 pub(crate) struct MovieCache {
     pub gems: Option<Cached<Vec<MovieSummary>>>,
     pub acclaimed: Option<Cached<Vec<MovieSummary>>>,
     pub wildcards: Option<Cached<Vec<MovieSummary>>>,
-}
-
-impl Default for MovieCache {
-    fn default() -> Self {
-        Self {
-            gems: None,
-            acclaimed: None,
-            wildcards: None,
-        }
-    }
 }
 
 impl MovieCache {
@@ -847,7 +838,7 @@ async fn get_gems(
         .iter()
         .filter(|m| {
             if let Some(min_y) = query.min_year {
-                if m.year.map_or(true, |y| y < min_y) {
+                if m.year.is_none_or(|y| y < min_y) {
                     return false;
                 }
             }
@@ -935,7 +926,7 @@ async fn get_acclaimed(
         .iter()
         .filter(|m| {
             if let Some(min_y) = query.min_year {
-                if m.year.map_or(true, |y| y < min_y) {
+                if m.year.is_none_or(|y| y < min_y) {
                     return false;
                 }
             }
@@ -1021,7 +1012,7 @@ async fn get_wildcards(
         .iter()
         .filter(|m| {
             if let Some(min_y) = query.min_year {
-                if m.year.map_or(true, |y| y < min_y) {
+                if m.year.is_none_or(|y| y < min_y) {
                     return false;
                 }
             }
