@@ -26,7 +26,14 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
     steps:
       - uses: actions/checkout@v4
+      - name: Force all paths for Dependabot
+        if: github.actor == 'dependabot[bot]'
+        run: |
+          echo "backend=true" >> $GITHUB_OUTPUT
+          echo "frontend=true" >> $GITHUB_OUTPUT
+
       - uses: dorny/paths-filter@v3
+        if: github.actor != 'dependabot[bot]'
         id: filter
         with:
           filters: |
