@@ -528,7 +528,7 @@ impl TmdbSyncService {
 
     /// Sync acclaimed candidates: highly-rated movies that may qualify for the acclaimed table.
     ///
-    /// Targets films with TMDB vote_average ≥ 7.5 and vote_count ≥ 10,000.
+    /// Targets films with TMDB vote_average ≥ 7.5 and vote_count ≥ 5,000.
     /// After this sync, `classify_acclaimed_films` applies the IMDb ≥ 8.0 / RT ≥ 80
     /// threshold to populate the acclaimed table itself.
     ///
@@ -562,7 +562,7 @@ impl TmdbSyncService {
             }
 
             let url = format!(
-                "{}/discover/movie?api_key={}&vote_average.gte=7.5&vote_count.gte=10000\
+                "{}/discover/movie?api_key={}&vote_average.gte=7.5&vote_count.gte=5000\
                  &sort_by=vote_average.desc&page={}",
                 self.base_url, self.api_key, page
             );
