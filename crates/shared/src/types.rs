@@ -236,6 +236,8 @@ pub struct MovieSummary {
     pub rt_critic_score: Option<i32>,
     pub gem_score: Option<f64>,
     pub gem_rank: Option<i64>,
+    /// Comma-separated TMDB keywords (e.g. "musical,road trip"). Used for genre filtering.
+    pub keywords: Option<String>,
 }
 
 /// TMDB API response for movie search (used during ingestion).

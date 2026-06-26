@@ -153,12 +153,12 @@ pub async fn magic_link_verify(
         );
     }
 
-    // Rate limit: 5 magic links per email per 10 min
+    // Rate limit: 5 attempts per token per 10 min (prevent hammering)
     {
         let mut lim = state.magic_link_limiter.lock().await;
         let now = std::time::Instant::now();
         let win = std::time::Duration::from_secs(600);
-        let e = lim.entry(email.clone()).or_insert_with(Vec::new);
+        let e = lim.entry(params.token.clone()).or_insert_with(Vec::new);
         e.retain(|t| now.duration_since(*t) < win);
         if e.len() >= 5 {
             return (
@@ -168,6 +168,7 @@ pub async fn magic_link_verify(
         }
         e.push(now);
     }
+
     let conn = match state.db.connect().await {
         Ok(c) => c,
         Err(_) => {
@@ -253,12 +254,12 @@ pub async fn check_username(
         );
     }
 
-    // Rate limit: 5 magic links per email per 10 min
+    // Rate limit: 5 checks per username per 10 min (prevent enumeration)
     {
         let mut lim = state.magic_link_limiter.lock().await;
         let now = std::time::Instant::now();
         let win = std::time::Duration::from_secs(600);
-        let e = lim.entry(email.clone()).or_insert_with(Vec::new);
+        let e = lim.entry(username.clone()).or_insert_with(Vec::new);
         e.retain(|t| now.duration_since(*t) < win);
         if e.len() >= 5 {
             return (
@@ -268,6 +269,7 @@ pub async fn check_username(
         }
         e.push(now);
     }
+
     let conn = match state.db.connect().await {
         Ok(c) => c,
         Err(_) => {
@@ -318,12 +320,12 @@ pub async fn set_username(
         );
     }
 
-    // Rate limit: 5 magic links per email per 10 min
+    // Rate limit: 5 updates per user per 10 min
     {
         let mut lim = state.magic_link_limiter.lock().await;
         let now = std::time::Instant::now();
         let win = std::time::Duration::from_secs(600);
-        let e = lim.entry(email.clone()).or_insert_with(Vec::new);
+        let e = lim.entry(auth.0.email.clone()).or_insert_with(Vec::new);
         e.retain(|t| now.duration_since(*t) < win);
         if e.len() >= 5 {
             return (
@@ -333,6 +335,7 @@ pub async fn set_username(
         }
         e.push(now);
     }
+
     let conn = match state.db.connect().await {
         Ok(c) => c,
         Err(_) => {
@@ -469,12 +472,12 @@ pub async fn passkey_register_finish(
         }
     };
 
-    // Rate limit: 5 magic links per email per 10 min
+    // Rate limit: 5 registrations per user per 10 min
     {
         let mut lim = state.magic_link_limiter.lock().await;
         let now = std::time::Instant::now();
         let win = std::time::Duration::from_secs(600);
-        let e = lim.entry(email.clone()).or_insert_with(Vec::new);
+        let e = lim.entry(auth.0.email.clone()).or_insert_with(Vec::new);
         e.retain(|t| now.duration_since(*t) < win);
         if e.len() >= 5 {
             return (
@@ -484,6 +487,7 @@ pub async fn passkey_register_finish(
         }
         e.push(now);
     }
+
     let conn = match state.db.connect().await {
         Ok(c) => c,
         Err(_) => {
@@ -654,21 +658,6 @@ pub async fn passkey_auth_finish(
         }
     };
 
-    // Rate limit: 5 magic links per email per 10 min
-    {
-        let mut lim = state.magic_link_limiter.lock().await;
-        let now = std::time::Instant::now();
-        let win = std::time::Duration::from_secs(600);
-        let e = lim.entry(email.clone()).or_insert_with(Vec::new);
-        e.retain(|t| now.duration_since(*t) < win);
-        if e.len() >= 5 {
-            return (
-                StatusCode::TOO_MANY_REQUESTS,
-                Json(json!({ "error": "rate limited" })),
-            );
-        }
-        e.push(now);
-    }
     let conn = match state.db.connect().await {
         Ok(c) => c,
         Err(_) => {
@@ -678,6 +667,22 @@ pub async fn passkey_auth_finish(
             )
         }
     };
+
+    // Rate limit: 5 auth attempts per user_id per 10 min
+    {
+        let mut lim = state.magic_link_limiter.lock().await;
+        let now = std::time::Instant::now();
+        let win = std::time::Duration::from_secs(600);
+        let e = lim.entry(body.user_id.clone()).or_insert_with(Vec::new);
+        e.retain(|t| now.duration_since(*t) < win);
+        if e.len() >= 5 {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(json!({ "error": "rate limited" })),
+            );
+        }
+        e.push(now);
+    }
 
     let cred_id = serde_json::to_value(auth_result.cred_id())
         .ok()

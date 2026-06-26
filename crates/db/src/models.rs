@@ -109,7 +109,7 @@ pub async fn get_top_gems(
     // at /wildcards. Films with no RT data (rt_critic_score IS NULL) are included — benefit
     // of doubt, especially for old films that predate Rotten Tomatoes.
     let mut sql = String::from(
-        "SELECT id, title, year, genre, director, poster_url, imdb_rating, rt_critic_score, gem_score, gem_rank
+        "SELECT id, title, year, genre, director, poster_url, imdb_rating, rt_critic_score, gem_score, gem_rank, keywords
          FROM movies WHERE gem_score IS NOT NULL
            AND (rt_critic_score IS NULL OR rt_critic_score >= 50)",
     );
@@ -145,6 +145,7 @@ pub async fn get_top_gems(
             rt_critic_score: value_to_opt_i32(row.get_value(7)?),
             gem_score: value_to_opt_f64(row.get_value(8)?),
             gem_rank: value_to_opt_i64(row.get_value(9)?),
+            keywords: value_to_opt_string(row.get_value(10)?),
         });
     }
     Ok(results)
@@ -476,7 +477,7 @@ pub async fn get_acclaimed_films(
         .prepare(&format!(
             "SELECT m.id, m.title, m.year, m.genre, m.director,
                     m.poster_url, m.imdb_rating, m.rt_critic_score,
-                    m.gem_score, m.gem_rank
+                    m.gem_score, m.gem_rank, m.keywords
              FROM acclaimed a
              JOIN movies m ON m.id = a.movie_id
              ORDER BY m.imdb_rating DESC, m.rt_critic_score DESC
@@ -499,6 +500,7 @@ pub async fn get_acclaimed_films(
             rt_critic_score: value_to_opt_i32(row.get_value(7)?),
             gem_score: value_to_opt_f64(row.get_value(8)?),
             gem_rank: value_to_opt_i64(row.get_value(9)?),
+            keywords: value_to_opt_string(row.get_value(10)?),
         });
     }
     Ok(results)
@@ -564,7 +566,7 @@ pub async fn get_wildcards(
         .prepare(&format!(
             "SELECT m.id, m.title, m.year, m.genre, m.director,
                     m.poster_url, m.imdb_rating, m.rt_critic_score,
-                    m.gem_score, m.gem_rank
+                    m.gem_score, m.gem_rank, m.keywords
              FROM wildcards w
              JOIN movies m ON m.id = w.movie_id
              ORDER BY m.gem_score DESC
@@ -587,6 +589,7 @@ pub async fn get_wildcards(
             rt_critic_score: value_to_opt_i32(row.get_value(7)?),
             gem_score: value_to_opt_f64(row.get_value(8)?),
             gem_rank: value_to_opt_i64(row.get_value(9)?),
+            keywords: value_to_opt_string(row.get_value(10)?),
         });
     }
     Ok(results)
@@ -615,7 +618,7 @@ pub async fn get_all_gems_for_cache(conn: &Connection) -> Result<Vec<MovieSummar
     let mut stmt = conn
         .prepare(
             "SELECT id, title, year, genre, director, poster_url,
-                    imdb_rating, rt_critic_score, gem_score, gem_rank
+                    imdb_rating, rt_critic_score, gem_score, gem_rank, keywords
              FROM movies
              WHERE gem_score IS NOT NULL
                AND (rt_critic_score IS NULL OR rt_critic_score >= 50)
@@ -637,6 +640,7 @@ pub async fn get_all_gems_for_cache(conn: &Connection) -> Result<Vec<MovieSummar
             rt_critic_score: value_to_opt_i32(row.get_value(7)?),
             gem_score: value_to_opt_f64(row.get_value(8)?),
             gem_rank: value_to_opt_i64(row.get_value(9)?),
+            keywords: value_to_opt_string(row.get_value(10)?),
         });
     }
     Ok(results)
@@ -648,7 +652,7 @@ pub async fn get_all_acclaimed_for_cache(conn: &Connection) -> Result<Vec<MovieS
         .prepare(
             "SELECT m.id, m.title, m.year, m.genre, m.director,
                     m.poster_url, m.imdb_rating, m.rt_critic_score,
-                    m.gem_score, m.gem_rank
+                    m.gem_score, m.gem_rank, m.keywords
              FROM acclaimed a
              JOIN movies m ON m.id = a.movie_id
              ORDER BY m.imdb_rating DESC, m.rt_critic_score DESC",
@@ -669,6 +673,7 @@ pub async fn get_all_acclaimed_for_cache(conn: &Connection) -> Result<Vec<MovieS
             rt_critic_score: value_to_opt_i32(row.get_value(7)?),
             gem_score: value_to_opt_f64(row.get_value(8)?),
             gem_rank: value_to_opt_i64(row.get_value(9)?),
+            keywords: value_to_opt_string(row.get_value(10)?),
         });
     }
     Ok(results)
@@ -680,7 +685,7 @@ pub async fn get_all_wildcards_for_cache(conn: &Connection) -> Result<Vec<MovieS
         .prepare(
             "SELECT m.id, m.title, m.year, m.genre, m.director,
                     m.poster_url, m.imdb_rating, m.rt_critic_score,
-                    m.gem_score, m.gem_rank
+                    m.gem_score, m.gem_rank, m.keywords
              FROM wildcards w
              JOIN movies m ON m.id = w.movie_id
              ORDER BY m.gem_score DESC",
@@ -701,6 +706,7 @@ pub async fn get_all_wildcards_for_cache(conn: &Connection) -> Result<Vec<MovieS
             rt_critic_score: value_to_opt_i32(row.get_value(7)?),
             gem_score: value_to_opt_f64(row.get_value(8)?),
             gem_rank: value_to_opt_i64(row.get_value(9)?),
+            keywords: value_to_opt_string(row.get_value(10)?),
         });
     }
     Ok(results)

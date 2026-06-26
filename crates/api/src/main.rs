@@ -126,6 +126,11 @@ struct WildcardsQuery {
 
 #[tokio::main]
 async fn main() {
+    // jsonwebtoken 10.x uses rustls which requires an explicit crypto provider.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
     dotenvy::dotenv().ok();
     // Initialize tracing: write to BOTH stdout and gem_finder.log.
     // Two separate fmt layers share the same filter via registry().
@@ -260,6 +265,7 @@ async fn main() {
         webauthn: Arc::new(webauthn),
         passkey_reg_challenges: Arc::new(Mutex::new(HashMap::new())),
         passkey_auth_challenges: Arc::new(Mutex::new(HashMap::new())),
+        magic_link_limiter: Arc::new(Mutex::new(HashMap::new())),
     };
 
     // CORS: allow origins from CORS_ORIGINS env var (comma-separated). Falls back to permissive in dev.
@@ -838,11 +844,8 @@ async fn get_gems(
                     let movie_genres = m.genre.as_deref().unwrap_or("").to_lowercase();
                     let movie_keywords = m.keywords.as_deref().unwrap_or("").to_lowercase();
                     if !selected.iter().any(|sel| {
-                        if sel == "musical" {
-                            movie_keywords.contains("musical")
-                        } else {
-                            movie_genres.contains(sel.as_str())
-                        }
+                        movie_genres.contains(sel.as_str())
+                            || movie_keywords.contains(sel.as_str())
                     }) {
                         return false;
                     }
@@ -930,11 +933,8 @@ async fn get_acclaimed(
                     let movie_genres = m.genre.as_deref().unwrap_or("").to_lowercase();
                     let movie_keywords = m.keywords.as_deref().unwrap_or("").to_lowercase();
                     if !selected.iter().any(|sel| {
-                        if sel == "musical" {
-                            movie_keywords.contains("musical")
-                        } else {
-                            movie_genres.contains(sel.as_str())
-                        }
+                        movie_genres.contains(sel.as_str())
+                            || movie_keywords.contains(sel.as_str())
                     }) {
                         return false;
                     }
@@ -1020,11 +1020,8 @@ async fn get_wildcards(
                     let movie_genres = m.genre.as_deref().unwrap_or("").to_lowercase();
                     let movie_keywords = m.keywords.as_deref().unwrap_or("").to_lowercase();
                     if !selected.iter().any(|sel| {
-                        if sel == "musical" {
-                            movie_keywords.contains("musical")
-                        } else {
-                            movie_genres.contains(sel.as_str())
-                        }
+                        movie_genres.contains(sel.as_str())
+                            || movie_keywords.contains(sel.as_str())
                     }) {
                         return false;
                     }

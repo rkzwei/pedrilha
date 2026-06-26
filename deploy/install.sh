@@ -84,9 +84,11 @@ source "$CARGO_HOME/env"
 
 rustup target add wasm32-unknown-unknown 2>/dev/null || true
 
-if ! "$CARGO_HOME/bin/trunk" version &>/dev/null 2>&1; then
-    "$CARGO_HOME/bin/cargo" install trunk
-    echo "   Trunk installed"
+if ! "$CARGO_HOME/bin/trunk" version &>/dev/null 2>&1 && ! command -v trunk &>/dev/null; then
+    TRUNK_URL="https://github.com/trunk-rs/trunk/releases/latest/download/trunk-x86_64-unknown-linux-gnu.tar.gz"
+    curl -sL "$TRUNK_URL" | tar xz -C "$CARGO_HOME/bin/"
+    chmod +x "$CARGO_HOME/bin/trunk"
+    echo "   Trunk installed (prebuilt binary)"
 else
     echo "   Trunk already installed — skipping"
 fi

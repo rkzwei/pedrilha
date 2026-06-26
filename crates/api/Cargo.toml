@@ -24,5 +24,6 @@ chrono = { version = "0.4", features = ["serde"] }
 # Auth
 lettre = { version = "0.11", features = ["tokio1-native-tls"] }
 jsonwebtoken = "10.3"
+rustls = { version = "0.23", features = ["ring"] }
 uuid = { version = "1", features = ["v4"] }
 webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
