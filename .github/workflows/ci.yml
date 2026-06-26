@@ -170,8 +170,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key \
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
-            "sudo mkdir -p /opt/gem-finder/dist && \
-             sudo chown -R ${{ secrets.VPS_USER }}:${{ secrets.VPS_USER }} /opt/gem-finder"
+            "mkdir -p /opt/gem-finder/dist"
 
       - name: Upload binary to VPS
         run: |
