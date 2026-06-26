@@ -47,10 +47,13 @@ pub fn create_jwt(
 
 /// Decode and validate a JWT. Returns the claims on success.
 pub fn verify_jwt(token: &str, secret: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
+    // Explicitly require exp so a malformed type cannot bypass validation (CVE jsonwebtoken <10.3.0)
+    let mut validation = Validation::default();
+    validation.required_spec_claims = std::collections::HashSet::from(["exp".to_string()]);
     let decoded = decode::<Claims>(
         token,
         &DecodingKey::from_secret(secret.as_bytes()),
-        &Validation::default(),
+        &validation,
     )?;
     Ok(decoded.claims)
 }
