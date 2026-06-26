@@ -119,11 +119,6 @@ struct WildcardsQuery {
 
 #[tokio::main]
 async fn main() {
-    // jsonwebtoken 10.x uses rustls which requires an explicit crypto provider.
-    rustls::crypto::ring::default_provider()
-        .install_default()
-        .expect("Failed to install rustls crypto provider");
-
     dotenvy::dotenv().ok();
     // Initialize tracing: write to BOTH stdout and gem_finder.log.
     // Two separate fmt layers share the same filter via registry().
