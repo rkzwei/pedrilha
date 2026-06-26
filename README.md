@@ -31,7 +31,7 @@ yourdomain.com  A  <VPS IP>
 ### 2. Clone the repo on the VPS
 
 ```bash
-git clone https://github.com/youruser/gem-finder
+git clone https://github.com/rkzwei/gem-finder
 cd gem-finder
 ```
 
