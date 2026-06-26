@@ -14,6 +14,9 @@ pub struct Claims {
     pub sub: String,
     pub email: String,
     pub username: Option<String>,
+    /// Whether this user has admin privileges (checked against ADMIN_EMAILS at mint time).
+    #[serde(default)]
+    pub is_admin: bool,
     /// Expiry (Unix timestamp seconds).
     pub exp: usize,
     /// Issued-at (Unix timestamp seconds).
@@ -29,12 +32,14 @@ pub fn create_jwt(
     email: &str,
     username: Option<&str>,
     secret: &str,
+    is_admin: bool,
 ) -> Result<String, jsonwebtoken::errors::Error> {
     let now = chrono::Utc::now().timestamp() as usize;
     let claims = Claims {
         sub: user_id.to_owned(),
         email: email.to_owned(),
         username: username.map(|s| s.to_owned()),
+        is_admin,
         exp: now + JWT_EXPIRY_SECS as usize,
         iat: now,
     };

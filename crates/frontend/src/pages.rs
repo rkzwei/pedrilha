@@ -1,5 +1,5 @@
 use crate::api;
-use crate::{save_auth_to_storage, AuthState};
+use crate::{jwt_is_admin, save_auth_to_storage, AuthState};
 use gem_finder_shared::id_encode::encode_movie_id;
 use gem_finder_shared::types::{Movie, MovieSummary, WatchState};
 use leptos::prelude::*;
@@ -83,159 +83,92 @@ fn FilterBar(
     on_year: Callback<Option<i32>>,
     on_search: Callback<Option<String>>,
 ) -> impl IntoView {
-    let (panel_open, set_panel_open) = signal(false);
-
     let active_count = move || genres.get().len() + year.get().map(|_| 1).unwrap_or(0);
 
     view! {
-        <div class="relative mb-6">
-
-            <div class="flex gap-3 items-center">
-                <input
-                    type="text"
-                    placeholder="Search titles…"
-                    class="flex-1 bg-sc-card text-stone-200 border border-sc-border-input rounded-md px-3 py-2 text-sm placeholder-stone-600 focus:outline-none focus:border-sc-accent-border"
-                    prop:value=move || search.get().unwrap_or_default()
-                    on:input=move |ev| {
-                        let v = event_target_value(&ev);
-                        on_search.run(if v.is_empty() { None } else { Some(v) });
-                    }
-                />
-                <button
-                    class=move || { if active_count() > 0 {
-                        "flex-shrink-0 px-3 py-2 text-sm border rounded-md border-sc-accent text-sc-accent bg-sc-accent-deep"
-                    } else {
-                        "flex-shrink-0 px-3 py-2 text-sm border rounded-md border-sc-border text-stone-400 hover:border-stone-500 hover:text-stone-200 transition-colors"
-                    } }
-                    on:click=move |_| set_panel_open.update(|v| *v = !*v)
-                >
-                    {move || if active_count() > 0 { format!("Filters ({})", active_count()) } else { "Filters".to_string() }}
-                </button>
-            </div>
-
-            {move || {
-                let gs = genres.get();
-                let yr = year.get();
-                if gs.is_empty() && yr.is_none() {
-                    view! { <div /> }.into_any()
-                } else {
-                    view! {
-                        <div class="flex flex-wrap gap-3 mt-2">
-                            {gs.iter().cloned().map(|g| {
-                                let g_rm = g.clone();
-                                view! {
-                                    <button
-                                        class="flex items-center gap-1 px-2 py-0.5 text-xs rounded border border-sc-accent text-sc-accent bg-sc-accent-deep"
-                                        on:click=move |_| {
-                                            let mut v = genres.get();
-                                            v.retain(|x| x != &g_rm);
-                                            on_genres.run(v);
-                                        }
-                                    >{g} " ×"</button>
-                                }
-                            }).collect::<Vec<_>>()}
-                            {yr.map(|y| {
-                                let label = DECADE_OPTIONS.iter()
-                                    .find(|(yv, _)| *yv == y)
-                                    .map(|(_, l)| *l)
-                                    .unwrap_or("Era");
-                                view! {
-                                    <button
-                                        class="flex items-center gap-1 px-2 py-0.5 text-xs rounded border border-sc-accent text-sc-accent bg-sc-accent-deep"
-                                        on:click=move |_| on_year.run(None)
-                                    >{label} " ×"</button>
-                                }
-                            })}
-                        </div>
-                    }.into_any()
+        <div class="mb-6 space-y-2">
+            // Search
+            <input
+                type="text"
+                placeholder="Search titles, directors…"
+                class="w-full bg-sc-card text-stone-200 border border-sc-border-input rounded-md px-4 py-2.5 text-sm placeholder-stone-600 focus:outline-none focus:border-sc-accent-border"
+                prop:value=move || search.get().unwrap_or_default()
+                on:input=move |ev| {
+                    let v = event_target_value(&ev);
+                    on_search.run(if v.is_empty() { None } else { Some(v) });
                 }
-            }}
+            />
 
-            {move || if panel_open.get() {
-                view! {
-                    <div
-                        class="fixed inset-0 z-20"
-                        style="background: rgba(0,0,0,0.45)"
-                        on:click=move |_| set_panel_open.set(false)
-                    />
-                    <div
-                        class="absolute top-full left-0 right-0 mt-1 border border-sc-border rounded-lg p-5 z-30 shadow-2xl"
-                        style="background-color: var(--sc-panel, #1c1917)"
-                    >
-                        <div class="flex flex-col sm:flex-row gap-6">
-                            <div class="flex-shrink-0">
-                                <p class="text-xs uppercase tracking-widest text-stone-500 mb-2">"Era"</p>
-                                <div class="flex sm:flex-col flex-wrap gap-1">
-                                    <button
-                                        class=move || if year.get().is_none() {
-                                            "px-3 py-1 rounded text-xs text-sc-accent bg-sc-accent-deep border border-sc-accent"
-                                        } else {
-                                            "px-3 py-1 rounded text-xs text-stone-400 hover:text-stone-200 border border-transparent hover:border-sc-border"
-                                        }
-                                        on:click=move |_| { on_year.run(None); set_panel_open.set(false); }
-                                    >"All eras"</button>
-                                    {DECADE_OPTIONS.iter().map(|(y, l)| {
-                                        let yv = *y;
-                                        view! {
-                                            <button
-                                                class=move || if year.get() == Some(yv) {
-                                                    "px-3 py-1 rounded text-xs text-sc-accent bg-sc-accent-deep border border-sc-accent"
-                                                } else {
-                                                    "px-3 py-1 rounded text-xs text-stone-400 hover:text-stone-200 border border-transparent hover:border-sc-border"
-                                                }
-                                                on:click=move |_| { on_year.run(Some(yv)); set_panel_open.set(false); }
-                                            >{*l}</button>
-                                        }
-                                    }).collect::<Vec<_>>()}
-                                </div>
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-xs uppercase tracking-widest text-stone-500 mb-2">"Genre"</p>
-                                <div class="flex flex-wrap gap-3">
-                                    {GENRES.iter().map(|g| {
-                                        let gs = g.to_string();
-                                        let gs_click = gs.clone();
-                                        let gs_class = gs.clone();
-                                        view! {
-                                            <button
-                                                class=move || if genres.get().contains(&gs_class) {
-                                                    "px-2.5 py-1 text-xs rounded border border-sc-accent text-sc-accent bg-sc-accent-deep"
-                                                } else {
-                                                    "px-2.5 py-1 text-xs rounded border border-sc-border text-stone-400 hover:border-stone-500 hover:text-stone-200"
-                                                }
-                                                on:click=move |_| {
-                                                    let mut cur = genres.get();
-                                                    if let Some(pos) = cur.iter().position(|x| x == &gs_click) {
-                                                        cur.remove(pos);
-                                                    } else {
-                                                        cur.push(gs_click.clone());
-                                                    }
-                                                    on_genres.run(cur);
-                                                }
-                                            >{*g}</button>
-                                        }
-                                    }).collect::<Vec<_>>()}
-                                </div>
-                            </div>
-                        </div>
-                        <div class="flex items-center justify-between mt-4 pt-3 border-t border-sc-border">
-                            <p class="text-xs text-stone-600">
-                                {move || { let t = total.get(); if t > 0 { format!("{} films", t) } else { String::new() } }}
-                            </p>
-                            {move || if active_count() > 0 {
-                                view! {
-                                    <button
-                                        class="text-xs text-stone-500 hover:text-stone-300 transition-colors"
-                                        on:click=move |_| { on_genres.run(vec![]); on_year.run(None); set_panel_open.set(false); }
-                                    >"Clear all"</button>
-                                }.into_any()
-                            } else { view! { <span /> }.into_any() }}
-                        </div>
-                    </div>
-                }.into_any()
-            } else {
-                view! { <div /> }.into_any()
-            }}
+            // Genre + era pills in one scrollable row
+            <div
+                class="flex items-center gap-1.5 overflow-x-auto py-1"
+                style="-ms-overflow-style:none; scrollbar-width:none; mask-image: linear-gradient(to right, transparent 0%, black 2%, black 96%, transparent 100%)"
+            >
+                // Genre pills
+                {GENRES.iter().map(|g| {
+                    let gs = g.to_string();
+                    let gs_click = gs.clone();
+                    let gs_class = gs.clone();
+                    view! {
+                        <button
+                            class=move || if genres.get().contains(&gs_class) {
+                                "flex-shrink-0 px-3 py-1 text-xs rounded-full border border-sc-accent text-sc-accent bg-sc-accent-deep font-medium transition-colors"
+                            } else {
+                                "flex-shrink-0 px-3 py-1 text-xs rounded-full border border-sc-border text-stone-400 hover:border-stone-500 hover:text-stone-200 transition-colors"
+                            }
+                            on:click=move |_| {
+                                let mut cur = genres.get();
+                                if let Some(pos) = cur.iter().position(|x| x == &gs_click) {
+                                    cur.remove(pos);
+                                } else {
+                                    cur.push(gs_click.clone());
+                                }
+                                on_genres.run(cur);
+                            }
+                        >{*g}</button>
+                    }
+                }).collect::<Vec<_>>()}
+
+                // Separator
+                <span class="flex-shrink-0 text-stone-700 px-1 select-none">"/"</span>
+
+                // Era pills
+                {DECADE_OPTIONS.iter().map(|(y, l)| {
+                    let yv = *y;
+                    view! {
+                        <button
+                            class=move || if year.get() == Some(yv) {
+                                "flex-shrink-0 px-3 py-1 text-xs rounded-full border border-sc-accent text-sc-accent bg-sc-accent-deep font-medium transition-colors"
+                            } else {
+                                "flex-shrink-0 px-3 py-1 text-xs rounded-full border border-sc-border text-stone-400 hover:border-stone-500 hover:text-stone-200 transition-colors"
+                            }
+                            on:click=move |_| {
+                                if year.get() == Some(yv) {
+                                    on_year.run(None);
+                                } else {
+                                    on_year.run(Some(yv));
+                                }
+                            }
+                        >{*l}</button>
+                    }
+                }).collect::<Vec<_>>()}
+
+                // Clear + count (trailing, only when filters active)
+                {move || if active_count() > 0 {
+                    let t = total.get();
+                    view! {
+                        <span class="flex-shrink-0 flex items-center gap-2 pl-2 border-l border-stone-800 ml-1">
+                            <span class="text-xs text-stone-600">{format!("{} films", t)}</span>
+                            <button
+                                class="text-xs text-stone-500 hover:text-stone-300 transition-colors whitespace-nowrap"
+                                on:click=move |_| { on_genres.run(vec![]); on_year.run(None); }
+                            >"✕ clear"</button>
+                        </span>
+                    }.into_any()
+                } else {
+                    view! { <span /> }.into_any()
+                }}
+            </div>
         </div>
     }
 }
@@ -845,12 +778,12 @@ pub fn MovieDetail() -> impl IntoView {
                         <h1 class="text-3xl font-bold text-stone-100 mb-1">{title.clone()}</h1>
                         <p class="text-stone-400 mb-6">{year} " · " {director}</p>
                         <div class="flex gap-8 flex-wrap">
-                            <div class="flex-shrink-0">
+                            <div class="flex-shrink-0 w-32 sm:w-48">
                                 {if poster.is_empty() {
-                                    view!{ <div class="w-48 h-72 bg-sc-card rounded flex items-center justify-center">
+                                    view!{ <div class="w-full h-48 sm:h-72 bg-sc-card rounded flex items-center justify-center">
                                         <span class="text-5xl">"🎬"</span></div> }.into_any()
                                 } else {
-                                    view!{ <img src=poster alt=format!("{} poster", title) class="w-48 rounded shadow-xl" /> }.into_any()
+                                    view!{ <img src=poster alt=format!("{} poster", title) class="w-full rounded shadow-xl" /> }.into_any()
                                 }}
                             </div>
                             <div class="flex-1 min-w-0">
@@ -1028,7 +961,7 @@ fn render_movie_grid(
         view! { <div class="py-16 text-center text-stone-500">"No films match your filters."</div> }
             .into_any()
     } else {
-        view! { <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        view! { <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4" style="isolation:isolate">
             {movies.into_iter().map(|m| view!{ <MovieCard movie=m /> }).collect::<Vec<_>>()}
         </div> }
         .into_any()
@@ -1128,11 +1061,13 @@ pub fn VerifyPage() -> impl IntoView {
             match api::verify_token(&token_val).await {
                 Ok(resp) => {
                     save_auth_to_storage(&resp.token, &resp.user_id, &resp.email, None);
+                    let is_admin = jwt_is_admin(&resp.token);
                     auth.set(Some(AuthState {
                         token: resp.token,
                         user_id: resp.user_id,
                         email: resp.email,
                         username: None,
+                        is_admin,
                     }));
                     navigate("/", NavigateOptions::default());
                 }
@@ -1151,7 +1086,19 @@ pub fn VerifyPage() -> impl IntoView {
 
 #[component]
 pub fn AdminPage() -> impl IntoView {
-    let (admin_token, set_admin_token) = signal(String::new());
+    let auth = use_context::<RwSignal<Option<AuthState>>>().expect("auth context missing");
+    let navigate = use_navigate();
+
+    // Redirect non-admins immediately
+    Effect::new(move |_| {
+        if auth.get().map_or(true, |a| !a.is_admin) {
+            navigate("/", NavigateOptions::default());
+        }
+    });
+
+    // JWT from auth state — used as the bearer token for all admin API calls
+    let get_token = move || auth.get_untracked().map(|a| a.token).unwrap_or_default();
+
     let (seed_state, set_seed_state) = signal(ActionState::Idle);
     let (sync_state, set_sync_state) = signal(ActionState::Idle);
     let (enrich_state, set_enrich_state) = signal(ActionState::Idle);
@@ -1166,7 +1113,7 @@ pub fn AdminPage() -> impl IntoView {
     let (log_rotation, set_log_rotation) = signal("never".to_string());
 
     let fetch_logs = move || {
-        let tok = admin_token.get_untracked();
+        let tok = get_token();
         set_logs_loading.set(true);
         spawn_local(async move {
             if let Ok(resp) = api::admin_logs(&tok).await {
@@ -1208,7 +1155,7 @@ pub fn AdminPage() -> impl IntoView {
     });
 
     let run_seed = move |_| {
-        let tok = admin_token.get_untracked();
+        let tok = get_token();
         set_seed_state.set(ActionState::Running);
         spawn_local(async move {
             match api::admin_seed(&tok).await {
@@ -1218,7 +1165,7 @@ pub fn AdminPage() -> impl IntoView {
         });
     };
     let run_sync = move |_| {
-        let tok = admin_token.get_untracked();
+        let tok = get_token();
         set_sync_state.set(ActionState::Running);
         spawn_local(async move {
             match api::admin_sync(&tok).await {
@@ -1229,7 +1176,7 @@ pub fn AdminPage() -> impl IntoView {
     };
     let run_enrich = move |_| {
         let limit = enrich_limit.get();
-        let tok = admin_token.get_untracked();
+        let tok = get_token();
         set_enrich_state.set(ActionState::Running);
         spawn_local(async move {
             match api::admin_enrich(limit, &tok).await {
@@ -1241,7 +1188,7 @@ pub fn AdminPage() -> impl IntoView {
         });
     };
     let run_score = move |_| {
-        let tok = admin_token.get_untracked();
+        let tok = get_token();
         set_score_state.set(ActionState::Running);
         spawn_local(async move {
             match api::admin_score(&tok).await {
@@ -1257,16 +1204,6 @@ pub fn AdminPage() -> impl IntoView {
         <div class="max-w-3xl mx-auto px-4 py-8">
             <h1 class="text-3xl font-bold text-stone-100 mb-2">"Admin"</h1>
             <p class="text-stone-400 mb-3">"Operations run on the server — you can close this page. Check logs below for progress."</p>
-            <div class="mb-6 flex items-center gap-3">
-                <label class="text-xs text-stone-500 uppercase tracking-widest shrink-0">"Admin token"</label>
-                <input
-                    type="password"
-                    placeholder="Bearer token"
-                    class="flex-1 bg-sc-card text-stone-200 border border-sc-border-input rounded-md px-3 py-1.5 text-sm placeholder-stone-600 focus:outline-none focus:border-sc-accent-border"
-                    prop:value=move || admin_token.get()
-                    on:input=move |ev| set_admin_token.set(event_target_value(&ev))
-                />
-            </div>
 
             {move || {
                 let has_warn = smtp_warn.get() || tmdb_warn.get() || omdb_warn.get();

@@ -198,11 +198,13 @@ pub async fn magic_link_verify(
 
     let _ = models::touch_user_login(&conn, &user.id).await;
 
+    let is_admin = state.admin_emails.contains(&user.email.to_lowercase());
     let jwt = match create_jwt(
         &user.id,
         &user.email,
         user.username.as_deref(),
         &state.jwt_secret,
+        is_admin,
     ) {
         Ok(t) => t,
         Err(e) => {
@@ -702,11 +704,13 @@ pub async fn passkey_auth_finish(
 
     let _ = models::touch_user_login(&conn, &user.id).await;
 
+    let is_admin = state.admin_emails.contains(&user.email.to_lowercase());
     let jwt = match create_jwt(
         &user.id,
         &user.email,
         user.username.as_deref(),
         &state.jwt_secret,
+        is_admin,
     ) {
         Ok(t) => t,
         Err(_) => {

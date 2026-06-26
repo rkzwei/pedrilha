@@ -95,6 +95,8 @@ struct AppState {
     passkey_auth_challenges: ChallengeStore<PasskeyAuthentication>,
     /// Rate limiter for magic link requests: email -> Vec<Instant> of recent sends.
     magic_link_limiter: Arc<Mutex<HashMap<String, Vec<std::time::Instant>>>>,
+    /// Set of emails that receive is_admin: true in their JWT.
+    admin_emails: std::collections::HashSet<String>,
 }
 
 #[derive(Deserialize)]
@@ -225,20 +227,30 @@ async fn main() {
         tracing::warn!("SMTP_HOST/SMTP_USER not set — magic-link email will be unavailable");
     }
 
-    // JWT secret — optional. Auth endpoints need it; film discovery works without it.
-    // If unset and SMTP is configured, warn loudly: tokens will be invalid on restart.
-    // If unset and SMTP is not configured, silently use a random per-boot value —
-    // auth is disabled anyway, so no one will mint tokens against this secret.
-    let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| {
-        if smtp_configured {
-            tracing::warn!(
-                "JWT_SECRET not set but SMTP is configured — auth will be broken. \
-                 Tokens will be invalid after every restart. Set JWT_SECRET."
-            );
+    // JWT secret — required when SMTP is configured. Fails hard on weak/default values.
+    let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_default();
+    if smtp_configured {
+        if jwt_secret.is_empty() {
+            panic!("JWT_SECRET must be set when SMTP is configured (auth would be broken without it)");
         }
-        // Random per-boot secret — safe for auth-disabled deployments.
+        if jwt_secret == "change-me-in-production" {
+            panic!("JWT_SECRET is set to the default value — tokens are forgeable. Set a strong secret.");
+        }
+    }
+    let jwt_secret = if jwt_secret.is_empty() {
+        // Auth is disabled (no SMTP) — random per-boot secret is safe.
         uuid::Uuid::new_v4().to_string()
-    });
+    } else {
+        jwt_secret
+    };
+
+    // Admin emails — comma-separated list of emails that get is_admin: true in their JWT.
+    let admin_emails: std::collections::HashSet<String> = std::env::var("ADMIN_EMAILS")
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect();
 
     // WebAuthn relying-party configuration.
     let webauthn_rp_id =
@@ -266,6 +278,7 @@ async fn main() {
         passkey_reg_challenges: Arc::new(Mutex::new(HashMap::new())),
         passkey_auth_challenges: Arc::new(Mutex::new(HashMap::new())),
         magic_link_limiter: Arc::new(Mutex::new(HashMap::new())),
+        admin_emails,
     };
 
     // CORS: allow origins from CORS_ORIGINS env var (comma-separated). Falls back to permissive in dev.
@@ -1082,7 +1095,7 @@ async fn run_scoring(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    routes::admin::check_admin_token(&headers)?;
+    routes::admin::check_admin_token(&headers, &state.jwt_secret)?;
     let conn = state
         .db
         .connect()

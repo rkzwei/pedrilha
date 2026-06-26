@@ -16,6 +16,29 @@ pub struct AuthState {
     pub user_id: String,
     pub email: String,
     pub username: Option<String>,
+    pub is_admin: bool,
+}
+
+/// Decode the `is_admin` claim from a JWT without a crypto library.
+/// JWTs are header.payload.signature — the payload is base64url JSON.
+pub fn jwt_is_admin(token: &str) -> bool {
+    let payload = match token.split('.').nth(1) {
+        Some(p) => p,
+        None => return false,
+    };
+    // base64url → base64: replace URL-safe chars and add padding
+    let b64 = payload.replace('-', "+").replace('_', "/");
+    let pad = (4 - b64.len() % 4) % 4;
+    let b64 = format!("{}{}", b64, "=".repeat(pad));
+
+    let decoded = web_sys::window()
+        .and_then(|w| w.atob(&b64).ok())
+        .unwrap_or_default();
+
+    serde_json::from_str::<serde_json::Value>(&decoded)
+        .ok()
+        .and_then(|v| v.get("is_admin").and_then(|b| b.as_bool()))
+        .unwrap_or(false)
 }
 
 const LS_TOKEN: &str = "gf_token";
@@ -51,11 +74,13 @@ pub fn load_auth_from_storage() -> Option<AuthState> {
     if token.is_empty() {
         return None;
     }
+    let is_admin = jwt_is_admin(&token);
     Some(AuthState {
         token,
         user_id,
         email,
         username,
+        is_admin,
     })
 }
 
@@ -114,9 +139,11 @@ fn App() -> impl IntoView {
                             <A href="/wildcards" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide">
                                 "WILDCARDS"
                             </A>
-                            <A href="/admin" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide">
-                                "ADMIN"
-                            </A>
+                            {move || auth.get().filter(|a| a.is_admin).map(|_| view! {
+                                <A href="/admin" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide">
+                                    "ADMIN"
+                                </A>
+                            })}
                             {move || match auth.get() {
                                 Some(a) => {
                                     let display = a.username.clone()

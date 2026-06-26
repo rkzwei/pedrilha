@@ -1,3 +1,4 @@
+use crate::middleware::auth::verify_jwt;
 use crate::services::omdb_sync::OmdbEnrichmentService;
 use crate::services::tmdb_sync::TmdbSyncService;
 use crate::AppState;
@@ -36,22 +37,39 @@ pub struct EnrichQuery {
     pub limit: Option<i64>,
 }
 
-/// Minimal bearer-token guard.
-pub(crate) fn check_admin_token(headers: &HeaderMap) -> Result<(), StatusCode> {
-    let expected = env::var("ADMIN_TOKEN").unwrap_or_default();
-    if expected.is_empty() {
-        tracing::warn!("ADMIN_TOKEN is not set; admin endpoints are unprotected");
-        return Ok(());
-    }
-
-    let provided = headers
+/// Admin auth guard — accepts either:
+///   - `Authorization: Bearer <ADMIN_TOKEN>` (static token for CLI/scripts), or
+///   - `Authorization: Bearer <JWT>` with `is_admin: true` claim (browser UI).
+pub(crate) fn check_admin_token(headers: &HeaderMap, jwt_secret: &str) -> Result<(), StatusCode> {
+    let bearer = headers
         .get("Authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .unwrap_or("");
 
-    if provided != expected {
-        tracing::warn!("Admin request rejected: invalid or missing bearer token");
+    if bearer.is_empty() {
+        tracing::warn!("Admin request rejected: missing Authorization header");
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    // Try JWT path first — valid is_admin JWT is accepted even if ADMIN_TOKEN is unset.
+    if let Ok(claims) = verify_jwt(bearer, jwt_secret) {
+        if claims.is_admin {
+            return Ok(());
+        }
+        tracing::warn!("Admin request rejected: JWT valid but is_admin is false");
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    // Fall back to static ADMIN_TOKEN.
+    let expected = env::var("ADMIN_TOKEN").unwrap_or_default();
+    if expected.is_empty() {
+        tracing::error!("ADMIN_TOKEN is not set and JWT auth failed; rejecting admin request");
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    if bearer != expected {
+        tracing::warn!("Admin request rejected: invalid bearer token");
         return Err(StatusCode::UNAUTHORIZED);
     }
 
@@ -66,7 +84,7 @@ pub async fn trigger_sync(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    check_admin_token(&headers)?;
+    check_admin_token(&headers, &state.jwt_secret)?;
 
     if state.tmdb_api_key.is_empty() {
         return Err(StatusCode::SERVICE_UNAVAILABLE);
@@ -180,7 +198,7 @@ pub async fn trigger_enrich(
     headers: HeaderMap,
     Json(payload): Json<EnrichQuery>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    check_admin_token(&headers)?;
+    check_admin_token(&headers, &state.jwt_secret)?;
 
     if state.omdb_api_key.is_empty() {
         return Err(StatusCode::SERVICE_UNAVAILABLE);
@@ -253,7 +271,7 @@ pub async fn trigger_score(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    check_admin_token(&headers)?;
+    check_admin_token(&headers, &state.jwt_secret)?;
 
     let guard = acquire_busy(&state.admin_busy)?;
     let db = state.db.clone();
@@ -332,7 +350,7 @@ pub async fn trigger_seed(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    check_admin_token(&headers)?;
+    check_admin_token(&headers, &state.jwt_secret)?;
 
     let guard = acquire_busy(&state.admin_busy)?;
     let db = state.db.clone();
@@ -459,7 +477,7 @@ pub async fn get_run_logs(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    check_admin_token(&headers)?;
+    check_admin_token(&headers, &state.jwt_secret)?;
 
     let conn = state
         .db

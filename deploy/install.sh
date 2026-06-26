@@ -33,6 +33,15 @@ if [[ ! -f "SECRETS.env" ]]; then
     exit 1
 fi
 
+# Warn if swap is small — turso_core and WASM builds need headroom on 1 GB VPS
+SWAP_KB=$(grep SwapTotal /proc/meminfo | awk '{print $2}')
+if [[ "$SWAP_KB" -lt 1048576 ]]; then
+    echo "Warning: swap is less than 1 GB (${SWAP_KB} kB). Heavy crates may OOM-kill."
+    echo "  To add 2 GB swap:"
+    echo "    fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile"
+    echo ""
+fi
+
 echo ""
 echo "╔══════════════════════════════════════════╗"
 echo "║    Gem Finder — VPS bootstrap + deploy   ║"
@@ -94,14 +103,18 @@ else
 fi
 
 # ── Step 4: Build backend ─────────────────────────────────────────────────────
+# -j 1 and codegen-units=4 reduce peak RAM — turso_core and similar heavy crates
+# will OOM-kill on a 1 GB VPS without this.
 
-echo "▶ [4/7] Build backend (cargo build --release)"
-"$CARGO_HOME/bin/cargo" build --release --package gem-finder-api
+echo "▶ [4/7] Build backend (cargo build --release -j 1)"
+CARGO_PROFILE_RELEASE_CODEGEN_UNITS=4 \
+    "$CARGO_HOME/bin/cargo" build --release --package gem-finder-api -j 1
 
 # ── Step 5: Build frontend ────────────────────────────────────────────────────
 
 echo "▶ [5/7] Build frontend (trunk build --release)"
-(cd crates/frontend && "$CARGO_HOME/bin/trunk" build --release)
+(cd crates/frontend && CARGO_PROFILE_RELEASE_CODEGEN_UNITS=4 \
+    "$CARGO_HOME/bin/trunk" build --release -- -j 1)
 
 # ── Step 6: Install files + service ──────────────────────────────────────────
 
@@ -118,6 +131,16 @@ cp SECRETS.env "$INSTALL_DIR/.env"
 chown -R gem-finder:gem-finder "$INSTALL_DIR"
 chmod 600 "$INSTALL_DIR/.env"
 chmod +x "$INSTALL_DIR/gem-finder-api"
+
+# Allow the deploy user (rk) to update binaries and restart the service
+# without a password — used by GitHub Actions CI/CD.
+DEPLOY_USER="${SUDO_USER:-rk}"
+chown "$DEPLOY_USER":"$DEPLOY_USER" "$INSTALL_DIR/gem-finder-api" "$INSTALL_DIR/dist" 2>/dev/null || true
+cat > /etc/sudoers.d/gem-finder-deploy <<EOF
+$DEPLOY_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart gem-finder, /bin/systemctl stop gem-finder, /bin/mv $INSTALL_DIR/gem-finder-api.new $INSTALL_DIR/gem-finder-api
+EOF
+chmod 440 /etc/sudoers.d/gem-finder-deploy
+echo "   Deploy permissions granted to $DEPLOY_USER"
 
 cp deploy/gem-finder.service /etc/systemd/system/
 systemctl daemon-reload
