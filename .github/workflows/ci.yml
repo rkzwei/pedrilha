@@ -272,3 +272,4 @@ jobs:
             "sudo mv /opt/gem-finder/gem-finder-api.new /opt/gem-finder/gem-finder-api && \
              sudo systemctl restart gem-finder && \
              systemctl is-active gem-finder"
+#fixed dependabot, adding line for commit
