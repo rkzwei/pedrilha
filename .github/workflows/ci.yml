@@ -116,7 +116,7 @@ jobs:
 
       - name: Upload binary
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gem-finder-api
           path: target/release/gem-finder-api
@@ -181,7 +181,7 @@ jobs:
 
       - name: Upload dist
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
           path: crates/frontend/dist/
