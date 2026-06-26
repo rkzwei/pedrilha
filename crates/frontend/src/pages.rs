@@ -73,6 +73,7 @@ fn is_valid_email_client(email: &str) -> bool {
 }
 
 // ── Filter bar ────────────────────────────────────────────────────────────────
+// open_dd: 0 = none, 1 = genre panel, 2 = era panel
 #[component]
 fn FilterBar(
     genres: Signal<Vec<String>>,
@@ -83,11 +84,38 @@ fn FilterBar(
     on_year: Callback<Option<i32>>,
     on_search: Callback<Option<String>>,
 ) -> impl IntoView {
+    let (open_dd, set_open_dd) = signal(0u8);
     let active_count = move || genres.get().len() + year.get().map(|_| 1).unwrap_or(0);
 
+    // Button class helpers
+    let dd_btn = |is_open: bool, is_active: bool| -> String {
+        let base = "flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border transition-colors cursor-pointer";
+        if is_open || is_active {
+            format!("{} border-sc-accent text-sc-accent bg-sc-accent-deep", base)
+        } else {
+            format!("{} border-sc-border text-stone-400 bg-sc-card hover:border-stone-600 hover:text-stone-200", base)
+        }
+    };
+    let opt_btn = |active: bool| -> &'static str {
+        if active {
+            "px-2 py-1 text-xs rounded border border-sc-accent text-sc-accent bg-sc-accent-deep transition-colors cursor-pointer font-medium"
+        } else {
+            "px-2 py-1 text-xs rounded border border-sc-border text-stone-400 bg-sc-card hover:border-stone-600 hover:text-stone-200 transition-colors cursor-pointer"
+        }
+    };
+
     view! {
-        <div class="mb-6 space-y-2">
-            // Search
+        <div class="relative mb-6 space-y-2">
+
+            // ── Click-away overlay ────────────────────────────────────────────
+            {move || (open_dd.get() != 0).then(|| view! {
+                <div
+                    style="position:fixed;inset:0;z-index:40"
+                    on:click=move |_| set_open_dd.set(0)
+                />
+            })}
+
+            // ── Search ────────────────────────────────────────────────────────
             <input
                 type="text"
                 placeholder="Search titles, directors…"
@@ -99,75 +127,103 @@ fn FilterBar(
                 }
             />
 
-            // Genre + era pills in one scrollable row
-            <div
-                class="flex items-center gap-1.5 overflow-x-auto py-1"
-                style="-ms-overflow-style:none; scrollbar-width:none; mask-image: linear-gradient(to right, transparent 0%, black 2%, black 96%, transparent 100%)"
-            >
-                // Genre pills
-                {GENRES.iter().map(|g| {
-                    let gs = g.to_string();
-                    let gs_click = gs.clone();
-                    let gs_class = gs.clone();
-                    view! {
-                        <button
-                            class=move || if genres.get().contains(&gs_class) {
-                                "flex-shrink-0 px-3 py-1 text-xs rounded-full border border-sc-accent text-sc-accent bg-sc-accent-deep font-medium transition-colors"
-                            } else {
-                                "flex-shrink-0 px-3 py-1 text-xs rounded-full border border-sc-border text-stone-400 hover:border-stone-500 hover:text-stone-200 transition-colors"
-                            }
-                            on:click=move |_| {
-                                let mut cur = genres.get();
-                                if let Some(pos) = cur.iter().position(|x| x == &gs_click) {
-                                    cur.remove(pos);
-                                } else {
-                                    cur.push(gs_click.clone());
-                                }
-                                on_genres.run(cur);
-                            }
-                        >{*g}</button>
-                    }
-                }).collect::<Vec<_>>()}
+            // ── Filter buttons row ────────────────────────────────────────────
+            <div class="flex items-center gap-2" style="position:relative;z-index:50">
 
-                // Separator
-                <span class="flex-shrink-0 text-stone-700 px-1 select-none">"/"</span>
+                // ── Genre dropdown ────────────────────────────────────────────
+                <div class="relative">
+                    <button
+                        class=move || dd_btn(open_dd.get() == 1, !genres.get().is_empty())
+                        on:click=move |_| set_open_dd.update(|v| *v = if *v == 1 { 0 } else { 1 })
+                    >
+                        "Genre"
+                        {move || {
+                            let n = genres.get().len();
+                            (n > 0).then(|| view! {
+                                <span style="background:var(--sc-accent);color:#0d0906;border-radius:9999px;font-size:0.65rem;font-weight:700;padding:1px 6px;line-height:1.4">{n}</span>
+                            })
+                        }}
+                        <span class="text-stone-600 text-xs">"▾"</span>
+                    </button>
 
-                // Era pills
-                {DECADE_OPTIONS.iter().map(|(y, l)| {
-                    let yv = *y;
-                    view! {
-                        <button
-                            class=move || if year.get() == Some(yv) {
-                                "flex-shrink-0 px-3 py-1 text-xs rounded-full border border-sc-accent text-sc-accent bg-sc-accent-deep font-medium transition-colors"
-                            } else {
-                                "flex-shrink-0 px-3 py-1 text-xs rounded-full border border-sc-border text-stone-400 hover:border-stone-500 hover:text-stone-200 transition-colors"
-                            }
-                            on:click=move |_| {
-                                if year.get() == Some(yv) {
-                                    on_year.run(None);
-                                } else {
-                                    on_year.run(Some(yv));
-                                }
-                            }
-                        >{*l}</button>
-                    }
-                }).collect::<Vec<_>>()}
+                    {move || (open_dd.get() == 1).then(|| view! {
+                        <div style="position:absolute;top:calc(100% + 6px);left:0;min-width:230px;background:var(--sc-panel);border:1px solid var(--sc-border);border-radius:10px;box-shadow:0 24px 48px rgba(0,0,0,0.7);padding:12px;z-index:50">
+                            <p style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--sc-accent-border);margin-bottom:8px;font-weight:600">"Genre"</p>
+                            <div class="grid grid-cols-3 gap-1">
+                                {GENRES.iter().map(|g| {
+                                    let gs = g.to_string();
+                                    let gs2 = gs.clone();
+                                    view! {
+                                        <button
+                                            class=move || opt_btn(genres.get().contains(&gs))
+                                            on:click=move |_| {
+                                                let mut cur = genres.get_untracked();
+                                                if let Some(pos) = cur.iter().position(|x| x == &gs2) {
+                                                    cur.remove(pos);
+                                                } else {
+                                                    cur.push(gs2.clone());
+                                                }
+                                                on_genres.run(cur);
+                                            }
+                                        >{*g}</button>
+                                    }
+                                }).collect::<Vec<_>>()}
+                            </div>
+                        </div>
+                    })}
+                </div>
 
-                // Clear + count (trailing, only when filters active)
-                {move || if active_count() > 0 {
+                // ── Era dropdown ──────────────────────────────────────────────
+                <div class="relative">
+                    <button
+                        class=move || dd_btn(open_dd.get() == 2, year.get().is_some())
+                        on:click=move |_| set_open_dd.update(|v| *v = if *v == 2 { 0 } else { 2 })
+                    >
+                        {move || year.get()
+                            .and_then(|y| DECADE_OPTIONS.iter().find(|(v,_)| *v == y).map(|(_,l)| *l))
+                            .unwrap_or("Era")}
+                        <span class="text-stone-600 text-xs">"▾"</span>
+                    </button>
+
+                    {move || (open_dd.get() == 2).then(|| view! {
+                        <div style="position:absolute;top:calc(100% + 6px);left:0;min-width:160px;background:var(--sc-panel);border:1px solid var(--sc-border);border-radius:10px;box-shadow:0 24px 48px rgba(0,0,0,0.7);padding:12px;z-index:50">
+                            <p style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--sc-accent-border);margin-bottom:8px;font-weight:600">"From era"</p>
+                            <div class="flex flex-col gap-1">
+                                {DECADE_OPTIONS.iter().map(|(y, l)| {
+                                    let yv = *y;
+                                    view! {
+                                        <button
+                                            class=move || opt_btn(year.get() == Some(yv))
+                                            on:click=move |_| {
+                                                if year.get_untracked() == Some(yv) {
+                                                    on_year.run(None);
+                                                } else {
+                                                    on_year.run(Some(yv));
+                                                    set_open_dd.set(0);
+                                                }
+                                            }
+                                        >{*l}</button>
+                                    }
+                                }).collect::<Vec<_>>()}
+                            </div>
+                        </div>
+                    })}
+                </div>
+
+                // ── Film count + clear ────────────────────────────────────────
+                {move || (active_count() > 0).then(|| {
                     let t = total.get();
                     view! {
-                        <span class="flex-shrink-0 flex items-center gap-2 pl-2 border-l border-stone-800 ml-1">
+                        <span class="ml-auto flex items-center gap-3">
                             <span class="text-xs text-stone-600">{format!("{} films", t)}</span>
                             <button
-                                class="text-xs text-stone-500 hover:text-stone-300 transition-colors whitespace-nowrap"
+                                class="text-xs text-stone-500 hover:text-stone-300 transition-colors"
                                 on:click=move |_| { on_genres.run(vec![]); on_year.run(None); }
                             >"✕ clear"</button>
                         </span>
-                    }.into_any()
-                } else {
-                    view! { <span /> }.into_any()
-                }}
+                    }
+                })}
+
             </div>
         </div>
     }
