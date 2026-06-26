@@ -125,6 +125,13 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
 
+      - name: Verify SSH connectivity
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+            -o ConnectTimeout=10 \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "echo '✓ SSH connection successful — host: $(hostname), user: $(whoami)'"
+
       - name: Upload binary to VPS
         run: |
           chmod +x artifacts/gem-finder-api
