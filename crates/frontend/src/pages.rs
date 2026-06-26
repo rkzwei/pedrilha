@@ -4,6 +4,7 @@ use gem_finder_shared::id_encode::encode_movie_id;
 use gem_finder_shared::types::{Movie, MovieSummary, WatchState};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use wasm_bindgen::prelude::*;
 use leptos_router::{
     components::A,
     hooks::{use_navigate, use_params_map, use_query_map},
@@ -87,6 +88,10 @@ fn FilterBar(
     let (open_dd, set_open_dd) = signal(0u8);
     let active_count = move || genres.get().len() + year.get().map(|_| 1).unwrap_or(0);
 
+    // Local signal so the input feels instant; on_search is debounced 300ms.
+    let (local_search, set_local_search) = signal(search.get_untracked().unwrap_or_default());
+    let debounce_handle: StoredValue<Option<i32>> = StoredValue::new(None);
+
     // Button class helpers
     let dd_btn = |is_open: bool, is_active: bool| -> String {
         let base = "flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border transition-colors cursor-pointer";
@@ -120,10 +125,29 @@ fn FilterBar(
                 type="text"
                 placeholder="Search titles, directors…"
                 class="w-full bg-sc-card text-stone-200 border border-sc-border-input rounded-md px-4 py-2.5 text-sm placeholder-stone-600 focus:outline-none focus:border-sc-accent-border"
-                prop:value=move || search.get().unwrap_or_default()
+                prop:value=move || local_search.get()
                 on:input=move |ev| {
                     let v = event_target_value(&ev);
-                    on_search.run(if v.is_empty() { None } else { Some(v) });
+                    set_local_search.set(v.clone());
+                    // Cancel any pending debounce timer.
+                    if let Some(h) = debounce_handle.get_value() {
+                        if let Some(w) = web_sys::window() {
+                            w.clear_timeout_with_handle(h);
+                        }
+                    }
+                    // Schedule search 300 ms after the user stops typing.
+                    let val = if v.is_empty() { None } else { Some(v) };
+                    let cb = Closure::once(move || { on_search.run(val); });
+                    let handle = web_sys::window()
+                        .and_then(|w| {
+                            w.set_timeout_with_callback_and_timeout_and_arguments_0(
+                                cb.as_ref().unchecked_ref::<js_sys::Function>(),
+                                300,
+                            ).ok()
+                        })
+                        .unwrap_or(-1);
+                    cb.forget();
+                    debounce_handle.set_value(Some(handle));
                 }
             />
 
@@ -147,7 +171,7 @@ fn FilterBar(
                     </button>
 
                     {move || (open_dd.get() == 1).then(|| view! {
-                        <div style="position:absolute;top:calc(100% + 6px);left:0;min-width:230px;background:var(--sc-panel);border:1px solid var(--sc-border);border-radius:10px;box-shadow:0 24px 48px rgba(0,0,0,0.7);padding:12px;z-index:50">
+                        <div style="position:absolute;top:calc(100% + 6px);left:0;min-width:230px;background-color:var(--sc-panel,#17100a);border:1px solid var(--sc-border);border-radius:10px;box-shadow:0 24px 48px rgba(0,0,0,0.7);padding:12px;z-index:200">
                             <p style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--sc-accent-border);margin-bottom:8px;font-weight:600">"Genre"</p>
                             <div class="grid grid-cols-3 gap-1">
                                 {GENRES.iter().map(|g| {
@@ -186,7 +210,7 @@ fn FilterBar(
                     </button>
 
                     {move || (open_dd.get() == 2).then(|| view! {
-                        <div style="position:absolute;top:calc(100% + 6px);left:0;min-width:160px;background:var(--sc-panel);border:1px solid var(--sc-border);border-radius:10px;box-shadow:0 24px 48px rgba(0,0,0,0.7);padding:12px;z-index:50">
+                        <div style="position:absolute;top:calc(100% + 6px);left:0;min-width:160px;background-color:var(--sc-panel,#17100a);border:1px solid var(--sc-border);border-radius:10px;box-shadow:0 24px 48px rgba(0,0,0,0.7);padding:12px;z-index:200">
                             <p style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--sc-accent-border);margin-bottom:8px;font-weight:600">"From era"</p>
                             <div class="flex flex-col gap-1">
                                 {DECADE_OPTIONS.iter().map(|(y, l)| {
