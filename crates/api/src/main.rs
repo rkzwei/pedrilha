@@ -231,10 +231,14 @@ async fn main() {
     let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_default();
     if smtp_configured {
         if jwt_secret.is_empty() {
-            panic!("JWT_SECRET must be set when SMTP is configured (auth would be broken without it)");
+            panic!(
+                "JWT_SECRET must be set when SMTP is configured (auth would be broken without it)"
+            );
         }
         if jwt_secret == "change-me-in-production" {
-            panic!("JWT_SECRET is set to the default value — tokens are forgeable. Set a strong secret.");
+            panic!(
+                "JWT_SECRET is set to the default value — tokens are forgeable. Set a strong secret."
+            );
         }
     }
     let jwt_secret = if jwt_secret.is_empty() {
@@ -857,8 +861,7 @@ async fn get_gems(
                     let movie_genres = m.genre.as_deref().unwrap_or("").to_lowercase();
                     let movie_keywords = m.keywords.as_deref().unwrap_or("").to_lowercase();
                     if !selected.iter().any(|sel| {
-                        movie_genres.contains(sel.as_str())
-                            || movie_keywords.contains(sel.as_str())
+                        movie_genres.contains(sel.as_str()) || movie_keywords.contains(sel.as_str())
                     }) {
                         return false;
                     }
@@ -946,8 +949,7 @@ async fn get_acclaimed(
                     let movie_genres = m.genre.as_deref().unwrap_or("").to_lowercase();
                     let movie_keywords = m.keywords.as_deref().unwrap_or("").to_lowercase();
                     if !selected.iter().any(|sel| {
-                        movie_genres.contains(sel.as_str())
-                            || movie_keywords.contains(sel.as_str())
+                        movie_genres.contains(sel.as_str()) || movie_keywords.contains(sel.as_str())
                     }) {
                         return false;
                     }
@@ -1033,8 +1035,7 @@ async fn get_wildcards(
                     let movie_genres = m.genre.as_deref().unwrap_or("").to_lowercase();
                     let movie_keywords = m.keywords.as_deref().unwrap_or("").to_lowercase();
                     if !selected.iter().any(|sel| {
-                        movie_genres.contains(sel.as_str())
-                            || movie_keywords.contains(sel.as_str())
+                        movie_genres.contains(sel.as_str()) || movie_keywords.contains(sel.as_str())
                     }) {
                         return false;
                     }
