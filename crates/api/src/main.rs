@@ -846,8 +846,12 @@ async fn get_gems(
                 if !selected.is_empty() {
                     let movie_genres = m.genre.as_deref().unwrap_or("").to_lowercase();
                     let movie_keywords = m.keywords.as_deref().unwrap_or("").to_lowercase();
-                    if !selected.iter().any(|sel| {
-                        movie_genres.contains(sel.as_str()) || movie_keywords.contains(sel.as_str())
+                    if !selected.iter().all(|sel| {
+                        if sel == "musical" {
+                            movie_keywords.contains("musical")
+                        } else {
+                            movie_genres.contains(sel.as_str())
+                        }
                     }) {
                         return false;
                     }
@@ -934,8 +938,12 @@ async fn get_acclaimed(
                 if !selected.is_empty() {
                     let movie_genres = m.genre.as_deref().unwrap_or("").to_lowercase();
                     let movie_keywords = m.keywords.as_deref().unwrap_or("").to_lowercase();
-                    if !selected.iter().any(|sel| {
-                        movie_genres.contains(sel.as_str()) || movie_keywords.contains(sel.as_str())
+                    if !selected.iter().all(|sel| {
+                        if sel == "musical" {
+                            movie_keywords.contains("musical")
+                        } else {
+                            movie_genres.contains(sel.as_str())
+                        }
                     }) {
                         return false;
                     }
@@ -1020,8 +1028,12 @@ async fn get_wildcards(
                 if !selected.is_empty() {
                     let movie_genres = m.genre.as_deref().unwrap_or("").to_lowercase();
                     let movie_keywords = m.keywords.as_deref().unwrap_or("").to_lowercase();
-                    if !selected.iter().any(|sel| {
-                        movie_genres.contains(sel.as_str()) || movie_keywords.contains(sel.as_str())
+                    if !selected.iter().all(|sel| {
+                        if sel == "musical" {
+                            movie_keywords.contains("musical")
+                        } else {
+                            movie_genres.contains(sel.as_str())
+                        }
                     }) {
                         return false;
                     }
