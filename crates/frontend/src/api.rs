@@ -317,7 +317,11 @@ pub struct TrackEventPayload {
 /// Fire-and-forget — errors are silently swallowed; analytics must never affect the UI.
 pub async fn track_event(payload: TrackEventPayload) {
     let url = format!("{}/api/event", api_base());
-    let _ = reqwest::Client::new().post(&url).json(&payload).send().await;
+    let _ = reqwest::Client::new()
+        .post(&url)
+        .json(&payload)
+        .send()
+        .await;
 }
 
 /// Call `window.umami.track(event_name, props_json)` from WASM via js_sys::eval.

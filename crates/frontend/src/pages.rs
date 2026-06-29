@@ -318,6 +318,24 @@ pub fn HomePage() -> impl IntoView {
     let (loading, set_loading) = signal(true);
     let (error, set_error) = signal(Option::<String>::None);
 
+    // section_view fires once on mount (no reactive reads → no re-runs)
+    Effect::new(move |prev: Option<()>| {
+        if prev.is_none() {
+            spawn_local(async {
+                api::track_event(api::TrackEventPayload {
+                    event_type: "section_view",
+                    movie_id: None,
+                    genre: None,
+                    era: None,
+                    section: Some("gems"),
+                    page_num: None,
+                })
+                .await;
+            });
+            api::track_umami("section_view", r#"{"section":"gems"}"#);
+        }
+    });
+
     Effect::new(move |_| {
         let p = page();
         let y = year();
@@ -351,12 +369,20 @@ pub fn HomePage() -> impl IntoView {
         };
         if let Some(ref genre_str) = s {
             let g = genre_str.clone();
-            api::track_umami("filter_genre", &format!(r#"{{"genre":"{}","section":"gems"}}"#, g));
+            api::track_umami(
+                "filter_genre",
+                &format!(r#"{{"genre":"{}","section":"gems"}}"#, g),
+            );
             spawn_local(async move {
                 api::track_event(api::TrackEventPayload {
                     event_type: "filter_genre",
-                    movie_id: None, genre: Some(g), era: None, section: Some("gems"), page_num: None,
-                }).await;
+                    movie_id: None,
+                    genre: Some(g),
+                    era: None,
+                    section: Some("gems"),
+                    page_num: None,
+                })
+                .await;
             });
         }
         n1(
@@ -370,12 +396,20 @@ pub fn HomePage() -> impl IntoView {
     let n2 = navigate.clone();
     let on_year_cb = Callback::new(move |y: Option<i32>| {
         if let Some(era) = y {
-            api::track_umami("filter_era", &format!(r#"{{"era":{},"section":"gems"}}"#, era));
+            api::track_umami(
+                "filter_era",
+                &format!(r#"{{"era":{},"section":"gems"}}"#, era),
+            );
             spawn_local(async move {
                 api::track_event(api::TrackEventPayload {
                     event_type: "filter_era",
-                    movie_id: None, genre: None, era: Some(era), section: Some("gems"), page_num: None,
-                }).await;
+                    movie_id: None,
+                    genre: None,
+                    era: Some(era),
+                    section: Some("gems"),
+                    page_num: None,
+                })
+                .await;
             });
         }
         n2(
@@ -393,8 +427,13 @@ pub fn HomePage() -> impl IntoView {
             spawn_local(async {
                 api::track_event(api::TrackEventPayload {
                     event_type: "search_used",
-                    movie_id: None, genre: None, era: None, section: Some("gems"), page_num: None,
-                }).await;
+                    movie_id: None,
+                    genre: None,
+                    era: None,
+                    section: Some("gems"),
+                    page_num: None,
+                })
+                .await;
             });
         }
         n3(
@@ -474,6 +513,24 @@ pub fn AcclaimedPage() -> impl IntoView {
     let (loading, set_loading) = signal(true);
     let (error, set_error) = signal(Option::<String>::None);
 
+    // section_view fires once on mount (no reactive reads → no re-runs)
+    Effect::new(move |prev: Option<()>| {
+        if prev.is_none() {
+            spawn_local(async {
+                api::track_event(api::TrackEventPayload {
+                    event_type: "section_view",
+                    movie_id: None,
+                    genre: None,
+                    era: None,
+                    section: Some("acclaimed"),
+                    page_num: None,
+                })
+                .await;
+            });
+            api::track_umami("section_view", r#"{"section":"acclaimed"}"#);
+        }
+    });
+
     Effect::new(move |_| {
         let p = page();
         let y = year();
@@ -507,12 +564,20 @@ pub fn AcclaimedPage() -> impl IntoView {
         };
         if let Some(ref genre_str) = s {
             let g = genre_str.clone();
-            api::track_umami("filter_genre", &format!(r#"{{"genre":"{}","section":"acclaimed"}}"#, g));
+            api::track_umami(
+                "filter_genre",
+                &format!(r#"{{"genre":"{}","section":"acclaimed"}}"#, g),
+            );
             spawn_local(async move {
                 api::track_event(api::TrackEventPayload {
                     event_type: "filter_genre",
-                    movie_id: None, genre: Some(g), era: None, section: Some("acclaimed"), page_num: None,
-                }).await;
+                    movie_id: None,
+                    genre: Some(g),
+                    era: None,
+                    section: Some("acclaimed"),
+                    page_num: None,
+                })
+                .await;
             });
         }
         n1(
@@ -526,12 +591,20 @@ pub fn AcclaimedPage() -> impl IntoView {
     let n2 = navigate.clone();
     let on_year_cb = Callback::new(move |y: Option<i32>| {
         if let Some(era) = y {
-            api::track_umami("filter_era", &format!(r#"{{"era":{},"section":"acclaimed"}}"#, era));
+            api::track_umami(
+                "filter_era",
+                &format!(r#"{{"era":{},"section":"acclaimed"}}"#, era),
+            );
             spawn_local(async move {
                 api::track_event(api::TrackEventPayload {
                     event_type: "filter_era",
-                    movie_id: None, genre: None, era: Some(era), section: Some("acclaimed"), page_num: None,
-                }).await;
+                    movie_id: None,
+                    genre: None,
+                    era: Some(era),
+                    section: Some("acclaimed"),
+                    page_num: None,
+                })
+                .await;
             });
         }
         n2(
@@ -549,8 +622,13 @@ pub fn AcclaimedPage() -> impl IntoView {
             spawn_local(async {
                 api::track_event(api::TrackEventPayload {
                     event_type: "search_used",
-                    movie_id: None, genre: None, era: None, section: Some("acclaimed"), page_num: None,
-                }).await;
+                    movie_id: None,
+                    genre: None,
+                    era: None,
+                    section: Some("acclaimed"),
+                    page_num: None,
+                })
+                .await;
             });
         }
         n3(
@@ -630,6 +708,24 @@ pub fn WildcardsPage() -> impl IntoView {
     let (loading, set_loading) = signal(true);
     let (error, set_error) = signal(Option::<String>::None);
 
+    // section_view fires once on mount (no reactive reads → no re-runs)
+    Effect::new(move |prev: Option<()>| {
+        if prev.is_none() {
+            spawn_local(async {
+                api::track_event(api::TrackEventPayload {
+                    event_type: "section_view",
+                    movie_id: None,
+                    genre: None,
+                    era: None,
+                    section: Some("wildcards"),
+                    page_num: None,
+                })
+                .await;
+            });
+            api::track_umami("section_view", r#"{"section":"wildcards"}"#);
+        }
+    });
+
     Effect::new(move |_| {
         let p = page();
         let y = year();
@@ -663,12 +759,20 @@ pub fn WildcardsPage() -> impl IntoView {
         };
         if let Some(ref genre_str) = s {
             let g = genre_str.clone();
-            api::track_umami("filter_genre", &format!(r#"{{"genre":"{}","section":"wildcards"}}"#, g));
+            api::track_umami(
+                "filter_genre",
+                &format!(r#"{{"genre":"{}","section":"wildcards"}}"#, g),
+            );
             spawn_local(async move {
                 api::track_event(api::TrackEventPayload {
                     event_type: "filter_genre",
-                    movie_id: None, genre: Some(g), era: None, section: Some("wildcards"), page_num: None,
-                }).await;
+                    movie_id: None,
+                    genre: Some(g),
+                    era: None,
+                    section: Some("wildcards"),
+                    page_num: None,
+                })
+                .await;
             });
         }
         n1(
@@ -682,12 +786,20 @@ pub fn WildcardsPage() -> impl IntoView {
     let n2 = navigate.clone();
     let on_year_cb = Callback::new(move |y: Option<i32>| {
         if let Some(era) = y {
-            api::track_umami("filter_era", &format!(r#"{{"era":{},"section":"wildcards"}}"#, era));
+            api::track_umami(
+                "filter_era",
+                &format!(r#"{{"era":{},"section":"wildcards"}}"#, era),
+            );
             spawn_local(async move {
                 api::track_event(api::TrackEventPayload {
                     event_type: "filter_era",
-                    movie_id: None, genre: None, era: Some(era), section: Some("wildcards"), page_num: None,
-                }).await;
+                    movie_id: None,
+                    genre: None,
+                    era: Some(era),
+                    section: Some("wildcards"),
+                    page_num: None,
+                })
+                .await;
             });
         }
         n2(
@@ -705,8 +817,13 @@ pub fn WildcardsPage() -> impl IntoView {
             spawn_local(async {
                 api::track_event(api::TrackEventPayload {
                     event_type: "search_used",
-                    movie_id: None, genre: None, era: None, section: Some("wildcards"), page_num: None,
-                }).await;
+                    movie_id: None,
+                    genre: None,
+                    era: None,
+                    section: Some("wildcards"),
+                    page_num: None,
+                })
+                .await;
             });
         }
         n3(
@@ -914,12 +1031,19 @@ pub fn MovieDetail() -> impl IntoView {
                     if let Some(ref enc_id) = movie_id() {
                         let mid = enc_id.clone();
                         let title_str = m.title.clone();
-                        api::track_umami("movie_view", &format!(r#"{{"id":"{}","title":"{}"}}"#, mid, title_str));
+                        api::track_umami(
+                            "movie_view",
+                            &format!(r#"{{"id":"{}","title":"{}"}}"#, mid, title_str),
+                        );
                         api::track_event(api::TrackEventPayload {
                             event_type: "movie_view",
                             movie_id: Some(mid),
-                            genre: None, era: None, section: None, page_num: None,
-                        }).await;
+                            genre: None,
+                            era: None,
+                            section: None,
+                            page_num: None,
+                        })
+                        .await;
                     }
                     set_movie.set(Some(m));
                     set_loading.set(false);
