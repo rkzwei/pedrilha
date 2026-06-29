@@ -349,6 +349,16 @@ pub fn HomePage() -> impl IntoView {
         } else {
             Some(gs.join(","))
         };
+        if let Some(ref genre_str) = s {
+            let g = genre_str.clone();
+            api::track_umami("filter_genre", &format!(r#"{{"genre":"{}","section":"gems"}}"#, g));
+            spawn_local(async move {
+                api::track_event(api::TrackEventPayload {
+                    event_type: "filter_genre",
+                    movie_id: None, genre: Some(g), era: None, section: Some("gems"), page_num: None,
+                }).await;
+            });
+        }
         n1(
             &build_url("/", 1, &s, &year(), &search()),
             NavigateOptions {
@@ -359,6 +369,15 @@ pub fn HomePage() -> impl IntoView {
     });
     let n2 = navigate.clone();
     let on_year_cb = Callback::new(move |y: Option<i32>| {
+        if let Some(era) = y {
+            api::track_umami("filter_era", &format!(r#"{{"era":{},"section":"gems"}}"#, era));
+            spawn_local(async move {
+                api::track_event(api::TrackEventPayload {
+                    event_type: "filter_era",
+                    movie_id: None, genre: None, era: Some(era), section: Some("gems"), page_num: None,
+                }).await;
+            });
+        }
         n2(
             &build_url("/", 1, &gstr(), &y, &search()),
             NavigateOptions {
@@ -369,6 +388,15 @@ pub fn HomePage() -> impl IntoView {
     });
     let n3 = navigate.clone();
     let on_search_cb = Callback::new(move |s: Option<String>| {
+        if s.is_some() {
+            api::track_umami("search_used", r#"{"section":"gems"}"#);
+            spawn_local(async {
+                api::track_event(api::TrackEventPayload {
+                    event_type: "search_used",
+                    movie_id: None, genre: None, era: None, section: Some("gems"), page_num: None,
+                }).await;
+            });
+        }
         n3(
             &build_url("/", 1, &gstr(), &year(), &s),
             NavigateOptions {
@@ -395,8 +423,16 @@ pub fn HomePage() -> impl IntoView {
                 let tp = total_pages(); let p = page();
                 let np = nav_pg.clone(); let nn = nav_pg.clone();
                 view!{ <PaginationBar page=p total_pages=tp
-                    on_prev=Callback::new(move |_| { np(&build_url("/", p - 1, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
-                    on_next=Callback::new(move |_| { nn(&build_url("/", p + 1, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
+                    on_prev=Callback::new(move |_| {
+                        let prev = p - 1;
+                        spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("gems"), page_num: Some(prev) }).await; });
+                        np(&build_url("/", prev, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() });
+                    })
+                    on_next=Callback::new(move |_| {
+                        let next = p + 1;
+                        spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("gems"), page_num: Some(next) }).await; });
+                        nn(&build_url("/", next, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() });
+                    })
                 /> }
             }}
         </div>
@@ -469,6 +505,16 @@ pub fn AcclaimedPage() -> impl IntoView {
         } else {
             Some(gs.join(","))
         };
+        if let Some(ref genre_str) = s {
+            let g = genre_str.clone();
+            api::track_umami("filter_genre", &format!(r#"{{"genre":"{}","section":"acclaimed"}}"#, g));
+            spawn_local(async move {
+                api::track_event(api::TrackEventPayload {
+                    event_type: "filter_genre",
+                    movie_id: None, genre: Some(g), era: None, section: Some("acclaimed"), page_num: None,
+                }).await;
+            });
+        }
         n1(
             &build_url("/acclaimed", 1, &s, &year(), &search()),
             NavigateOptions {
@@ -479,6 +525,15 @@ pub fn AcclaimedPage() -> impl IntoView {
     });
     let n2 = navigate.clone();
     let on_year_cb = Callback::new(move |y: Option<i32>| {
+        if let Some(era) = y {
+            api::track_umami("filter_era", &format!(r#"{{"era":{},"section":"acclaimed"}}"#, era));
+            spawn_local(async move {
+                api::track_event(api::TrackEventPayload {
+                    event_type: "filter_era",
+                    movie_id: None, genre: None, era: Some(era), section: Some("acclaimed"), page_num: None,
+                }).await;
+            });
+        }
         n2(
             &build_url("/acclaimed", 1, &gstr(), &y, &search()),
             NavigateOptions {
@@ -489,6 +544,15 @@ pub fn AcclaimedPage() -> impl IntoView {
     });
     let n3 = navigate.clone();
     let on_search_cb = Callback::new(move |s: Option<String>| {
+        if s.is_some() {
+            api::track_umami("search_used", r#"{"section":"acclaimed"}"#);
+            spawn_local(async {
+                api::track_event(api::TrackEventPayload {
+                    event_type: "search_used",
+                    movie_id: None, genre: None, era: None, section: Some("acclaimed"), page_num: None,
+                }).await;
+            });
+        }
         n3(
             &build_url("/acclaimed", 1, &gstr(), &year(), &s),
             NavigateOptions {
@@ -515,8 +579,16 @@ pub fn AcclaimedPage() -> impl IntoView {
                 let tp = total_pages(); let p = page();
                 let np = nav_pg.clone(); let nn = nav_pg.clone();
                 view!{ <PaginationBar page=p total_pages=tp
-                    on_prev=Callback::new(move |_| { np(&build_url("/acclaimed", p - 1, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
-                    on_next=Callback::new(move |_| { nn(&build_url("/acclaimed", p + 1, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
+                    on_prev=Callback::new(move |_| {
+                        let prev = p - 1;
+                        spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("acclaimed"), page_num: Some(prev) }).await; });
+                        np(&build_url("/acclaimed", prev, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() });
+                    })
+                    on_next=Callback::new(move |_| {
+                        let next = p + 1;
+                        spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("acclaimed"), page_num: Some(next) }).await; });
+                        nn(&build_url("/acclaimed", next, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() });
+                    })
                 /> }
             }}
         </div>
@@ -589,6 +661,16 @@ pub fn WildcardsPage() -> impl IntoView {
         } else {
             Some(gs.join(","))
         };
+        if let Some(ref genre_str) = s {
+            let g = genre_str.clone();
+            api::track_umami("filter_genre", &format!(r#"{{"genre":"{}","section":"wildcards"}}"#, g));
+            spawn_local(async move {
+                api::track_event(api::TrackEventPayload {
+                    event_type: "filter_genre",
+                    movie_id: None, genre: Some(g), era: None, section: Some("wildcards"), page_num: None,
+                }).await;
+            });
+        }
         n1(
             &build_url("/wildcards", 1, &s, &year(), &search()),
             NavigateOptions {
@@ -599,6 +681,15 @@ pub fn WildcardsPage() -> impl IntoView {
     });
     let n2 = navigate.clone();
     let on_year_cb = Callback::new(move |y: Option<i32>| {
+        if let Some(era) = y {
+            api::track_umami("filter_era", &format!(r#"{{"era":{},"section":"wildcards"}}"#, era));
+            spawn_local(async move {
+                api::track_event(api::TrackEventPayload {
+                    event_type: "filter_era",
+                    movie_id: None, genre: None, era: Some(era), section: Some("wildcards"), page_num: None,
+                }).await;
+            });
+        }
         n2(
             &build_url("/wildcards", 1, &gstr(), &y, &search()),
             NavigateOptions {
@@ -609,6 +700,15 @@ pub fn WildcardsPage() -> impl IntoView {
     });
     let n3 = navigate.clone();
     let on_search_cb = Callback::new(move |s: Option<String>| {
+        if s.is_some() {
+            api::track_umami("search_used", r#"{"section":"wildcards"}"#);
+            spawn_local(async {
+                api::track_event(api::TrackEventPayload {
+                    event_type: "search_used",
+                    movie_id: None, genre: None, era: None, section: Some("wildcards"), page_num: None,
+                }).await;
+            });
+        }
         n3(
             &build_url("/wildcards", 1, &gstr(), &year(), &s),
             NavigateOptions {
@@ -636,8 +736,16 @@ pub fn WildcardsPage() -> impl IntoView {
                 let tp = total_pages(); let p = page();
                 let np = nav_pg.clone(); let nn = nav_pg.clone();
                 view!{ <PaginationBar page=p total_pages=tp
-                    on_prev=Callback::new(move |_| { np(&build_url("/wildcards", p - 1, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
-                    on_next=Callback::new(move |_| { nn(&build_url("/wildcards", p + 1, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() }); })
+                    on_prev=Callback::new(move |_| {
+                        let prev = p - 1;
+                        spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("wildcards"), page_num: Some(prev) }).await; });
+                        np(&build_url("/wildcards", prev, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() });
+                    })
+                    on_next=Callback::new(move |_| {
+                        let next = p + 1;
+                        spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("wildcards"), page_num: Some(next) }).await; });
+                        nn(&build_url("/wildcards", next, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() });
+                    })
                 /> }
             }}
         </div>
@@ -801,6 +909,17 @@ pub fn MovieDetail() -> impl IntoView {
                                 set_wl_state.set(entry.map(|e| e.state));
                             }
                         }
+                    }
+                    // Track movie detail view — fire-and-forget, swallow errors.
+                    if let Some(ref enc_id) = movie_id() {
+                        let mid = enc_id.clone();
+                        let title_str = m.title.clone();
+                        api::track_umami("movie_view", &format!(r#"{{"id":"{}","title":"{}"}}"#, mid, title_str));
+                        api::track_event(api::TrackEventPayload {
+                            event_type: "movie_view",
+                            movie_id: Some(mid),
+                            genre: None, era: None, section: None, page_num: None,
+                        }).await;
                     }
                     set_movie.set(Some(m));
                     set_loading.set(false);
@@ -1069,6 +1188,7 @@ fn MovieCard(movie: MovieSummary) -> impl IntoView {
     let navigate = use_navigate();
     let href = format!("/movie/{}", encode_movie_id(movie.id));
     let href_nav = href.clone();
+    let encoded_id = encode_movie_id(movie.id);
     let poster = movie.poster_url.clone().unwrap_or_default();
     let has_poster = !poster.is_empty();
     let gem_score = movie.gem_score.map(|s| format!("{:.0}%", s * 100.0));
@@ -1085,6 +1205,15 @@ fn MovieCard(movie: MovieSummary) -> impl IntoView {
             on:click=move |ev: web_sys::MouseEvent| {
                 if !ev.meta_key() && !ev.ctrl_key() && !ev.shift_key() && ev.button() == 0 {
                     ev.prevent_default();
+                    let mid = encoded_id.clone();
+                    api::track_umami("movie_view", &format!(r#"{{"id":"{}"}}"#, mid));
+                    spawn_local(async move {
+                        api::track_event(api::TrackEventPayload {
+                            event_type: "movie_view",
+                            movie_id: Some(mid),
+                            genre: None, era: None, section: None, page_num: None,
+                        }).await;
+                    });
                     navigate(&href_nav, Default::default());
                 }
             }
@@ -1616,5 +1745,122 @@ fn WatchlistCard(item: WatchlistItem) -> impl IntoView {
                 } else { view!{ <span /> }.into_any() }}
             </div>
         </a>
+    }
+}
+
+// ── Privacy Policy page ───────────────────────────────────────────────────────
+#[component]
+pub fn PrivacyPage() -> impl IntoView {
+    view! {
+        <div class="max-w-3xl mx-auto px-4 py-12 text-stone-300">
+            <h1 class="font-display text-4xl tracking-widest text-stone-100 mb-2">"PRIVACY POLICY"</h1>
+            <p class="text-stone-500 text-sm mb-10">"Effective date: 2025-01-01 · Last updated: 2026-06-28"</p>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">"Who we are"</h2>
+                <p class="text-stone-400 leading-relaxed">
+                    "Gem Finder is operated by RK. Questions: "
+                    <a href="mailto:rk@rkzwei.dev" class="text-sc-accent hover:text-sc-accent-hover transition-colors">
+                        "rk@rkzwei.dev"
+                    </a>
+                    "."
+                </p>
+            </section>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">"What we collect"</h2>
+                <p class="text-stone-400 leading-relaxed mb-4">
+                    "If you create an account, we store your email address to send you a sign-in link "
+                    "and to identify your watchlist and ratings. We do not store passwords."
+                </p>
+                <p class="text-stone-400 leading-relaxed mb-4">
+                    "We also collect anonymous usage analytics to understand how the site is used and improve it: "
+                    "pages visited, movies clicked, filters applied, and pagination events. "
+                    "This data contains no personal information."
+                </p>
+                <p class="text-stone-400 leading-relaxed">
+                    "We use no advertising trackers and sell no data to third parties — ever."
+                </p>
+            </section>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">"How session identity works"</h2>
+                <p class="text-stone-400 leading-relaxed mb-4">
+                    "For analytics, we compute a one-way SHA-256 hash from your IP address, "
+                    "browser user-agent string, and the current UTC date. "
+                    "This hash rotates every day — the same device produces a different hash on different days. "
+                    "Your raw IP address and user-agent are "
+                    <em>"never written to disk"</em>
+                    ". The hash cannot be reversed."
+                </p>
+                <p class="text-stone-400 leading-relaxed">
+                    "We use no cookies for analytics. Authentication uses a short-lived token "
+                    "stored in your browser's local storage, which is cleared when you sign out."
+                </p>
+            </section>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">"Analytics providers"</h2>
+                <p class="text-stone-400 leading-relaxed">
+                    "We run self-hosted, privacy-first analytics (Umami) on our own infrastructure. "
+                    "No data is shared with Google Analytics, Meta, or any third-party analytics service. "
+                    "All data stays on our servers."
+                </p>
+            </section>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">"Where data is stored"</h2>
+                <p class="text-stone-400 leading-relaxed">
+                    "All data is stored on servers located in New York, USA."
+                </p>
+            </section>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">"Retention"</h2>
+                <p class="text-stone-400 leading-relaxed">
+                    "Analytics events are automatically deleted after 12 months. "
+                    "Account data (email address, watchlist, ratings) is retained until you request deletion."
+                </p>
+            </section>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">"Legal basis"</h2>
+                <p class="text-stone-400 leading-relaxed mb-4">
+                    "We process your email address to perform the contract you enter into when creating an account "
+                    "(GDPR Art. 6(1)(b))."
+                </p>
+                <p class="text-stone-400 leading-relaxed">
+                    "We process analytics data on the basis of legitimate interest (GDPR Art. 6(1)(f)): "
+                    "understanding how the site is used so we can improve it. "
+                    "Because we use no cookies and store no personal data in analytics, no consent is required "
+                    "under the ePrivacy Directive."
+                </p>
+            </section>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">"Your rights"</h2>
+                <p class="text-stone-400 leading-relaxed mb-4">
+                    "Under GDPR you have the right to access, correct, or erase data we hold about you, "
+                    "and to object to processing. To exercise any of these rights, email "
+                    <a href="mailto:rk@rkzwei.dev" class="text-sc-accent hover:text-sc-accent-hover transition-colors">
+                        "rk@rkzwei.dev"
+                    </a>
+                    "."
+                </p>
+                <p class="text-stone-400 leading-relaxed">
+                    "Because analytics events are stored as daily-rotating anonymous hashes with no link to your "
+                    "account, we cannot identify or delete your specific analytics history. "
+                    "We can delete your account and all associated watchlist and rating data on request."
+                </p>
+            </section>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">"Changes"</h2>
+                <p class="text-stone-400 leading-relaxed">
+                    "If we materially change how we handle data, we will update the date at the top of this page. "
+                    "Continued use of the site constitutes acceptance."
+                </p>
+            </section>
+        </div>
     }
 }

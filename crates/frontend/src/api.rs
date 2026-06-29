@@ -2,6 +2,7 @@ use gem_finder_shared::types::{
     AuthResponse, Movie, MovieSummary, PaginatedResponse, WatchState, WatchlistEntry,
     WatchlistUpsert,
 };
+use serde::Serialize;
 
 /// Returns the current page origin (e.g. `https://example.com`) at runtime.
 /// Reqwest in WASM requires absolute URLs; reading the origin from the browser
@@ -292,6 +293,42 @@ pub async fn delete_watchlist(movie_id: i64, token: &str) -> Result<(), String> 
     } else {
         Err(format!("Server error: {}", resp.status()))
     }
+}
+
+// ── Analytics ─────────────────────────────────────────────────────────────────
+
+/// Payload for POST /api/event — all fields except event_type are optional.
+#[derive(Serialize)]
+pub struct TrackEventPayload {
+    pub event_type: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub movie_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub genre: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub era: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub section: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_num: Option<i32>,
+}
+
+/// Fire an anonymous engagement event to POST /api/event.
+/// Fire-and-forget — errors are silently swallowed; analytics must never affect the UI.
+pub async fn track_event(payload: TrackEventPayload) {
+    let url = format!("{}/api/event", api_base());
+    let _ = reqwest::Client::new().post(&url).json(&payload).send().await;
+}
+
+/// Call `window.umami.track(event_name, props_json)` from WASM via js_sys::eval.
+/// The `if (window.umami)` guard handles the race where the deferred script hasn't loaded yet.
+/// `props_json` must be a valid JSON object string, e.g. `r#"{"section":"gems"}"#`.
+pub fn track_umami(event_name: &str, props_json: &str) {
+    let script = format!(
+        "if(window.umami){{window.umami.track('{}',{});}}",
+        event_name, props_json
+    );
+    let _ = js_sys::eval(&script);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
