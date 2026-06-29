@@ -186,9 +186,9 @@ fn FilterBar(
                     </button>
 
                     {move || (open_dd.get() == 1).then(|| view! {
-                        <div style="position:absolute;top:calc(100% + 6px);left:0;min-width:230px;background-color:var(--sc-panel,#17100a);border:1px solid var(--sc-border);border-radius:10px;box-shadow:0 24px 48px rgba(0,0,0,0.7);padding:12px;z-index:200">
+                        <div style="position:absolute;top:calc(100% + 6px);left:0;min-width:260px;background-color:var(--sc-panel,#17100a);border:1px solid var(--sc-border);border-radius:10px;box-shadow:0 24px 48px rgba(0,0,0,0.7);padding:12px;z-index:200">
                             <p style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--sc-accent-border);margin-bottom:8px;font-weight:600">"Genre"</p>
-                            <div class="grid grid-cols-3 gap-1">
+                            <div class="grid grid-cols-2 gap-1">
                                 {GENRES.iter().map(|g| {
                                     let gs = g.to_string();
                                     let gs2 = gs.clone();
@@ -2250,6 +2250,39 @@ pub fn PrivacyPage() -> impl IntoView {
 
 // ── Changelog page ────────────────────────────────────────────────────────────
 #[component]
+fn changelog_clean_item(s: &str) -> String {
+    // strip trailing " ([hash](url))" commit reference
+    let s = if let Some(idx) = s.rfind(" ([") {
+        &s[..idx]
+    } else {
+        s
+    };
+    // strip ** bold markers (scope prefixes like **analytics:**)
+    s.replace("**", "")
+}
+
+fn changelog_clean_header(s: &str) -> String {
+    // "[0.2.0](url) (date)" or "[0.1.0] - date"  →  "v0.2.0 (date)" / "v0.1.0 - date"
+    if !s.starts_with('[') {
+        return s.to_string();
+    }
+    let close = match s.find(']') {
+        Some(i) => i,
+        None => return s.to_string(),
+    };
+    let version = &s[1..close];
+    let after = &s[close + 1..];
+    let tail = if after.starts_with('(') {
+        match after.find(')') {
+            Some(i) => after[i + 1..].trim_start(),
+            None => after,
+        }
+    } else {
+        after.trim_start()
+    };
+    format!("v{version} {tail}")
+}
+
 pub fn ChangelogPage() -> impl IntoView {
     const RAW: &str = include_str!("../../../CHANGELOG.md");
 
@@ -2257,9 +2290,10 @@ pub fn ChangelogPage() -> impl IntoView {
         .lines()
         .map(|line| {
             if line.starts_with("## ") {
+                let text = changelog_clean_header(&line[3..]);
                 view! {
                     <h2 class="text-lg font-bold text-stone-100 mt-8 mb-2 border-b border-sc-border pb-1">
-                        {line[3..].to_string()}
+                        {text}
                     </h2>
                 }
                 .into_any()
@@ -2271,9 +2305,10 @@ pub fn ChangelogPage() -> impl IntoView {
                 }
                 .into_any()
             } else if line.starts_with("* ") || line.starts_with("- ") {
+                let text = changelog_clean_item(&line[2..]);
                 view! {
                     <li class="text-stone-400 text-sm ml-4 list-disc">
-                        {line[2..].to_string()}
+                        {text}
                     </li>
                 }
                 .into_any()
