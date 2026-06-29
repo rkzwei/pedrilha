@@ -123,7 +123,7 @@ fn App() -> impl IntoView {
             <Meta name="description" content="Discover hidden gem movies" />
 
             <div class="min-h-screen bg-sc-base text-stone-200">
-                <header class="border-b border-sc-border sticky top-0 z-10" style="background-color: rgba(23,16,10,0.88); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
+                <header class="border-b border-sc-border sticky top-0 z-[60]" style="background-color: rgba(23,16,10,0.88); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
                     <nav class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
                         <A href="/" attr:class="font-display text-3xl tracking-widest text-stone-100 hover:text-sc-accent transition-colors">
                             "GEM FINDER"
