@@ -12,6 +12,7 @@ env:
   RUST_LOG: error
   WASM_BINDGEN_VERSION: "0.2.125"
   TRUNK_VERSION: "0.21.14"
+  CARGO_TARGET_DIR: /home/runner/.cargo-target
 
 jobs:
   # ── Path filtering ─────────────────────────────────────────────────────────────
@@ -128,8 +129,22 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gem-finder-api
-          path: target/release/gem-finder-api
+          path: ${{ env.CARGO_TARGET_DIR }}/release/gem-finder-api
           retention-days: 1
+
+      - name: Prune cargo registry cache
+        if: always()
+        run: |
+          CACHE="${CARGO_HOME}/registry/cache"
+          find "${CACHE}" -name "*.crate" -mtime +7 -delete 2>/dev/null || true
+          LIMIT=$((10 * 1024 * 1024 * 1024))
+          while true; do
+            SIZE=$(du -sb "${CACHE}" 2>/dev/null | cut -f1 || echo 0)
+            [ "${SIZE}" -le "${LIMIT}" ] && break
+            OLDEST=$(find "${CACHE}" -name "*.crate" -printf '%T@ %p\n' 2>/dev/null | sort -n | head -1 | cut -d' ' -f2-)
+            [ -z "${OLDEST}" ] && break
+            rm -f "${OLDEST}"
+          done
 
   # ── Frontend: wasm32 check · CSS · trunk release build ────────────────────────
   frontend:
@@ -194,6 +209,20 @@ jobs:
           name: frontend-dist
           path: crates/frontend/dist/
           retention-days: 1
+
+      - name: Prune cargo registry cache
+        if: always()
+        run: |
+          CACHE="${CARGO_HOME}/registry/cache"
+          find "${CACHE}" -name "*.crate" -mtime +7 -delete 2>/dev/null || true
+          LIMIT=$((10 * 1024 * 1024 * 1024))
+          while true; do
+            SIZE=$(du -sb "${CACHE}" 2>/dev/null | cut -f1 || echo 0)
+            [ "${SIZE}" -le "${LIMIT}" ] && break
+            OLDEST=$(find "${CACHE}" -name "*.crate" -printf '%T@ %p\n' 2>/dev/null | sort -n | head -1 | cut -d' ' -f2-)
+            [ -z "${OLDEST}" ] && break
+            rm -f "${OLDEST}"
+          done
 
   # ── Deploy to VPS ─────────────────────────────────────────────────────────────
   deploy:
