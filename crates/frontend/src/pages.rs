@@ -2251,7 +2251,7 @@ pub fn PrivacyPage() -> impl IntoView {
 // ── Changelog page ────────────────────────────────────────────────────────────
 #[component]
 pub fn ChangelogPage() -> impl IntoView {
-    const RAW: &str = include_str!("../../../../CHANGELOG.md");
+    const RAW: &str = include_str!("../../../CHANGELOG.md");
 
     let nodes: Vec<_> = RAW
         .lines()
