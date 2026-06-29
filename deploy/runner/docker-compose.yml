@@ -7,14 +7,17 @@ services:
       # Persistent target dir — points to a named volume, not the checkout dir
       CARGO_TARGET_DIR: /home/runner/.cargo-target
     volumes:
-      # Shared cargo source cache — safe to share across runners (read-heavy)
-      - cargo-registry:/home/runner/.cargo/registry
+      # registry/cache and registry/index are safe to share (immutable after download)
+      # registry/src is NOT shared — concurrent extraction causes "File exists" errors
+      - cargo-registry-cache:/home/runner/.cargo/registry/cache
+      - cargo-registry-index:/home/runner/.cargo/registry/index
       - cargo-git:/home/runner/.cargo/git
-      # Per-container: compiled artifacts and work dir must not be shared
-      # (concurrent builds would corrupt each other's incremental state)
+      # Per-container: src extraction, compiled artifacts, and work dir
+      - /home/runner/.cargo/registry/src
       - /home/runner/.cargo-target
       - /home/runner/work
 
 volumes:
-  cargo-registry:
+  cargo-registry-cache:
+  cargo-registry-index:
   cargo-git:
