@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <radialGradient id="tile" cx="30%" cy="20%" r="110%">
+      <stop offset="0%" stop-color="#2a1c11"></stop>
+      <stop offset="100%" stop-color="#120b06"></stop>
+    </radialGradient>
+  </defs>
+  <rect x="0" y="0" width="32" height="32" rx="7" fill="url(#tile)"></rect>
+  <rect x="0.5" y="0.5" width="31" height="31" rx="6.5" fill="none" stroke="#3a2817" stroke-width="1"></rect>
+  <path d="M16 4 Q17.6 14.4 28 16 Q17.6 17.6 16 28 Q14.4 17.6 4 16 Q14.4 14.4 16 4 Z" fill="#ea580c"></path>
+</svg>
