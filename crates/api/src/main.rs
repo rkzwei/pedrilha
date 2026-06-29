@@ -86,6 +86,8 @@ struct AppState {
     passkey_auth_challenges: ChallengeStore<PasskeyAuthentication>,
     /// Rate limiter for magic link requests: email -> Vec<Instant> of recent sends.
     magic_link_limiter: Arc<Mutex<HashMap<String, Vec<std::time::Instant>>>>,
+    /// Rate limiter for anonymous event tracking: session_hash -> Vec<Instant> of recent events.
+    event_rate_limiter: Arc<Mutex<HashMap<String, Vec<std::time::Instant>>>>,
     /// Set of emails that receive is_admin: true in their JWT.
     admin_emails: std::collections::HashSet<String>,
 }
@@ -268,6 +270,7 @@ async fn main() {
         passkey_reg_challenges: Arc::new(Mutex::new(HashMap::new())),
         passkey_auth_challenges: Arc::new(Mutex::new(HashMap::new())),
         magic_link_limiter: Arc::new(Mutex::new(HashMap::new())),
+        event_rate_limiter: Arc::new(Mutex::new(HashMap::new())),
         admin_emails,
     };
 
@@ -338,6 +341,7 @@ async fn main() {
             get(routes::auth::check_username),
         )
         // Admin
+        .route("/api/event", post(routes::events::track_event))
         .route("/api/score", post(run_scoring))
         .route("/api/admin/sync", post(routes::admin::trigger_sync))
         .route("/api/admin/enrich", post(routes::admin::trigger_enrich))
