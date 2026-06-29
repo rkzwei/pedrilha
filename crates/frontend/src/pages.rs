@@ -356,8 +356,9 @@ fn PaginationBar(
     let btn = "px-3 py-2 bg-sc-card text-stone-200 rounded disabled:opacity-30 hover:bg-sc-border text-sm";
     let at_start = page <= 1;
     let at_end = page == total_pages || total_pages < 1;
+    let wrap = if total_pages > 1 { "flex items-center justify-center gap-2 mt-10 flex-wrap" } else { "hidden" };
     view! {
-        <div class=move || if total_pages > 1 { "flex items-center justify-center gap-2 mt-10 flex-wrap" } else { "hidden" }>
+        <div class=wrap>
             <button class=btn prop:disabled=at_start
                 on:click=move |_| on_first.run(())>"«"</button>
             <button class=btn prop:disabled=at_start
