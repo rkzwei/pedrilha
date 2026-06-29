@@ -60,10 +60,23 @@ jobs:
                 per_page: 2
               });
               const lastRun = runs.data.workflow_runs[1];
-              return lastRun?.conclusion === 'failure' ? 'true' : 'false';
+              if (!lastRun || lastRun.conclusion !== 'failure') {
+                return JSON.stringify({ backend: false, frontend: false });
+              }
+              const jobs = await github.rest.actions.listJobsForWorkflowRun({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: lastRun.id,
+              });
+              const failed = name => jobs.data.jobs.some(j => j.name === name && j.conclusion === 'failure');
+              const deployFailed = failed('Deploy to VPS');
+              return JSON.stringify({
+                backend: failed('Backend') || deployFailed,
+                frontend: failed('Frontend') || deployFailed,
+              });
             } catch (e) {
               core.warning(`Could not check last run: ${e.message}`);
-              return 'true';
+              return JSON.stringify({ backend: true, frontend: true });
             }
           result-encoding: string
 
@@ -72,11 +85,9 @@ jobs:
         run: |
           BACKEND="${{ steps.filter.outputs.backend }}"
           FRONTEND="${{ steps.filter.outputs.frontend }}"
-          # Force both if last deploy failed — VPS may be in a partial state
-          if [ "${{ steps.last_run.outputs.result }}" = "true" ]; then
-            BACKEND=true
-            FRONTEND=true
-          fi
+          LAST='${{ steps.last_run.outputs.result }}'
+          if [ "$(echo "$LAST" | jq -r '.backend')" = "true" ]; then BACKEND=true; fi
+          if [ "$(echo "$LAST" | jq -r '.frontend')" = "true" ]; then FRONTEND=true; fi
           echo "backend=$BACKEND" >> $GITHUB_OUTPUT
           echo "frontend=$FRONTEND" >> $GITHUB_OUTPUT
 
@@ -106,7 +117,11 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-backend-
 
       - name: fmt
-        run: cargo fmt --all --check
+        run: >
+          cargo fmt --check
+          -p gem-finder-api
+          -p gem-finder-db
+          -p gem-finder-shared
 
       - name: clippy
         run: >
@@ -170,6 +185,9 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-frontend-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-frontend-
+
+      - name: fmt
+        run: cargo fmt --check -p gem-finder-frontend
 
       - name: cargo check (wasm32)
         run: >
