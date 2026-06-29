@@ -470,17 +470,17 @@ mod tests {
                 vec![],
             ),
             (
-                "Blockbuster-adjacent (high votes " should score low)",
+                "Blockbuster-adjacent (high votes - should score low)",
                 make_movie(4, 7.5, Some(7.5), 1_500_000, 2015, "Action", "2015-04-24"),
                 vec![],
             ),
             (
-                "Below sweet spot (rating 5.8 " filtered out)",
+                "Below sweet spot (rating 5.8 - filtered out)",
                 make_movie(5, 5.8, None, 50_000, 2010, "Action", "2010-01-01"),
                 vec![],
             ),
             (
-                "RT critic=45% " wildcard (dampened vote_ratio, still scores)",
+                "RT critic=45% - wildcard (dampened vote_ratio, still scores)",
                 {
                     let mut m = make_movie(6, 7.2, None, 8_000, 2015, "Drama", "2015-03-01");
                     m.rt_critic_score = Some(45);
@@ -489,7 +489,7 @@ mod tests {
                 vec![],
             ),
             (
-                "No RT data " multiplier=0.8 (benefit of doubt for old films)",
+                "No RT data - multiplier=0.8 (benefit of doubt for old films)",
                 make_movie(7, 7.2, None, 8_000, 2015, "Drama", "2015-03-01"),
                 vec![],
             ),
