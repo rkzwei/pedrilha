@@ -64,7 +64,7 @@ impl TmdbSyncService {
         let cutoff_year = end_year.unwrap_or(default_cutoff).min(default_cutoff);
 
         tracing::info!(
-            "Syncing gem candidates: {}-01-01 to {}-12-31, vote_avg 6.0-8.0, vote_count ≥ 500 (wave pagination)",
+            "Syncing gem candidates: {}-01-01 to {}-12-31, vote_avg 5.5-8.0, vote_count ≥ 500 (wave pagination)",
             start_year, cutoff_year
         );
 
@@ -96,7 +96,7 @@ impl TmdbSyncService {
             let discover_url = format!(
                 "{}/discover/movie?api_key={}&primary_release_date.gte={}-01-01\
                  &primary_release_date.lte={}-12-31\
-                 &vote_average.gte=6.0&vote_average.lte=8.0&vote_count.gte=500\
+                 &vote_average.gte=5.5&vote_average.lte=8.0&vote_count.gte=500\
                  &sort_by=vote_count.desc&page={}",
                 self.base_url, self.api_key, start_year, cutoff_year, page
             );

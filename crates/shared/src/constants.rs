@@ -38,6 +38,19 @@ pub const ACCLAIMED_MIN_IMDB: f64 = 8.0;
 /// films like The Godfather, Schindler's List, Parasite, etc.
 pub const ACCLAIMED_MIN_RT: i32 = 80;
 
+/// Minimum IMDb rating for RT-endorsed films (RT ≥ RT_ENDORSEMENT_THRESHOLD).
+///
+/// Films with strong critic backing can score even if their crowd rating falls below
+/// the standard IMDB_GEM_MIN floor. This captures films like The Tunnel (2011):
+/// IMDb 5.8 but RT 100% — critics endorsed it, audiences missed it by design
+/// (unconventional distribution, niche genre). Without critic endorsement a low
+/// crowd rating signals genuine poor quality, so the standard floor still applies.
+pub const IMDB_GEM_MIN_RT_ENDORSED: f64 = 5.5;
+
+/// Minimum RT critic score required to use the lower IMDB_GEM_MIN_RT_ENDORSED floor.
+/// 75% = critics broadly endorsed the film (not just a handful of reviews).
+pub const RT_ENDORSEMENT_THRESHOLD: i32 = 75;
+
 /// RT critic score thresholds for the credibility multiplier applied to vote_ratio.
 ///
 /// True hidden gems = critics endorsed it + audiences missed it.
