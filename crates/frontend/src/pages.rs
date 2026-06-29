@@ -1336,7 +1336,7 @@ pub fn MovieDetail() -> impl IntoView {
                                 <div class="flex flex-wrap gap-3 mb-6">
                                     {gem_str.map(|s| view!{
                                         <div class="flex flex-col items-center bg-sc-accent-deep border border-sc-accent-border rounded px-4 py-2">
-                                            <span class="text-xs text-sc-accent uppercase tracking-wide">"💎 Gem Score"</span>
+                                            <span class="text-xs text-sc-accent uppercase tracking-wide">"✦ Gem Score"</span>
                                             <span class="text-2xl font-bold text-sc-accent-hover">{s}</span>
                                         </div>
                                     })}
@@ -1578,7 +1578,7 @@ fn MovieCard(movie: MovieSummary) -> impl IntoView {
                 <div class="flex items-center justify-between text-xs mb-0.5">
                     <span class="text-stone-400">{year}</span>
                     <div class="flex gap-2 items-center">
-                        {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold">"💎 "{s}</span> })}
+                        {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold">"✦ "{s}</span> })}
                         {imdb.map(|r| view!{ <span class="text-yellow-400">"★ "{r}</span> })}
                         {rt.map(|r|  view!{ <span class="text-red-400">"🍅 "{r}</span> })}
                     </div>
@@ -2115,7 +2115,7 @@ fn WatchlistCard(item: WatchlistItem) -> impl IntoView {
                 <div class="flex items-center justify-between text-xs mb-0.5">
                     <span class="text-stone-400">{year}</span>
                     <div class="flex gap-2 items-center">
-                        {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold">"💎 "{s}</span> })}
+                        {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold">"✦ "{s}</span> })}
                         {imdb.map(|r| view!{ <span class="text-yellow-400">"★ "{r}</span> })}
                     </div>
                 </div>
