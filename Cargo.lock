@@ -1364,7 +1364,7 @@ dependencies = [
 
 [[package]]
 name = "gem-finder-api"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -1391,7 +1391,7 @@ dependencies = [
 
 [[package]]
 name = "gem-finder-db"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "gem-finder-shared",
@@ -1403,7 +1403,7 @@ dependencies = [
 
 [[package]]
 name = "gem-finder-frontend"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "console_error_panic_hook",
  "gem-finder-shared",
@@ -1421,7 +1421,7 @@ dependencies = [
 
 [[package]]
 name = "gem-finder-shared"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "chrono",
