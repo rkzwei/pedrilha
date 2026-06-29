@@ -353,20 +353,14 @@ fn PaginationBar(
     on_last: Callback<()>,
     on_page: Callback<i32>,
 ) -> impl IntoView {
-    if total_pages <= 1 {
-        drop(on_prev);
-        drop(on_next);
-        drop(on_first);
-        drop(on_last);
-        drop(on_page);
-        return view! { <div /> }.into_any();
-    }
     let btn = "px-3 py-2 bg-sc-card text-stone-200 rounded disabled:opacity-30 hover:bg-sc-border text-sm";
+    let at_start = page <= 1;
+    let at_end = page == total_pages || total_pages < 1;
     view! {
-        <div class="flex items-center justify-center gap-2 mt-10 flex-wrap">
-            <button class=btn prop:disabled=move || page <= 1
+        <div class=move || if total_pages > 1 { "flex items-center justify-center gap-2 mt-10 flex-wrap" } else { "hidden" }>
+            <button class=btn prop:disabled=at_start
                 on:click=move |_| on_first.run(())>"«"</button>
-            <button class=btn prop:disabled=move || page <= 1
+            <button class=btn prop:disabled=at_start
                 on:click=move |_| on_prev.run(())>"← Prev"</button>
             <span class="flex items-center gap-1 text-stone-400 text-sm">
                 <span>"Page"</span>
@@ -386,12 +380,12 @@ fn PaginationBar(
                 />
                 <span>{format!("/ {}", total_pages)}</span>
             </span>
-            <button class=btn prop:disabled=move || page >= total_pages
+            <button class=btn prop:disabled=at_end
                 on:click=move |_| on_next.run(())>"Next →"</button>
-            <button class=btn prop:disabled=move || page >= total_pages
+            <button class=btn prop:disabled=at_end
                 on:click=move |_| on_last.run(())>"»"</button>
         </div>
-    }.into_any()
+    }
 }
 
 // ── Home page ─────────────────────────────────────────────────────────────────
