@@ -558,18 +558,32 @@ mod tests {
 
         eprintln!("std: center(7.2)={:.3}, edge_low(6.5)={:.3}, edge_high(7.9)={:.3}, out_high(8.5)={:.3}, out_low(5.9)={:.3}",
             center, edge_low, edge_high, outside_high, outside_low_std);
-        eprintln!("rt_endorsed: floor(5.5)={:.3}, mid(5.9)={:.3}, near_top(6.4)={:.3}",
-            rt_endorsed_low, rt_endorsed_mid, rt_endorsed_top);
+        eprintln!(
+            "rt_endorsed: floor(5.5)={:.3}, mid(5.9)={:.3}, near_top(6.4)={:.3}",
+            rt_endorsed_low, rt_endorsed_mid, rt_endorsed_top
+        );
 
         assert!(center > edge_low, "Center should beat low edge");
         assert!(center > edge_high, "Center should beat high edge");
         assert_eq!(outside_high, 0.0, "Above range should be 0");
-        assert_eq!(outside_low_std, 0.0, "Below standard floor with no RT endorsement = 0");
+        assert_eq!(
+            outside_low_std, 0.0,
+            "Below standard floor with no RT endorsement = 0"
+        );
         assert_eq!(rt_endorsed_low, 0.0, "At endorsed floor (5.5) score is 0");
-        assert!(rt_endorsed_mid > 0.0 && rt_endorsed_mid < 0.4, "Mid endorsed tier partial score");
+        assert!(
+            rt_endorsed_mid > 0.0 && rt_endorsed_mid < 0.4,
+            "Mid endorsed tier partial score"
+        );
         assert!(rt_endorsed_top < 0.4, "Near top of endorsed tier below cap");
-        assert!(rt_endorsed_top > rt_endorsed_mid, "Higher rating = higher score in endorsed tier");
-        assert!(center > rt_endorsed_top, "Standard sweet spot beats endorsed tier at same component");
+        assert!(
+            rt_endorsed_top > rt_endorsed_mid,
+            "Higher rating = higher score in endorsed tier"
+        );
+        assert!(
+            center > rt_endorsed_top,
+            "Standard sweet spot beats endorsed tier at same component"
+        );
     }
 
     // // Unit: year decay --------------------------------------------------------""""
@@ -672,7 +686,8 @@ mod tests {
         );
 
         // Below the endorsed floor entirely - filtered even with high RT
-        let mut below_endorsed_floor = make_movie(5, 5.3, None, 10_000, 2010, "Drama", "2010-01-01");
+        let mut below_endorsed_floor =
+            make_movie(5, 5.3, None, 10_000, 2010, "Drama", "2010-01-01");
         below_endorsed_floor.rt_critic_score = Some(100);
         assert!(
             calc.calculate(&below_endorsed_floor, &[]).is_none(),
@@ -693,11 +708,17 @@ mod tests {
         tunnel_profile.rt_critic_score = Some(100);
 
         let score = calc.calculate(&tunnel_profile, &[]);
-        assert!(score.is_some(), "The Tunnel profile (IMDb 5.8, RT 100%) should score");
+        assert!(
+            score.is_some(),
+            "The Tunnel profile (IMDb 5.8, RT 100%) should score"
+        );
 
         let score = score.unwrap();
         assert!(score.normalized_score > 0.0, "Score should be positive");
-        assert_eq!(score.components.rt_credibility_multiplier, 1.0, "RT 100% -> full multiplier");
+        assert_eq!(
+            score.components.rt_credibility_multiplier, 1.0,
+            "RT 100% -> full multiplier"
+        );
 
         // Same film WITHOUT RT data - standard floor applies, should be filtered
         let tunnel_no_rt = make_movie(100, 5.8, None, 10_000, 2011, "Horror", "2011-04-22");
@@ -989,7 +1010,10 @@ mod db_tests {
             total_in_db,
             scored.len()
         );
-        eprintln!("{:<4} {:<37} {:>4} {:>7} {:>10}", "Rank", "Title", "Year", "Score%", "Votes");
+        eprintln!(
+            "{:<4} {:<37} {:>4} {:>7} {:>10}",
+            "Rank", "Title", "Year", "Score%", "Votes"
+        );
 
         let known_imdb_ids: std::collections::HashSet<&str> =
             KNOWN_GEMS.iter().map(|(_, id)| *id).collect();
