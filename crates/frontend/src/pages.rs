@@ -2249,7 +2249,6 @@ pub fn PrivacyPage() -> impl IntoView {
 }
 
 // ── Changelog page ────────────────────────────────────────────────────────────
-#[component]
 fn changelog_clean_item(s: &str) -> String {
     // strip trailing " ([hash](url))" commit reference
     let s = if let Some(idx) = s.rfind(" ([") {
@@ -2283,6 +2282,7 @@ fn changelog_clean_header(s: &str) -> String {
     format!("v{version} {tail}")
 }
 
+#[component]
 pub fn ChangelogPage() -> impl IntoView {
     const RAW: &str = include_str!("../../../CHANGELOG.md");
 
