@@ -7,16 +7,14 @@ services:
       # Persistent target dir — points to a named volume, not the checkout dir
       CARGO_TARGET_DIR: /home/runner/.cargo-target
     volumes:
-      # Cargo cache — persists between runs (no re-downloading crates)
+      # Shared cargo source cache — safe to share across runners (read-heavy)
       - cargo-registry:/home/runner/.cargo/registry
       - cargo-git:/home/runner/.cargo/git
-      # Compiled artifacts — enables incremental builds (biggest speedup)
-      - cargo-target:/home/runner/.cargo-target
-      # Runner work dir — keeps checkouts between runs
-      - runner-work:/home/runner/work
+      # Per-container: compiled artifacts and work dir must not be shared
+      # (concurrent builds would corrupt each other's incremental state)
+      - /home/runner/.cargo-target
+      - /home/runner/work
 
 volumes:
   cargo-registry:
   cargo-git:
-  cargo-target:
-  runner-work:

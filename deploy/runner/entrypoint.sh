@@ -18,10 +18,13 @@ fi
 
 cd /home/runner/actions-runner
 
+# Append shortened container hostname so multiple instances get unique names
+UNIQUE_NAME="${RUNNER_NAME:-local-runner}-$(hostname | cut -c1-8)"
+
 ./config.sh \
     --url "https://github.com/${REPO_OWNER}/${REPO_NAME}" \
     --token "${REG_TOKEN}" \
-    --name "${RUNNER_NAME:-local-runner}" \
+    --name "${UNIQUE_NAME}" \
     --labels "self-hosted,linux,x64" \
     --work /home/runner/work \
     --unattended \

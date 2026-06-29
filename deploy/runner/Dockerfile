@@ -34,8 +34,18 @@ RUN mkdir -p /home/runner/actions-runner \
     && ./bin/installdependencies.sh \
     && chown -R runner:runner /home/runner/actions-runner
 
-RUN mkdir -p /home/runner/work /home/runner/.cargo-target \
-    && chown -R runner:runner /home/runner/work /home/runner/.cargo-target
+RUN mkdir -p \
+        /home/runner/work \
+        /home/runner/.cargo-target \
+        /home/runner/.cargo/registry/index \
+        /home/runner/.cargo/registry/cache \
+        /home/runner/.cargo/registry/src \
+        /home/runner/.cargo/git/db \
+        /home/runner/.cargo/git/checkouts \
+    && chown -R runner:runner \
+        /home/runner/work \
+        /home/runner/.cargo-target \
+        /home/runner/.cargo
 
 USER runner
 WORKDIR /home/runner
