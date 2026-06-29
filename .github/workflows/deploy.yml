@@ -107,7 +107,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Cache Cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry/index/
@@ -142,7 +142,7 @@ jobs:
         run: cargo build --release --package gem-finder-api
 
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: gem-finder-api
           path: ${{ env.CARGO_TARGET_DIR }}/release/gem-finder-api
@@ -177,7 +177,7 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Cache Cargo (wasm)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry/index/
@@ -197,7 +197,7 @@ jobs:
           --target wasm32-unknown-unknown
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
 
@@ -223,7 +223,7 @@ jobs:
         run: trunk build --release
 
       - name: Upload dist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: frontend-dist
           path: crates/frontend/dist/
@@ -257,14 +257,14 @@ jobs:
     steps:
       - name: Download binary
         if: needs.changes.outputs.backend == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: gem-finder-api
           path: artifacts/
 
       - name: Download frontend dist
         if: needs.changes.outputs.frontend == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: frontend-dist
           path: artifacts/dist/
