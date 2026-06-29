@@ -929,7 +929,7 @@ mod db_tests {
         // CARGO_MANIFEST_DIR = .../gem-finder/crates/api
         // workspace root     = .../gem-finder  (two levels up)
         let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let workspace_root = manifest_dir.parent().parent();
+        let workspace_root = manifest_dir.parent()?.parent()?;
         let db_path = workspace_root.join("gem_finder.db");
 
         if !db_path.exists() {
@@ -938,16 +938,16 @@ mod db_tests {
             return None;
         }
 
-        let db_path_str = db_path.to_str();
-        let db = Database::new_local(db_path_str).await.ok();
+        let db_path_str = db_path.to_str()?;
+        let db = Database::new_local(db_path_str).await.ok()?;
         db.connect().await.ok()
     }
 
     /// Fetch all movies + big_hit_dates, run the calculator, return sorted results.
     async fn score_real_population() -> Option<Vec<ScoredMovie>> {
-        let conn = open_db().await;
+        let conn = open_db().await?;
 
-        let movies = models::get_all_movies_for_scoring(&conn).await.ok();
+        let movies = models::get_all_movies_for_scoring(&conn).await.ok()?;
         let big_hit_dates = models::get_big_hit_dates(&conn).await.unwrap_or_default();
         let calc = GemScoreCalculator::new();
 
