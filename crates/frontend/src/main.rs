@@ -7,7 +7,6 @@ use leptos_router::{
 };
 
 mod api;
-mod components;
 mod pages;
 
 #[derive(Clone, Debug)]
@@ -195,6 +194,7 @@ fn App() -> impl IntoView {
                         <Route path=path!("/watchlist") view=pages::WatchlistPage />
                         <Route path=path!("/signin") view=pages::SignInPage />
                         <Route path=path!("/auth/verify") view=pages::VerifyPage />
+                        <Route path=path!("/privacy") view=pages::PrivacyPage />
                     </Routes>
                 </main>
 
@@ -206,6 +206,15 @@ fn App() -> impl IntoView {
                            target="_blank" rel="noopener noreferrer"
                            class="hover:text-sc-accent-dim transition-colors">
                             "SORCERER, 1977 — WILLIAM FRIEDKIN"
+                        </a>
+                    </p>
+                    <p class="text-xs text-stone-700 mt-3">
+                        <A href="/privacy" attr:class="hover:text-stone-500 transition-colors">
+                            "Privacy Policy"
+                        </A>
+                        " · No cookies · No ads · "
+                        <a href="mailto:rk@rkzwei.dev" class="hover:text-stone-500 transition-colors">
+                            "rk@rkzwei.dev"
                         </a>
                     </p>
                 </footer>
