@@ -233,6 +233,35 @@ pub async fn get_all_movies_for_scoring(conn: &Connection) -> Result<Vec<Movie>>
     Ok(results)
 }
 
+/// Insert an anonymous engagement event into the events table.
+#[allow(clippy::too_many_arguments)]
+pub async fn insert_event(
+    conn: &Connection,
+    event_type: &str,
+    movie_id: Option<i64>,
+    genre: Option<&str>,
+    era: Option<i32>,
+    section: Option<&str>,
+    page_num: Option<i32>,
+    session_hash: &str,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO events (event_type, movie_id, genre, era, section, page_num, session_hash)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        turso::params![
+            event_type,
+            movie_id,
+            genre,
+            era,
+            section,
+            page_num,
+            session_hash,
+        ],
+    )
+    .await?;
+    Ok(())
+}
+
 /// Clear gem_score and gem_rank on every movie.
 ///
 /// Called at the start of each batch scoring run so that films which no longer

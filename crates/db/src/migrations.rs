@@ -28,6 +28,10 @@ pub async fn run(conn: &Connection) -> Result<()> {
         migrate_v5(conn).await?;
         record_version(conn, 5).await?;
     }
+    if !applied.contains(&6) {
+        migrate_v6(conn).await?;
+        record_version(conn, 6).await?;
+    }
 
     Ok(())
 }
@@ -284,5 +288,46 @@ async fn migrate_v5(conn: &Connection) -> Result<()> {
     )
     .await?;
     tracing::info!("Applied migration v5: keywords column");
+    Ok(())
+}
+
+// ── Migration v6: events table (analytics) ──────────────────────────────────
+
+async fn migrate_v6(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS events (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type   TEXT NOT NULL
+                         CHECK(event_type IN (
+                             'movie_view',
+                             'search_used',
+                             'filter_genre',
+                             'filter_era',
+                             'pagination',
+                             'section_view'
+                         )),
+            movie_id     INTEGER REFERENCES movies(id) ON DELETE SET NULL,
+            genre        TEXT,
+            era          INTEGER,
+            section      TEXT
+                         CHECK(section IS NULL OR section IN ('gems','acclaimed','wildcards')),
+            page_num     INTEGER,
+            session_hash TEXT NOT NULL,
+            created_at   TEXT DEFAULT (datetime('now'))
+        )",
+        turso::params![],
+    )
+    .await?;
+
+    for ddl in [
+        "CREATE INDEX IF NOT EXISTS idx_events_event_type   ON events(event_type)",
+        "CREATE INDEX IF NOT EXISTS idx_events_movie_id     ON events(movie_id)",
+        "CREATE INDEX IF NOT EXISTS idx_events_session_hash ON events(session_hash)",
+        "CREATE INDEX IF NOT EXISTS idx_events_created_at   ON events(created_at DESC)",
+    ] {
+        conn.execute(ddl, turso::params![]).await?;
+    }
+
+    tracing::info!("Applied migration v6: events table");
     Ok(())
 }
