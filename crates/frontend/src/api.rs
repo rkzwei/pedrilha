@@ -20,6 +20,8 @@ pub async fn fetch_gems(
     min_year: Option<i32>,
     genre: Option<String>,
     q: Option<String>,
+    sort: Option<String>,
+    sort_dir: Option<String>,
 ) -> Result<PaginatedResponse<MovieSummary>, String> {
     let mut url = format!(
         "{}/api/gems?page={}&per_page={}",
@@ -36,6 +38,12 @@ pub async fn fetch_gems(
     if let Some(s) = q {
         url.push_str(&format!("&q={}", s));
     }
+    if let Some(s) = sort {
+        url.push_str(&format!("&sort={}", s));
+    }
+    if let Some(d) = sort_dir {
+        url.push_str(&format!("&sort_dir={}", d));
+    }
     reqwest::get(&url)
         .await
         .map_err(|e| format!("Network error: {}", e))?
@@ -51,6 +59,8 @@ pub async fn fetch_acclaimed(
     min_year: Option<i32>,
     genre: Option<String>,
     q: Option<String>,
+    sort: Option<String>,
+    sort_dir: Option<String>,
 ) -> Result<PaginatedResponse<MovieSummary>, String> {
     let mut url = format!(
         "{}/api/acclaimed?page={}&per_page={}",
@@ -67,6 +77,12 @@ pub async fn fetch_acclaimed(
     if let Some(s) = q {
         url.push_str(&format!("&q={}", s));
     }
+    if let Some(s) = sort {
+        url.push_str(&format!("&sort={}", s));
+    }
+    if let Some(d) = sort_dir {
+        url.push_str(&format!("&sort_dir={}", d));
+    }
     reqwest::get(&url)
         .await
         .map_err(|e| format!("Network error: {}", e))?
@@ -82,6 +98,8 @@ pub async fn fetch_wildcards(
     min_year: Option<i32>,
     genre: Option<String>,
     q: Option<String>,
+    sort: Option<String>,
+    sort_dir: Option<String>,
 ) -> Result<PaginatedResponse<MovieSummary>, String> {
     let mut url = format!(
         "{}/api/wildcards?page={}&per_page={}",
@@ -97,6 +115,12 @@ pub async fn fetch_wildcards(
     }
     if let Some(s) = q {
         url.push_str(&format!("&q={}", s));
+    }
+    if let Some(s) = sort {
+        url.push_str(&format!("&sort={}", s));
+    }
+    if let Some(d) = sort_dir {
+        url.push_str(&format!("&sort_dir={}", d));
     }
     reqwest::get(&url)
         .await

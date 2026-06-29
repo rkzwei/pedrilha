@@ -27,6 +27,14 @@ const GENRES: &[&str] = &[
     "War",
     "Musical",
 ];
+const SORT_OPTIONS: &[(&str, &str)] = &[
+    ("score", "Score"),
+    ("rating", "IMDb"),
+    ("rt", "RT Score"),
+    ("year", "Year"),
+    ("title", "Title"),
+];
+
 const DECADE_OPTIONS: &[(i32, &str)] = &[
     (1960, "1960s+"),
     (1970, "1970s+"),
@@ -45,6 +53,8 @@ fn build_url(
     genres: &Option<String>,
     year: &Option<i32>,
     q: &Option<String>,
+    sort: &str,
+    sort_dir: &str,
 ) -> String {
     let mut url = format!("{}?page={}", path, page);
     if let Some(g) = genres {
@@ -56,6 +66,7 @@ fn build_url(
     if let Some(s) = q {
         url.push_str(&format!("&q={}", s));
     }
+    url.push_str(&format!("&sort={}&sort_dir={}", sort, sort_dir));
     url
 }
 
@@ -75,7 +86,7 @@ fn is_valid_email_client(email: &str) -> bool {
 }
 
 // ── Filter bar ────────────────────────────────────────────────────────────────
-// open_dd: 0 = none, 1 = genre panel, 2 = era panel
+// open_dd: 0 = none, 1 = genre panel, 2 = era panel, 3 = sort panel
 #[component]
 fn FilterBar(
     genres: Signal<Vec<String>>,
@@ -85,6 +96,9 @@ fn FilterBar(
     on_genres: Callback<Vec<String>>,
     on_year: Callback<Option<i32>>,
     on_search: Callback<Option<String>>,
+    sort: Signal<String>,
+    sort_dir: Signal<String>,
+    on_sort: Callback<(String, String)>,
 ) -> impl IntoView {
     let (open_dd, set_open_dd) = signal(0u8);
     let active_count = move || genres.get().len() + year.get().map(|_| 1).unwrap_or(0);
@@ -235,6 +249,80 @@ fn FilterBar(
                     })}
                 </div>
 
+                // ── Sort dropdown ─────────────────────────────────────────────
+                <div class="relative">
+                    <button
+                        class=move || dd_btn(open_dd.get() == 3, false)
+                        on:click=move |_| set_open_dd.update(|v| *v = if *v == 3 { 0 } else { 3 })
+                    >
+                        {move || {
+                            let label = SORT_OPTIONS.iter()
+                                .find(|(v, _)| *v == sort.get().as_str())
+                                .map(|(_, l)| *l)
+                                .unwrap_or("Score");
+                            let dir = if sort_dir.get() == "asc" { "↑" } else { "↓" };
+                            format!("{} {}", label, dir)
+                        }}
+                        <span class="text-stone-600 text-xs">"▾"</span>
+                    </button>
+
+                    {move || (open_dd.get() == 3).then(|| {
+                        let cur_sort = sort.get();
+                        let cur_dir = sort_dir.get();
+                        view! {
+                            <div style="position:absolute;top:calc(100% + 6px);left:0;min-width:150px;background-color:var(--sc-panel,#17100a);border:1px solid var(--sc-border);border-radius:10px;box-shadow:0 24px 48px rgba(0,0,0,0.7);padding:12px;z-index:200">
+                                <p style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--sc-accent-border);margin-bottom:8px;font-weight:600">"Sort by"</p>
+                                <div class="flex flex-col gap-1 mb-3">
+                                    {SORT_OPTIONS.iter().map(|(val, label)| {
+                                        let v = val.to_string();
+                                        let v2 = v.clone();
+                                        let cd = cur_dir.clone();
+                                        let cs = cur_sort.clone();
+                                        view! {
+                                            <button
+                                                class=move || opt_btn(cs == v)
+                                                on:click=move |_| {
+                                                    on_sort.run((v2.clone(), cd.clone()));
+                                                    set_open_dd.set(0);
+                                                }
+                                            >{*label}</button>
+                                        }
+                                    }).collect::<Vec<_>>()}
+                                </div>
+                                <p style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--sc-accent-border);margin-bottom:6px;font-weight:600">"Direction"</p>
+                                <div class="flex gap-1">
+                                    {
+                                        let cs2 = cur_sort.clone();
+                                        let cd2 = cur_dir.clone();
+                                        view! {
+                                            <button
+                                                class=move || opt_btn(cd2 == "desc")
+                                                on:click=move |_| {
+                                                    on_sort.run((cs2.clone(), "desc".to_string()));
+                                                    set_open_dd.set(0);
+                                                }
+                                            >"↓ Desc"</button>
+                                        }
+                                    }
+                                    {
+                                        let cs3 = cur_sort.clone();
+                                        let cd3 = cur_dir.clone();
+                                        view! {
+                                            <button
+                                                class=move || opt_btn(cd3 == "asc")
+                                                on:click=move |_| {
+                                                    on_sort.run((cs3.clone(), "asc".to_string()));
+                                                    set_open_dd.set(0);
+                                                }
+                                            >"↑ Asc"</button>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        }
+                    })}
+                </div>
+
                 // ── Film count + clear ────────────────────────────────────────
                 {move || (active_count() > 0).then(|| {
                     let t = total.get();
@@ -261,24 +349,42 @@ fn PaginationBar(
     total_pages: i32,
     on_prev: Callback<()>,
     on_next: Callback<()>,
+    on_first: Callback<()>,
+    on_last: Callback<()>,
+    on_page: Callback<i32>,
 ) -> impl IntoView {
-    let _ = &on_next;
     if total_pages <= 1 {
         return view! { <div /> }.into_any();
     }
+    let btn = "px-3 py-2 bg-sc-card text-stone-200 rounded disabled:opacity-30 hover:bg-sc-border text-sm";
     view! {
-        <div class="flex items-center justify-center gap-4 mt-10">
-            <button
-                class="px-4 py-2 bg-sc-card text-stone-200 rounded disabled:opacity-30 hover:bg-sc-border"
-                prop:disabled=move || page <= 1
-                on:click=move |_| on_prev.run(())
-            >"← Prev"</button>
-            <span class="text-stone-400 text-sm">{format!("Page {} of {}", page, total_pages)}</span>
-            <button
-                class="px-4 py-2 bg-sc-card text-stone-200 rounded disabled:opacity-30 hover:bg-sc-border"
-                prop:disabled=move ||{ page >= total_pages }
-                on:click=move |_| on_next.run(())
-            >{"Next →"}</button>
+        <div class="flex items-center justify-center gap-2 mt-10 flex-wrap">
+            <button class=btn prop:disabled=move || page <= 1
+                on:click=move |_| on_first.run(())>"«"</button>
+            <button class=btn prop:disabled=move || page <= 1
+                on:click=move |_| on_prev.run(())>"← Prev"</button>
+            <span class="flex items-center gap-2 text-stone-400 text-sm">
+                "Page "
+                <input
+                    type="number"
+                    min="1"
+                    max=total_pages
+                    prop:value=page
+                    class="w-14 px-2 py-1 bg-sc-card text-stone-200 rounded text-center text-sm border border-sc-border focus:outline-none focus:border-sc-accent"
+                    on:change=move |e| {
+                        let v = event_target_value(&e)
+                            .parse::<i32>()
+                            .unwrap_or(page)
+                            .clamp(1, total_pages);
+                        on_page.run(v);
+                    }
+                />
+                {format!(" of {}", total_pages)}
+            </span>
+            <button class=btn prop:disabled=move || page >= total_pages
+                on:click=move |_| on_next.run(())>"Next →"</button>
+            <button class=btn prop:disabled=move || page >= total_pages
+                on:click=move |_| on_last.run(())>"»"</button>
         </div>
     }.into_any()
 }
@@ -304,6 +410,8 @@ pub fn HomePage() -> impl IntoView {
         })
     };
     let search = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let sort = move || query.with(|q| q.get("sort").unwrap_or_else(|| "score".to_string()));
+    let sort_dir = move || query.with(|q| q.get("sort_dir").unwrap_or_else(|| "desc".to_string()));
     let gstr = move || {
         let g = genres();
         if g.is_empty() {
@@ -341,10 +449,12 @@ pub fn HomePage() -> impl IntoView {
         let y = year();
         let g = gstr();
         let s = search();
+        let sf = sort();
+        let sd = sort_dir();
         set_loading.set(true);
         set_error.set(None);
         spawn_local(async move {
-            match api::fetch_gems(p, PER_PAGE, y, g, s).await {
+            match api::fetch_gems(p, PER_PAGE, y, g, s, Some(sf), Some(sd)).await {
                 Ok(r) => {
                     set_movies.set(r.data);
                     set_total.set(r.total);
@@ -386,7 +496,7 @@ pub fn HomePage() -> impl IntoView {
             });
         }
         n1(
-            &build_url("/", 1, &s, &year(), &search()),
+            &build_url("/", 1, &s, &year(), &search(), &sort(), &sort_dir()),
             NavigateOptions {
                 replace: true,
                 ..Default::default()
@@ -413,7 +523,7 @@ pub fn HomePage() -> impl IntoView {
             });
         }
         n2(
-            &build_url("/", 1, &gstr(), &y, &search()),
+            &build_url("/", 1, &gstr(), &y, &search(), &sort(), &sort_dir()),
             NavigateOptions {
                 replace: true,
                 ..Default::default()
@@ -437,7 +547,17 @@ pub fn HomePage() -> impl IntoView {
             });
         }
         n3(
-            &build_url("/", 1, &gstr(), &year(), &s),
+            &build_url("/", 1, &gstr(), &year(), &s, &sort(), &sort_dir()),
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        );
+    });
+    let n_sort = navigate.clone();
+    let on_sort_cb = Callback::new(move |(field, dir): (String, String)| {
+        n_sort(
+            &build_url("/", 1, &gstr(), &year(), &search(), &field, &dir),
             NavigateOptions {
                 replace: true,
                 ..Default::default()
@@ -456,21 +576,35 @@ pub fn HomePage() -> impl IntoView {
                 genres=Signal::derive(genres) year=Signal::derive(year)
                 search=Signal::derive(search) total=Signal::derive(move || total.get())
                 on_genres=on_genres_cb on_year=on_year_cb on_search=on_search_cb
+                sort=Signal::derive(sort) sort_dir=Signal::derive(sort_dir) on_sort=on_sort_cb
             />
             {move || render_movie_grid(loading.get(), error.get(), movies.get())}
             {move || {
                 let tp = total_pages(); let p = page();
-                let np = nav_pg.clone(); let nn = nav_pg.clone();
+                let n1 = nav_pg.clone(); let n2 = nav_pg.clone();
+                let n3 = nav_pg.clone(); let n4 = nav_pg.clone(); let n5 = nav_pg.clone();
                 view!{ <PaginationBar page=p total_pages=tp
+                    on_first=Callback::new(move |_| {
+                        spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("gems"), page_num: Some(1) }).await; });
+                        n1(&build_url("/", 1, &gstr(), &year(), &search(), &sort(), &sort_dir()), NavigateOptions { replace: false, ..Default::default() });
+                    })
                     on_prev=Callback::new(move |_| {
                         let prev = p - 1;
                         spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("gems"), page_num: Some(prev) }).await; });
-                        np(&build_url("/", prev, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() });
+                        n2(&build_url("/", prev, &gstr(), &year(), &search(), &sort(), &sort_dir()), NavigateOptions { replace: false, ..Default::default() });
                     })
                     on_next=Callback::new(move |_| {
                         let next = p + 1;
                         spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("gems"), page_num: Some(next) }).await; });
-                        nn(&build_url("/", next, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() });
+                        n3(&build_url("/", next, &gstr(), &year(), &search(), &sort(), &sort_dir()), NavigateOptions { replace: false, ..Default::default() });
+                    })
+                    on_last=Callback::new(move |_| {
+                        spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("gems"), page_num: Some(tp) }).await; });
+                        n4(&build_url("/", tp, &gstr(), &year(), &search(), &sort(), &sort_dir()), NavigateOptions { replace: false, ..Default::default() });
+                    })
+                    on_page=Callback::new(move |pg: i32| {
+                        spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("gems"), page_num: Some(pg) }).await; });
+                        n5(&build_url("/", pg, &gstr(), &year(), &search(), &sort(), &sort_dir()), NavigateOptions { replace: false, ..Default::default() });
                     })
                 /> }
             }}
@@ -499,6 +633,8 @@ pub fn AcclaimedPage() -> impl IntoView {
         })
     };
     let search = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let sort = move || query.with(|q| q.get("sort").unwrap_or_else(|| "rating".to_string()));
+    let sort_dir = move || query.with(|q| q.get("sort_dir").unwrap_or_else(|| "desc".to_string()));
     let gstr = move || {
         let g = genres();
         if g.is_empty() {
@@ -536,10 +672,12 @@ pub fn AcclaimedPage() -> impl IntoView {
         let y = year();
         let g = gstr();
         let s = search();
+        let sf = sort();
+        let sd = sort_dir();
         set_loading.set(true);
         set_error.set(None);
         spawn_local(async move {
-            match api::fetch_acclaimed(p, PER_PAGE, y, g, s).await {
+            match api::fetch_acclaimed(p, PER_PAGE, y, g, s, Some(sf), Some(sd)).await {
                 Ok(r) => {
                     set_movies.set(r.data);
                     set_total.set(r.total);
@@ -581,7 +719,15 @@ pub fn AcclaimedPage() -> impl IntoView {
             });
         }
         n1(
-            &build_url("/acclaimed", 1, &s, &year(), &search()),
+            &build_url(
+                "/acclaimed",
+                1,
+                &s,
+                &year(),
+                &search(),
+                &sort(),
+                &sort_dir(),
+            ),
             NavigateOptions {
                 replace: true,
                 ..Default::default()
@@ -608,7 +754,15 @@ pub fn AcclaimedPage() -> impl IntoView {
             });
         }
         n2(
-            &build_url("/acclaimed", 1, &gstr(), &y, &search()),
+            &build_url(
+                "/acclaimed",
+                1,
+                &gstr(),
+                &y,
+                &search(),
+                &sort(),
+                &sort_dir(),
+            ),
             NavigateOptions {
                 replace: true,
                 ..Default::default()
@@ -632,7 +786,17 @@ pub fn AcclaimedPage() -> impl IntoView {
             });
         }
         n3(
-            &build_url("/acclaimed", 1, &gstr(), &year(), &s),
+            &build_url("/acclaimed", 1, &gstr(), &year(), &s, &sort(), &sort_dir()),
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        );
+    });
+    let n_sort = navigate.clone();
+    let on_sort_cb = Callback::new(move |(field, dir): (String, String)| {
+        n_sort(
+            &build_url("/acclaimed", 1, &gstr(), &year(), &search(), &field, &dir),
             NavigateOptions {
                 replace: true,
                 ..Default::default()
@@ -651,21 +815,35 @@ pub fn AcclaimedPage() -> impl IntoView {
                 genres=Signal::derive(genres) year=Signal::derive(year)
                 search=Signal::derive(search) total=Signal::derive(move || total.get())
                 on_genres=on_genres_cb on_year=on_year_cb on_search=on_search_cb
+                sort=Signal::derive(sort) sort_dir=Signal::derive(sort_dir) on_sort=on_sort_cb
             />
             {move || render_movie_grid(loading.get(), error.get(), movies.get())}
             {move || {
                 let tp = total_pages(); let p = page();
-                let np = nav_pg.clone(); let nn = nav_pg.clone();
+                let n1 = nav_pg.clone(); let n2 = nav_pg.clone();
+                let n3 = nav_pg.clone(); let n4 = nav_pg.clone(); let n5 = nav_pg.clone();
                 view!{ <PaginationBar page=p total_pages=tp
+                    on_first=Callback::new(move |_| {
+                        spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("acclaimed"), page_num: Some(1) }).await; });
+                        n1(&build_url("/acclaimed", 1, &gstr(), &year(), &search(), &sort(), &sort_dir()), NavigateOptions { replace: false, ..Default::default() });
+                    })
                     on_prev=Callback::new(move |_| {
                         let prev = p - 1;
                         spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("acclaimed"), page_num: Some(prev) }).await; });
-                        np(&build_url("/acclaimed", prev, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() });
+                        n2(&build_url("/acclaimed", prev, &gstr(), &year(), &search(), &sort(), &sort_dir()), NavigateOptions { replace: false, ..Default::default() });
                     })
                     on_next=Callback::new(move |_| {
                         let next = p + 1;
                         spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("acclaimed"), page_num: Some(next) }).await; });
-                        nn(&build_url("/acclaimed", next, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() });
+                        n3(&build_url("/acclaimed", next, &gstr(), &year(), &search(), &sort(), &sort_dir()), NavigateOptions { replace: false, ..Default::default() });
+                    })
+                    on_last=Callback::new(move |_| {
+                        spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("acclaimed"), page_num: Some(tp) }).await; });
+                        n4(&build_url("/acclaimed", tp, &gstr(), &year(), &search(), &sort(), &sort_dir()), NavigateOptions { replace: false, ..Default::default() });
+                    })
+                    on_page=Callback::new(move |pg: i32| {
+                        spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("acclaimed"), page_num: Some(pg) }).await; });
+                        n5(&build_url("/acclaimed", pg, &gstr(), &year(), &search(), &sort(), &sort_dir()), NavigateOptions { replace: false, ..Default::default() });
                     })
                 /> }
             }}
@@ -694,6 +872,8 @@ pub fn WildcardsPage() -> impl IntoView {
         })
     };
     let search = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let sort = move || query.with(|q| q.get("sort").unwrap_or_else(|| "score".to_string()));
+    let sort_dir = move || query.with(|q| q.get("sort_dir").unwrap_or_else(|| "desc".to_string()));
     let gstr = move || {
         let g = genres();
         if g.is_empty() {
@@ -731,10 +911,12 @@ pub fn WildcardsPage() -> impl IntoView {
         let y = year();
         let g = gstr();
         let s = search();
+        let sf = sort();
+        let sd = sort_dir();
         set_loading.set(true);
         set_error.set(None);
         spawn_local(async move {
-            match api::fetch_wildcards(p, PER_PAGE, y, g, s).await {
+            match api::fetch_wildcards(p, PER_PAGE, y, g, s, Some(sf), Some(sd)).await {
                 Ok(r) => {
                     set_movies.set(r.data);
                     set_total.set(r.total);
@@ -776,7 +958,15 @@ pub fn WildcardsPage() -> impl IntoView {
             });
         }
         n1(
-            &build_url("/wildcards", 1, &s, &year(), &search()),
+            &build_url(
+                "/wildcards",
+                1,
+                &s,
+                &year(),
+                &search(),
+                &sort(),
+                &sort_dir(),
+            ),
             NavigateOptions {
                 replace: true,
                 ..Default::default()
@@ -803,7 +993,15 @@ pub fn WildcardsPage() -> impl IntoView {
             });
         }
         n2(
-            &build_url("/wildcards", 1, &gstr(), &y, &search()),
+            &build_url(
+                "/wildcards",
+                1,
+                &gstr(),
+                &y,
+                &search(),
+                &sort(),
+                &sort_dir(),
+            ),
             NavigateOptions {
                 replace: true,
                 ..Default::default()
@@ -827,7 +1025,17 @@ pub fn WildcardsPage() -> impl IntoView {
             });
         }
         n3(
-            &build_url("/wildcards", 1, &gstr(), &year(), &s),
+            &build_url("/wildcards", 1, &gstr(), &year(), &s, &sort(), &sort_dir()),
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        );
+    });
+    let n_sort = navigate.clone();
+    let on_sort_cb = Callback::new(move |(field, dir): (String, String)| {
+        n_sort(
+            &build_url("/wildcards", 1, &gstr(), &year(), &search(), &field, &dir),
             NavigateOptions {
                 replace: true,
                 ..Default::default()
@@ -847,21 +1055,35 @@ pub fn WildcardsPage() -> impl IntoView {
                 genres=Signal::derive(genres) year=Signal::derive(year)
                 search=Signal::derive(search) total=Signal::derive(move || total.get())
                 on_genres=on_genres_cb on_year=on_year_cb on_search=on_search_cb
+                sort=Signal::derive(sort) sort_dir=Signal::derive(sort_dir) on_sort=on_sort_cb
             />
             {move || render_movie_grid(loading.get(), error.get(), movies.get())}
             {move || {
                 let tp = total_pages(); let p = page();
-                let np = nav_pg.clone(); let nn = nav_pg.clone();
+                let n1 = nav_pg.clone(); let n2 = nav_pg.clone();
+                let n3 = nav_pg.clone(); let n4 = nav_pg.clone(); let n5 = nav_pg.clone();
                 view!{ <PaginationBar page=p total_pages=tp
+                    on_first=Callback::new(move |_| {
+                        spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("wildcards"), page_num: Some(1) }).await; });
+                        n1(&build_url("/wildcards", 1, &gstr(), &year(), &search(), &sort(), &sort_dir()), NavigateOptions { replace: false, ..Default::default() });
+                    })
                     on_prev=Callback::new(move |_| {
                         let prev = p - 1;
                         spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("wildcards"), page_num: Some(prev) }).await; });
-                        np(&build_url("/wildcards", prev, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() });
+                        n2(&build_url("/wildcards", prev, &gstr(), &year(), &search(), &sort(), &sort_dir()), NavigateOptions { replace: false, ..Default::default() });
                     })
                     on_next=Callback::new(move |_| {
                         let next = p + 1;
                         spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("wildcards"), page_num: Some(next) }).await; });
-                        nn(&build_url("/wildcards", next, &gstr(), &year(), &search()), NavigateOptions { replace: false, ..Default::default() });
+                        n3(&build_url("/wildcards", next, &gstr(), &year(), &search(), &sort(), &sort_dir()), NavigateOptions { replace: false, ..Default::default() });
+                    })
+                    on_last=Callback::new(move |_| {
+                        spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("wildcards"), page_num: Some(tp) }).await; });
+                        n4(&build_url("/wildcards", tp, &gstr(), &year(), &search(), &sort(), &sort_dir()), NavigateOptions { replace: false, ..Default::default() });
+                    })
+                    on_page=Callback::new(move |pg: i32| {
+                        spawn_local(async move { api::track_event(api::TrackEventPayload { event_type: "pagination", movie_id: None, genre: None, era: None, section: Some("wildcards"), page_num: Some(pg) }).await; });
+                        n5(&build_url("/wildcards", pg, &gstr(), &year(), &search(), &sort(), &sort_dir()), NavigateOptions { replace: false, ..Default::default() });
                     })
                 /> }
             }}
@@ -1719,6 +1941,8 @@ pub fn WatchlistPage() -> impl IntoView {
     let (items, set_items) = signal(Vec::<WatchlistItem>::new());
     let (loading, set_loading) = signal(false);
     let (error, set_error) = signal(Option::<String>::None);
+    let (show_want, set_show_want) = signal(true);
+    let (show_watched, set_show_watched) = signal(false);
 
     Effect::new(move |_| match auth.get() {
         None => {
@@ -1764,6 +1988,30 @@ pub fn WatchlistPage() -> impl IntoView {
                 <p class="text-stone-400">"Films you're tracking."</p>
             </div>
 
+            // ── Status filter checkboxes ──────────────────────────────────────
+            {move || (!loading.get() && auth.get().is_some() && !items.get().is_empty()).then(|| view! {
+                <div class="flex items-center gap-4 mb-6">
+                    <label class="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            prop:checked=move || show_want.get()
+                            on:change=move |_| set_show_want.update(|v| *v = !*v)
+                            class="accent-sc-accent w-4 h-4 cursor-pointer"
+                        />
+                        <span class="text-sm text-stone-300">"🔖 Want to Watch"</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            prop:checked=move || show_watched.get()
+                            on:change=move |_| set_show_watched.update(|v| *v = !*v)
+                            class="accent-sc-accent w-4 h-4 cursor-pointer"
+                        />
+                        <span class="text-sm text-stone-300">"✓ Watched"</span>
+                    </label>
+                </div>
+            })}
+
             {move || {
                 if auth.get().is_none() {
                     return view! {
@@ -1788,7 +2036,14 @@ pub fn WatchlistPage() -> impl IntoView {
                         <div class="py-16 text-center"><p class="text-red-400">{err}</p></div>
                     }.into_any();
                 }
-                let its = items.get();
+                let its: Vec<WatchlistItem> = items.get()
+                    .into_iter()
+                    .filter(|item| match item.state {
+                        WatchState::WantToWatch => show_want.get(),
+                        WatchState::Watched => show_watched.get(),
+                        WatchState::NotInterested => false,
+                    })
+                    .collect();
                 if its.is_empty() {
                     return view! {
                         <div class="py-16 text-center text-stone-500">

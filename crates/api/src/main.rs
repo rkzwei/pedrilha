@@ -97,8 +97,10 @@ struct GemsQuery {
     page: Option<i32>,
     per_page: Option<i32>,
     min_year: Option<i32>,
-    genres: Option<String>, // comma-separated for multi-select (e.g. "Action,Drama")
+    genres: Option<String>,
     q: Option<String>,
+    sort: Option<String>,
+    sort_dir: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -106,8 +108,10 @@ struct AclaimedQuery {
     page: Option<i32>,
     per_page: Option<i32>,
     min_year: Option<i32>,
-    genres: Option<String>, // comma-separated for multi-select (e.g. "Action,Drama")
+    genres: Option<String>,
     q: Option<String>,
+    sort: Option<String>,
+    sort_dir: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -115,8 +119,70 @@ struct WildcardsQuery {
     page: Option<i32>,
     per_page: Option<i32>,
     min_year: Option<i32>,
-    genres: Option<String>, // comma-separated for multi-select (e.g. "Action,Drama")
+    genres: Option<String>,
     q: Option<String>,
+    sort: Option<String>,
+    sort_dir: Option<String>,
+}
+
+/// Sort a filtered movie slice in place.
+///
+/// `field`: "score" | "rating" | "rt" | "year" | "title"
+/// `dir`:   "asc" | "desc"
+/// NULLs sort last regardless of direction.
+fn apply_sort(items: &mut Vec<&MovieSummary>, field: &str, dir: &str) {
+    let desc = dir != "asc";
+    match field {
+        "rating" => items.sort_by(|a, b| {
+            let av = a.imdb_rating.unwrap_or(f64::NEG_INFINITY);
+            let bv = b.imdb_rating.unwrap_or(f64::NEG_INFINITY);
+            let o = av.partial_cmp(&bv).unwrap_or(std::cmp::Ordering::Equal);
+            if desc {
+                o.reverse()
+            } else {
+                o
+            }
+        }),
+        "rt" => items.sort_by(|a, b| {
+            let av = a.rt_critic_score.unwrap_or(-1);
+            let bv = b.rt_critic_score.unwrap_or(-1);
+            let o = av.cmp(&bv);
+            if desc {
+                o.reverse()
+            } else {
+                o
+            }
+        }),
+        "year" => items.sort_by(|a, b| {
+            let av = a.year.unwrap_or(0);
+            let bv = b.year.unwrap_or(0);
+            let o = av.cmp(&bv);
+            if desc {
+                o.reverse()
+            } else {
+                o
+            }
+        }),
+        "title" => items.sort_by(|a, b| {
+            let o = a.title.cmp(&b.title);
+            if desc {
+                o.reverse()
+            } else {
+                o
+            }
+        }),
+        _ => items.sort_by(|a, b| {
+            // "score" — gem_score DESC is already the cache order; re-applying is a stable no-op.
+            let av = a.gem_score.unwrap_or(f64::NEG_INFINITY);
+            let bv = b.gem_score.unwrap_or(f64::NEG_INFINITY);
+            let o = av.partial_cmp(&bv).unwrap_or(std::cmp::Ordering::Equal);
+            if desc {
+                o.reverse()
+            } else {
+                o
+            }
+        }),
+    }
 }
 
 #[tokio::main]
@@ -833,7 +899,7 @@ async fn get_gems(
     };
 
     // ── 3. Apply user-supplied filters in memory ─────────────────────────────
-    let filtered: Vec<&MovieSummary> = full_list
+    let mut filtered: Vec<&MovieSummary> = full_list
         .iter()
         .filter(|m| {
             if let Some(min_y) = query.min_year {
@@ -871,7 +937,12 @@ async fn get_gems(
         })
         .collect();
 
-    // ── 4. Paginate ──────────────────────────────────────────────────────────
+    // ── 4. Sort ──────────────────────────────────────────────────────────────
+    let sort_field = query.sort.as_deref().unwrap_or("score");
+    let sort_dir = query.sort_dir.as_deref().unwrap_or("desc");
+    apply_sort(&mut filtered, sort_field, sort_dir);
+
+    // ── 5. Paginate ──────────────────────────────────────────────────────────
     let total = filtered.len() as i64;
     let start = ((page - 1) * per_page) as usize;
     let data: Vec<MovieSummary> = filtered
@@ -925,7 +996,7 @@ async fn get_acclaimed(
         full_list
     };
 
-    let filtered: Vec<&MovieSummary> = full_list
+    let mut filtered: Vec<&MovieSummary> = full_list
         .iter()
         .filter(|m| {
             if let Some(min_y) = query.min_year {
@@ -961,6 +1032,10 @@ async fn get_acclaimed(
             true
         })
         .collect();
+
+    let sort_field = query.sort.as_deref().unwrap_or("rating");
+    let sort_dir = query.sort_dir.as_deref().unwrap_or("desc");
+    apply_sort(&mut filtered, sort_field, sort_dir);
 
     let total = filtered.len() as i64;
     let start = ((page - 1) * per_page) as usize;
@@ -1015,7 +1090,7 @@ async fn get_wildcards(
         full_list
     };
 
-    let filtered: Vec<&MovieSummary> = full_list
+    let mut filtered: Vec<&MovieSummary> = full_list
         .iter()
         .filter(|m| {
             if let Some(min_y) = query.min_year {
@@ -1051,6 +1126,10 @@ async fn get_wildcards(
             true
         })
         .collect();
+
+    let sort_field = query.sort.as_deref().unwrap_or("score");
+    let sort_dir = query.sort_dir.as_deref().unwrap_or("desc");
+    apply_sort(&mut filtered, sort_field, sort_dir);
 
     let total = filtered.len() as i64;
     let start = ((page - 1) * per_page) as usize;
