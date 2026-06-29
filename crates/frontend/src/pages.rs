@@ -2247,3 +2247,49 @@ pub fn PrivacyPage() -> impl IntoView {
         </div>
     }
 }
+
+// ── Changelog page ────────────────────────────────────────────────────────────
+#[component]
+pub fn ChangelogPage() -> impl IntoView {
+    const RAW: &str = include_str!("../../../../CHANGELOG.md");
+
+    let nodes: Vec<_> = RAW
+        .lines()
+        .map(|line| {
+            if line.starts_with("## ") {
+                view! {
+                    <h2 class="text-lg font-bold text-stone-100 mt-8 mb-2 border-b border-sc-border pb-1">
+                        {line[3..].to_string()}
+                    </h2>
+                }
+                .into_any()
+            } else if line.starts_with("### ") {
+                view! {
+                    <h3 class="text-xs font-semibold text-sc-accent uppercase tracking-widest mt-4 mb-1">
+                        {line[4..].to_string()}
+                    </h3>
+                }
+                .into_any()
+            } else if line.starts_with("* ") || line.starts_with("- ") {
+                view! {
+                    <li class="text-stone-400 text-sm ml-4 list-disc">
+                        {line[2..].to_string()}
+                    </li>
+                }
+                .into_any()
+            } else if line.starts_with("# ") || line.is_empty() {
+                view! { <span /> }.into_any()
+            } else {
+                view! { <p class="text-stone-500 text-sm mt-1">{line.to_string()}</p> }.into_any()
+            }
+        })
+        .collect();
+
+    view! {
+        <div class="max-w-2xl mx-auto px-4 py-12">
+            <h1 class="text-3xl font-bold text-stone-100 mb-1">"Changelog"</h1>
+            <p class="text-stone-500 text-sm mb-8">"Notable changes to Gem Finder."</p>
+            <ul>{nodes}</ul>
+        </div>
+    }
+}

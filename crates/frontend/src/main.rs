@@ -195,6 +195,7 @@ fn App() -> impl IntoView {
                         <Route path=path!("/signin") view=pages::SignInPage />
                         <Route path=path!("/auth/verify") view=pages::VerifyPage />
                         <Route path=path!("/privacy") view=pages::PrivacyPage />
+                        <Route path=path!("/changelog") view=pages::ChangelogPage />
                     </Routes>
                 </main>
 
@@ -216,6 +217,10 @@ fn App() -> impl IntoView {
                         <a href="mailto:rk@rkzwei.dev" class="hover:text-stone-500 transition-colors">
                             "rk@rkzwei.dev"
                         </a>
+                        " · "
+                        <A href="/changelog" attr:class="hover:text-stone-500 transition-colors">
+                            {concat!("v", env!("CARGO_PKG_VERSION"))}
+                        </A>
                     </p>
                 </footer>
             </div>
