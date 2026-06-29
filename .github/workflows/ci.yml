@@ -1,15 +1,14 @@
-name: CI / Deploy
+name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [dev]
   pull_request:
-    branches: [main]
+    branches: [dev, main]
 
 env:
   CARGO_TERM_COLOR: always
   RUST_LOG: error
-  # Pinned to match Cargo.lock — bump both together when upgrading wasm-bindgen
   WASM_BINDGEN_VERSION: "0.2.125"
   TRUNK_VERSION: "0.21.14"
 
@@ -18,9 +17,6 @@ jobs:
   changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
     outputs:
       backend: ${{ steps.final.outputs.backend }}
       frontend: ${{ steps.final.outputs.frontend }}
@@ -48,48 +44,20 @@ jobs:
               - 'trunk.toml'
               - '.github/workflows/ci.yml'
 
-      - name: Check last run status
-        id: last_run
-        uses: actions/github-script@v7
-        with:
-          script: |
-            try {
-              const runs = await github.rest.actions.listWorkflowRuns({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'ci.yml',
-                branch: context.ref.replace('refs/heads/', ''),
-                per_page: 2
-              });
-              const lastRun = runs.data.workflow_runs[1];
-              return lastRun?.conclusion === 'failure' ? 'true' : 'false';
-            } catch (e) {
-              if (e.status === 403) {
-                core.warning(`No permission to check last run status: ${e.message}`);
-                return 'false';
-              }
-              core.warning(`Error checking last run status, defaulting to run all: ${e.message}`);
-              return 'true';
-            }
-          result-encoding: string
-
       - name: Resolve final path flags
         id: final
         run: |
           BACKEND="${{ steps.filter.outputs.backend }}"
           FRONTEND="${{ steps.filter.outputs.frontend }}"
-          # Force all if: Dependabot, last run failed, or filter was skipped (empty outputs)
-          if [ "${{ github.actor }}" = "dependabot[bot]" ] || \
-             [ "${{ steps.last_run.outputs.result }}" = "true" ] || \
-             [ -z "$BACKEND" ]; then
+          # Force all for Dependabot (filter skipped) or when filter outputs are empty
+          if [ "${{ github.actor }}" = "dependabot[bot]" ] || [ -z "$BACKEND" ]; then
             BACKEND=true
             FRONTEND=true
           fi
           echo "backend=$BACKEND" >> $GITHUB_OUTPUT
           echo "frontend=$FRONTEND" >> $GITHUB_OUTPUT
 
-  # ── Backend: fmt · clippy · test · release build ─────────────────────────────
-  # All steps share one runner and one cache — no duplicate compile.
+  # ── Backend: fmt · clippy · test ──────────────────────────────────────────────
   backend:
     name: Backend
     runs-on: ubuntu-latest
@@ -131,18 +99,7 @@ jobs:
           --exclude gem-finder-frontend
           -- --test-threads=1
 
-      - name: Build release binary
-        run: cargo build --release --package gem-finder-api
-
-      - name: Upload binary
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: gem-finder-api
-          path: target/release/gem-finder-api
-          retention-days: 1
-
-  # ── Frontend: wasm32 check · CSS · trunk release build ───────────────────────
+  # ── Frontend: wasm32 check · CSS · trunk build ────────────────────────────────
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
@@ -198,89 +155,3 @@ jobs:
       - name: trunk build
         working-directory: crates/frontend
         run: trunk build --release
-
-      - name: Upload dist
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-dist
-          path: crates/frontend/dist/
-          retention-days: 1
-
-  # ── Deploy to VPS ─────────────────────────────────────────────────────────────
-  deploy:
-    name: Deploy to VPS
-    runs-on: ubuntu-latest
-    needs: [changes, backend, frontend]
-    if: |
-      always() &&
-      github.ref == 'refs/heads/main' &&
-      github.event_name == 'push' &&
-      (needs.backend.result == 'success' || needs.backend.result == 'skipped') &&
-      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped') &&
-      (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true')
-
-    steps:
-      - name: Download binary
-        if: needs.changes.outputs.backend == 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: gem-finder-api
-          path: artifacts/
-
-      - name: Download frontend dist
-        if: needs.changes.outputs.frontend == 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-          path: artifacts/dist/
-
-      - name: Configure SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
-
-      - name: Ensure rsync is available (runner)
-        run: command -v rsync || sudo apt-get install -y rsync
-
-      - name: Verify SSH connectivity
-        run: |
-          ssh -i ~/.ssh/deploy_key \
-            -o ConnectTimeout=10 \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
-            "echo '✓ SSH connection successful — host: $(hostname), user: $(whoami)'"
-
-      - name: Prepare VPS directories
-        run: |
-          ssh -i ~/.ssh/deploy_key \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
-            "mkdir -p /opt/gem-finder/dist"
-
-      - name: Upload binary to VPS
-        if: needs.changes.outputs.backend == 'true'
-        run: |
-          chmod +x artifacts/gem-finder-api
-          rsync -avz --progress \
-            -e "ssh -i ~/.ssh/deploy_key" \
-            artifacts/gem-finder-api \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/gem-finder/gem-finder-api.new
-
-      - name: Upload frontend dist to VPS
-        if: needs.changes.outputs.frontend == 'true'
-        run: |
-          rsync -avz --delete \
-            -e "ssh -i ~/.ssh/deploy_key" \
-            artifacts/dist/ \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/gem-finder/dist/
-
-      - name: Swap binary and restart service
-        if: needs.changes.outputs.backend == 'true'
-        run: |
-          ssh -i ~/.ssh/deploy_key \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
-            "sudo mv /opt/gem-finder/gem-finder-api.new /opt/gem-finder/gem-finder-api && \
-             sudo systemctl restart gem-finder && \
-             systemctl is-active gem-finder"
-#fixed dependabot, adding line for commit

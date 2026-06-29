@@ -3,6 +3,7 @@ updates:
   # Rust dependencies
   - package-ecosystem: cargo
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
       day: monday
@@ -21,6 +22,7 @@ updates:
   # JS frontend (Tailwind, js-sys, etc.)
   - package-ecosystem: npm
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
       day: monday
@@ -37,6 +39,7 @@ updates:
   # GitHub Actions
   - package-ecosystem: github-actions
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
       day: monday
