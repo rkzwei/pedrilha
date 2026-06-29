@@ -20,9 +20,10 @@ SyslogIdentifier=gem-finder
 
 # Sandboxing (optional hardening)
 NoNewPrivileges=true
-ProtectSystem=strict
+ProtectSystem=full
 ProtectHome=true
 ReadWritePaths=/opt/gem-finder
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
