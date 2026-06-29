@@ -3,6 +3,14 @@
 All notable changes to Gem Finder are documented here.
 Versions follow `0.MINOR.PATCH` — features bump minor, fixes bump patch.
 
+## [0.2.1](https://github.com/rkzwei/gem-finder/compare/v0.2.0...v0.2.1) (2026-06-29)
+
+
+### Bug Fixes
+
+* strip commit links from changelog, fix Documentary genre cutoff ([cd8c63b](https://github.com/rkzwei/gem-finder/commit/cd8c63b759765a756bd7becaef66d2397d5ef5f2))
+* strip commit links from changelog, fix Documentary genre cutoff ([37e2b12](https://github.com/rkzwei/gem-finder/commit/37e2b12844ca4aab0195192f8f68dbcadea06532))
+
 ## [0.2.0](https://github.com/rkzwei/gem-finder/compare/v0.1.0...v0.2.0) (2026-06-29)
 
 
