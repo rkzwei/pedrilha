@@ -22,15 +22,10 @@ jobs:
       actions: read
       contents: read
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.final.outputs.backend }}
+      frontend: ${{ steps.final.outputs.frontend }}
     steps:
       - uses: actions/checkout@v4
-      - name: Force all paths for Dependabot
-        if: github.actor == 'dependabot[bot]'
-        run: |
-          echo "backend=true" >> $GITHUB_OUTPUT
-          echo "frontend=true" >> $GITHUB_OUTPUT
 
       - uses: dorny/paths-filter@v3
         if: github.actor != 'dependabot[bot]'
@@ -78,11 +73,20 @@ jobs:
             }
           result-encoding: string
 
-      - name: Force all jobs if last run failed
-        if: steps.last_run.outputs.result == 'true'
+      - name: Resolve final path flags
+        id: final
         run: |
-          echo "backend=true" >> $GITHUB_OUTPUT
-          echo "frontend=true" >> $GITHUB_OUTPUT
+          BACKEND="${{ steps.filter.outputs.backend }}"
+          FRONTEND="${{ steps.filter.outputs.frontend }}"
+          # Force all if: Dependabot, last run failed, or filter was skipped (empty outputs)
+          if [ "${{ github.actor }}" = "dependabot[bot]" ] || \
+             [ "${{ steps.last_run.outputs.result }}" = "true" ] || \
+             [ -z "$BACKEND" ]; then
+            BACKEND=true
+            FRONTEND=true
+          fi
+          echo "backend=$BACKEND" >> $GITHUB_OUTPUT
+          echo "frontend=$FRONTEND" >> $GITHUB_OUTPUT
 
   # ── Backend: fmt · clippy · test · release build ─────────────────────────────
   # All steps share one runner and one cache — no duplicate compile.
