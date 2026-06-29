@@ -138,7 +138,7 @@ fn FilterBar(
             // ── Search ────────────────────────────────────────────────────────
             <input
                 type="text"
-                placeholder="Search titles, directors…"
+                placeholder="Search titles…"
                 class="w-full bg-sc-card text-stone-200 border border-sc-border-input rounded-md px-4 py-2.5 text-sm placeholder-stone-600 focus:outline-none focus:border-sc-accent-border"
                 prop:value=move || local_search.get()
                 on:input=move |ev| {
@@ -354,6 +354,11 @@ fn PaginationBar(
     on_page: Callback<i32>,
 ) -> impl IntoView {
     if total_pages <= 1 {
+        drop(on_prev);
+        drop(on_next);
+        drop(on_first);
+        drop(on_last);
+        drop(on_page);
         return view! { <div /> }.into_any();
     }
     let btn = "px-3 py-2 bg-sc-card text-stone-200 rounded disabled:opacity-30 hover:bg-sc-border text-sm";
@@ -363,14 +368,14 @@ fn PaginationBar(
                 on:click=move |_| on_first.run(())>"«"</button>
             <button class=btn prop:disabled=move || page <= 1
                 on:click=move |_| on_prev.run(())>"← Prev"</button>
-            <span class="flex items-center gap-2 text-stone-400 text-sm">
-                "Page "
+            <span class="flex items-center gap-1 text-stone-400 text-sm">
+                <span>"Page"</span>
                 <input
                     type="number"
                     min="1"
                     max=total_pages
                     prop:value=page
-                    class="w-14 px-2 py-1 bg-sc-card text-stone-200 rounded text-center text-sm border border-sc-border focus:outline-none focus:border-sc-accent"
+                    class="w-12 px-1 py-1 bg-sc-card text-stone-200 rounded text-center text-sm border border-sc-border focus:outline-none focus:border-sc-accent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     on:change=move |e| {
                         let v = event_target_value(&e)
                             .parse::<i32>()
@@ -379,7 +384,7 @@ fn PaginationBar(
                         on_page.run(v);
                     }
                 />
-                {format!(" of {}", total_pages)}
+                <span>{format!("/ {}", total_pages)}</span>
             </span>
             <button class=btn prop:disabled=move || page >= total_pages
                 on:click=move |_| on_next.run(())>"Next →"</button>
