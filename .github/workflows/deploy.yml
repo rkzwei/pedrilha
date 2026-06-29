@@ -34,7 +34,6 @@ jobs:
               - 'crates/api/**'
               - 'crates/db/**'
               - 'crates/shared/**'
-              - '.github/workflows/deploy.yml'
             frontend:
               - 'Cargo.toml'
               - 'Cargo.lock'
@@ -42,7 +41,6 @@ jobs:
               - 'tailwind.config.js'
               - 'package.json'
               - 'trunk.toml'
-              - '.github/workflows/deploy.yml'
 
       - name: Check last deploy status
         id: last_run
