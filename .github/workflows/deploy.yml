@@ -3,6 +3,9 @@ name: Deploy
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'deploy/runner/**'
+      - '**.md'
 
 env:
   CARGO_TERM_COLOR: always
@@ -14,7 +17,7 @@ jobs:
   # ── Path filtering ─────────────────────────────────────────────────────────────
   changes:
     name: Detect changed paths
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     permissions:
       actions: read
       contents: read
@@ -79,7 +82,7 @@ jobs:
   # ── Backend: fmt · clippy · test · release build ──────────────────────────────
   backend:
     name: Backend
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     steps:
@@ -131,7 +134,7 @@ jobs:
   # ── Frontend: wasm32 check · CSS · trunk release build ────────────────────────
   frontend:
     name: Frontend
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     steps:
@@ -195,7 +198,7 @@ jobs:
   # ── Deploy to VPS ─────────────────────────────────────────────────────────────
   deploy:
     name: Deploy to VPS
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [changes, backend, frontend]
     if: |
       always() &&

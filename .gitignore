@@ -67,5 +67,8 @@ LEGAL_NOTES.md
 # Claude agent working directory
 .claude/
 
+# Self-hosted runner secrets (local machine only — never commit)
+deploy/runner/.env
+
 GEM_FINDER_MEMORY.md
 Caddyfile
