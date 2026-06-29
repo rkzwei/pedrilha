@@ -16,6 +16,10 @@ on:
       - 'deploy/runner/**'
       - '**.md'
 
+permissions:
+  contents: read
+  pull-requests: read
+
 env:
   CARGO_TERM_COLOR: always
   RUST_LOG: error
