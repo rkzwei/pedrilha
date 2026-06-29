@@ -31,6 +31,7 @@ jobs:
   changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
+    if: "!startsWith(github.head_ref, 'release-please--')"
     outputs:
       backend: ${{ steps.final.outputs.backend }}
       frontend: ${{ steps.final.outputs.frontend }}

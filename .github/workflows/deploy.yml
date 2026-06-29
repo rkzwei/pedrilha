@@ -19,10 +19,13 @@ jobs:
   changes:
     name: Detect changed paths
     runs-on: self-hosted
-    if: "!startsWith(github.event.head_commit.message, 'chore: release')"
+    if: >-
+      !startsWith(github.event.head_commit.message, 'chore: release') &&
+      !contains(github.event.head_commit.message, 'release-please--')
     permissions:
       actions: read
       contents: read
+      pull-requests: read
     outputs:
       backend: ${{ steps.final.outputs.backend }}
       frontend: ${{ steps.final.outputs.frontend }}
