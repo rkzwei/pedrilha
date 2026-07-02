@@ -76,6 +76,16 @@ select {
   background: var(--sc-accent-border);
 }
 
+/* ── iOS auto-zoom prevention ────────────────────────────────────────────────
+   iOS Safari force-zooms on focus when font-size < 16px. Setting 16px here
+   prevents the zoom without disabling user-scalable in the viewport meta.
+   ─────────────────────────────────────────────────────────────────────────── */
+input[type="text"],
+input[type="email"],
+input[type="number"] {
+  font-size: 16px;
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--sc-border) var(--sc-panel);
