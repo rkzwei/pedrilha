@@ -5,6 +5,20 @@ Versions follow semver. Pre-1.0, features and fixes bump the **patch** (`0.3.0` 
 the **minor** (`0.4.0`) is reserved for milestones and breaking changes. Cut a milestone
 with a `Release-As: 0.X.0` commit footer.
 
+## [0.4.1](https://github.com/rkzwei/gem-finder/compare/v0.4.0...v0.4.1) (2026-07-02)
+
+
+### Features
+
+* add PT/EN bilingual support ([b41a88e](https://github.com/rkzwei/gem-finder/commit/b41a88efa850f145a997d3781b6b3dbd07c67632))
+* add PT/EN language toggle to footer ([5ccf70d](https://github.com/rkzwei/gem-finder/commit/5ccf70d9dd8f17827d336bb2942edcb4e232c89f))
+* rebrand to Pedrilha ([3652c45](https://github.com/rkzwei/gem-finder/commit/3652c4554163d6c1b3781da799d85545780ccbda))
+
+
+### Bug Fixes
+
+* correct Se Essa Rua lyric quote in About page ([a887fa0](https://github.com/rkzwei/gem-finder/commit/a887fa01b2a28d688e07d55f34aa7943e85de031))
+
 ## [0.4.0](https://github.com/rkzwei/gem-finder/compare/v0.3.0...v0.4.0) (2026-07-02)
 
 
