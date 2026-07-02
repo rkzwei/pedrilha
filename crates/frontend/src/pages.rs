@@ -47,45 +47,6 @@ const DECADE_OPTIONS: &[(i32, &str)] = &[
 ];
 const PER_PAGE: i32 = 20;
 
-// ── Score icons ───────────────────────────────────────────────────────────────
-// Inline SVGs so score glyphs render pixel-identical on every OS. Emoji (🍅) and
-// dingbats (★) fall back to platform emoji fonts, which vary wildly. Generic
-// shapes only — no third-party logos. `currentColor` inherits the span's color.
-
-/// Four-point sparkle — the Gem Score mark.
-fn icon_gem() -> impl IntoView {
-    view! {
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13"
-            fill="currentColor" aria-hidden="true"
-            style="display:inline-block;vertical-align:-2px">
-            <path d="M12 0l2.8 9.2L24 12l-9.2 2.8L12 24l-2.8-9.2L0 12l9.2-2.8L12 0z" />
-        </svg>
-    }
-}
-
-/// Five-point star — the community rating mark.
-fn icon_star() -> impl IntoView {
-    view! {
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13"
-            fill="currentColor" aria-hidden="true"
-            style="display:inline-block;vertical-align:-2px">
-            <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27z" />
-        </svg>
-    }
-}
-
-/// Generic tomato silhouette — the critic score mark.
-fn icon_tomato() -> impl IntoView {
-    view! {
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13"
-            fill="currentColor" aria-hidden="true"
-            style="display:inline-block;vertical-align:-2px">
-            <path d="M12 6.5c-.4-1.9-1.7-3.3-3.5-3.8 1.2-.5 2.6-.3 3.5.6.9-.9 2.3-1.1 3.5-.6-1.8.5-3.1 1.9-3.5 3.8z" />
-            <path d="M12 6.2C6.6 6.2 2.5 9.7 2.5 14 2.5 18.4 6.8 22 12 22s9.5-3.6 9.5-8c0-4.3-4.1-7.8-9.5-7.8z" />
-        </svg>
-    }
-}
-
 /// Thousands separator for film counts (3503 → "3,503").
 fn fmt_thousands(n: i64) -> String {
     let s = n.abs().to_string();
@@ -649,7 +610,7 @@ pub fn HomePage() -> impl IntoView {
                 on_genres=on_genres_cb on_year=on_year_cb on_search=on_search_cb
                 sort=Signal::derive(sort) sort_dir=Signal::derive(sort_dir) on_sort=on_sort_cb
             />
-            {move || render_movie_grid(loading.get(), error.get(), movies.get(), true)}
+            {move || render_movie_grid(loading.get(), error.get(), movies.get())}
             {move || {
                 let tp = total_pages(); let p = page();
                 let n1 = nav_pg.clone(); let n2 = nav_pg.clone();
@@ -890,7 +851,7 @@ pub fn AcclaimedPage() -> impl IntoView {
                 on_genres=on_genres_cb on_year=on_year_cb on_search=on_search_cb
                 sort=Signal::derive(sort) sort_dir=Signal::derive(sort_dir) on_sort=on_sort_cb
             />
-            {move || render_movie_grid(loading.get(), error.get(), movies.get(), false)}
+            {move || render_movie_grid(loading.get(), error.get(), movies.get())}
             {move || {
                 let tp = total_pages(); let p = page();
                 let n1 = nav_pg.clone(); let n2 = nav_pg.clone();
@@ -1132,7 +1093,7 @@ pub fn WildcardsPage() -> impl IntoView {
                 on_genres=on_genres_cb on_year=on_year_cb on_search=on_search_cb
                 sort=Signal::derive(sort) sort_dir=Signal::derive(sort_dir) on_sort=on_sort_cb
             />
-            {move || render_movie_grid(loading.get(), error.get(), movies.get(), false)}
+            {move || render_movie_grid(loading.get(), error.get(), movies.get())}
             {move || {
                 let tp = total_pages(); let p = page();
                 let n1 = nav_pg.clone(); let n2 = nav_pg.clone();
@@ -1589,7 +1550,6 @@ fn render_movie_grid(
     loading: bool,
     error: Option<String>,
     movies: Vec<MovieSummary>,
-    show_rank: bool,
 ) -> impl IntoView {
     if loading {
         view! { <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
@@ -1603,7 +1563,7 @@ fn render_movie_grid(
             .into_any()
     } else {
         view! { <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4" style="isolation:isolate">
-            {movies.into_iter().map(|m| view!{ <MovieCard movie=m show_rank=show_rank /> }).collect::<Vec<_>>()}
+            {movies.into_iter().map(|m| view!{ <MovieCard movie=m /> }).collect::<Vec<_>>()}
         </div> }
         .into_any()
     }
@@ -1625,7 +1585,7 @@ fn SkeletonCard() -> impl IntoView {
 
 // ── Movie card ────────────────────────────────────────────────────────────────
 #[component]
-fn MovieCard(movie: MovieSummary, #[prop(default = false)] show_rank: bool) -> impl IntoView {
+fn MovieCard(movie: MovieSummary) -> impl IntoView {
     let navigate = use_navigate();
     let href = format!("/movie/{}", encode_movie_id(movie.id));
     let href_nav = href.clone();
@@ -1638,11 +1598,6 @@ fn MovieCard(movie: MovieSummary, #[prop(default = false)] show_rank: bool) -> i
     let director = movie.director.clone().unwrap_or_default();
     let imdb = movie.imdb_rating.map(|r| format!("{:.1}", r));
     let rt = movie.rt_critic_score.map(|r| format!("{}%", r));
-    // Top-50 gems wear their rank on the poster (Gems page only).
-    let rank_badge = movie
-        .gem_rank
-        .filter(|r| show_rank && *r >= 1 && *r <= 50)
-        .map(|r| format!("#{}", r));
 
     view! {
         <a
@@ -1672,19 +1627,15 @@ fn MovieCard(movie: MovieSummary, #[prop(default = false)] show_rank: bool) -> i
                     view!{ <div class="w-full h-full bg-sc-border flex items-center justify-center">
                         <span class="text-5xl" aria-hidden="true">"🎬"</span></div> }.into_any()
                 }}
-                {rank_badge.map(|r| view!{
-                    <span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 text-[11px] font-bold rounded bg-sc-accent-deep border border-sc-accent-border text-sc-accent"
-                        aria-label=format!("Gem rank {}", r)>{r.clone()}</span>
-                })}
             </div>
             <div class="p-3">
                 <h3 class="text-stone-100 font-medium text-sm leading-snug line-clamp-2 mb-1">{title}</h3>
                 <div class="flex items-center justify-between text-xs mb-0.5">
                     <span class="text-stone-400">{year}</span>
-                    <div class="flex gap-2 items-center tabular-nums">
-                        {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold" title="Gem Score — how undiscovered this film is (100% = top gem)" aria-label=format!("Gem score {}", s)>{icon_gem()}" "{s.clone()}</span> })}
-                        {imdb.map(|r| view!{ <span class="text-yellow-400" title="Community rating (0–10)" aria-label=format!("Community rating {} out of 10", r)>{icon_star()}" "{r.clone()}</span> })}
-                        {rt.map(|r|  view!{ <span class="text-red-400" title="Critic score" aria-label=format!("Critic score {}", r)>{icon_tomato()}" "{r.clone()}</span> })}
+                    <div class="flex flex-wrap justify-end gap-x-2 gap-y-0.5 items-center tabular-nums">
+                        {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold whitespace-nowrap" title="Gem Score — how undiscovered this film is (100% = top gem)" aria-label=format!("Gem score {}", s)>"✦ "{s.clone()}</span> })}
+                        {imdb.map(|r| view!{ <span class="text-yellow-400 whitespace-nowrap" title="Community rating (0–10)" aria-label=format!("Community rating {} out of 10", r)>"★ "{r.clone()}</span> })}
+                        {rt.map(|r|  view!{ <span class="text-red-400 whitespace-nowrap" title="Critic score" aria-label=format!("Critic score {}", r)>"🍅 "{r.clone()}</span> })}
                     </div>
                 </div>
                 {if !director.is_empty() {
@@ -2221,9 +2172,9 @@ fn WatchlistCard(item: WatchlistItem) -> impl IntoView {
                 <h3 class="text-stone-100 font-medium text-sm leading-snug line-clamp-2 mb-1">{title}</h3>
                 <div class="flex items-center justify-between text-xs mb-0.5">
                     <span class="text-stone-400">{year}</span>
-                    <div class="flex gap-2 items-center tabular-nums">
-                        {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold" title="Gem Score — how undiscovered this film is (100% = top gem)" aria-label=format!("Gem score {}", s)>{icon_gem()}" "{s.clone()}</span> })}
-                        {imdb.map(|r| view!{ <span class="text-yellow-400" title="Community rating (0–10)" aria-label=format!("Community rating {} out of 10", r)>{icon_star()}" "{r.clone()}</span> })}
+                    <div class="flex flex-wrap justify-end gap-x-2 gap-y-0.5 items-center tabular-nums">
+                        {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold whitespace-nowrap" title="Gem Score — how undiscovered this film is (100% = top gem)" aria-label=format!("Gem score {}", s)>"✦ "{s.clone()}</span> })}
+                        {imdb.map(|r| view!{ <span class="text-yellow-400 whitespace-nowrap" title="Community rating (0–10)" aria-label=format!("Community rating {} out of 10", r)>"★ "{r.clone()}</span> })}
                     </div>
                 </div>
                 {if !director.is_empty() {
