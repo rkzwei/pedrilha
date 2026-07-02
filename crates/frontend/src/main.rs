@@ -129,22 +129,22 @@ fn App() -> impl IntoView {
 
             <div class="min-h-screen bg-sc-base text-stone-200">
                 <header class="border-b border-sc-border sticky top-0 z-[60]" style="background-color: rgba(23,16,10,0.88); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
-                    <nav class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-                        <A href="/" attr:class="font-display text-3xl tracking-widest text-stone-100 hover:text-sc-accent transition-colors">
+                    <nav class="max-w-7xl mx-auto px-4 py-4 flex flex-col sm:flex-row sm:justify-between items-center gap-3 sm:gap-0">
+                        <A href="/" attr:class="font-display text-2xl sm:text-3xl tracking-widest text-stone-100 hover:text-sc-accent transition-colors">
                             "GEM FINDER"
                         </A>
-                        <div class="flex gap-6 items-center">
-                            <A href="/" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide">
+                        <div class="flex flex-wrap justify-center gap-x-4 gap-y-1 sm:gap-6 items-center">
+                            <A href="/" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide">
                                 "GEMS"
                             </A>
-                            <A href="/acclaimed" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide">
+                            <A href="/acclaimed" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide">
                                 "ACCLAIMED"
                             </A>
-                            <A href="/wildcards" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide">
+                            <A href="/wildcards" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide">
                                 "WILDCARDS"
                             </A>
                             {move || auth.get().filter(|a| a.is_admin).map(|_| view! {
-                                <A href="/admin" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide">
+                                <A href="/admin" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide">
                                     "ADMIN"
                                 </A>
                             })}
@@ -155,12 +155,12 @@ fn App() -> impl IntoView {
                                             a.email.split('@').next().unwrap_or("user").to_string()
                                         });
                                     view! {
-                                        <A href="/watchlist" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide">
+                                        <A href="/watchlist" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide">
                                             "WATCHLIST"
                                         </A>
-                                        <span class="text-stone-500 text-sm">{display}</span>
+                                        <span class="hidden md:inline text-stone-500 text-xs sm:text-sm">{display}</span>
                                         <button
-                                            class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide"
+                                            class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide"
                                             on:click=move |_| logout(auth)
                                         >
                                             "SIGN OUT"
@@ -170,7 +170,7 @@ fn App() -> impl IntoView {
                                 None => {
                                     if smtp_ok.get() {
                                         view! {
-                                            <A href="/signin" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-sm tracking-wide">
+                                            <A href="/signin" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide">
                                                 "SIGN IN"
                                             </A>
                                         }.into_any()
