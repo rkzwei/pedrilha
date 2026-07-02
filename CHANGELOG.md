@@ -5,6 +5,20 @@ Versions follow semver. Pre-1.0, features and fixes bump the **patch** (`0.3.0` 
 the **minor** (`0.4.0`) is reserved for milestones and breaking changes. Cut a milestone
 with a `Release-As: 0.X.0` commit footer.
 
+## [0.4.0](https://github.com/rkzwei/gem-finder/compare/v0.3.0...v0.4.0) (2026-07-02)
+
+
+### Features
+
+* enrich movie detail page (UX-15, UX-16, UX-17) ([3ad3fd0](https://github.com/rkzwei/gem-finder/commit/3ad3fd00b223488cabe65db19634ee7d669ddea1))
+* filter and grid interaction polish (UX-09, UX-10, UX-11, UX-12, UX-13) ([f2c9a11](https://github.com/rkzwei/gem-finder/commit/f2c9a119c87ac879c906e5b9df1d2deb8fd77f09))
+
+
+### Bug Fixes
+
+* concurrent watchlist loading, verify-page recovery (UX-18, UX-20) ([b5a6f17](https://github.com/rkzwei/gem-finder/commit/b5a6f17b252568526a7274dae1ce93f5d06346c0))
+* visibility on typing ([b4964fd](https://github.com/rkzwei/gem-finder/commit/b4964fddbd45cd0dc067fdb7bc14b0f25011faef))
+
 ## [0.3.0](https://github.com/rkzwei/gem-finder/compare/v0.2.1...v0.3.0) (2026-07-02)
 
 
