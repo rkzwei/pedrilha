@@ -1,7 +1,9 @@
 # Changelog
 
 All notable changes to Gem Finder are documented here.
-Versions follow `0.MINOR.PATCH` — features bump minor, fixes bump patch.
+Versions follow semver. Pre-1.0, features and fixes bump the **patch** (`0.3.0` → `0.3.1`);
+the **minor** (`0.4.0`) is reserved for milestones and breaking changes. Cut a milestone
+with a `Release-As: 0.X.0` commit footer.
 
 ## [0.3.0](https://github.com/rkzwei/gem-finder/compare/v0.2.1...v0.3.0) (2026-07-02)
 
