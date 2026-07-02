@@ -3,6 +3,30 @@
 All notable changes to Gem Finder are documented here.
 Versions follow `0.MINOR.PATCH` — features bump minor, fixes bump patch.
 
+## [0.3.0](https://github.com/rkzwei/gem-finder/compare/v0.2.1...v0.3.0) (2026-07-02)
+
+
+### Features
+
+* add dynamic page titles (UX-05) ([9947ce2](https://github.com/rkzwei/gem-finder/commit/9947ce2c31c7ef8e46c43ec123769d587f19a58c))
+* de-jargon Wildcards page copy (UX-28) ([89ff51c](https://github.com/rkzwei/gem-finder/commit/89ff51c11825bb072900693c353ef512e2951e54))
+* explain Gem Score with /about page (UX-04) ([770e499](https://github.com/rkzwei/gem-finder/commit/770e499178d6617c2e31a13b39de6a7a4b5a36e1))
+* highlight active nav link (UX-22) ([00af751](https://github.com/rkzwei/gem-finder/commit/00af7518ef2535b19d2ff227bad2212ff6142ace))
+
+
+### Bug Fixes
+
+* add branded 404 page (UX-27) ([ac45002](https://github.com/rkzwei/gem-finder/commit/ac450028db0746584314187b318c1190a49e986d))
+* add loading shell to prevent blank screen on first load (UX-01) ([c754a94](https://github.com/rkzwei/gem-finder/commit/c754a94764a66d5d62d46e19e825876273e0b587))
+* added hook for debugging ([4957f0f](https://github.com/rkzwei/gem-finder/commit/4957f0fbffc8d81f8168e4dcc9d43bd9db0d7d66))
+* favicon absolute path for nested routes ([5ed6164](https://github.com/rkzwei/gem-finder/commit/5ed6164b8050b3e6627ec4684d9ae9e0c9504201))
+* infinite loop no more ([b312258](https://github.com/rkzwei/gem-finder/commit/b312258dd5c55e05c96e22024f1977f4f9461721))
+* lazy-load Ko-fi widget after app starts (UX-02) ([ea74362](https://github.com/rkzwei/gem-finder/commit/ea7436203bfb592abac1f21fa352fc9baeba51dc))
+* make header nav responsive on small viewports (UX-03) ([060c1ac](https://github.com/rkzwei/gem-finder/commit/060c1acfab482cdb62af9c4bb278d6c837cfbcd7))
+* prevent iOS auto-zoom on inputs by setting font-size 16px (UX-06) ([4535aee](https://github.com/rkzwei/gem-finder/commit/4535aeedf2e09e37c2cb2c9cfb6fbe8426f65dd4))
+* replace Ko-fi widget script with static button ([9667264](https://github.com/rkzwei/gem-finder/commit/9667264874aa63e3a40ace8b4932a8f492529f2a))
+* restore query-reactive fetching on grid pages ([1da16d6](https://github.com/rkzwei/gem-finder/commit/1da16d6f9abaafe1755ba4c4da2cd37882a1bd8c))
+
 ## [0.2.1](https://github.com/rkzwei/gem-finder/compare/v0.2.0...v0.2.1) (2026-06-29)
 
 
