@@ -94,6 +94,11 @@ pub fn logout(auth: RwSignal<Option<AuthState>>) {
 }
 
 fn main() {
+    if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+        if let Some(el) = doc.get_element_by_id("app-loading") {
+            el.remove();
+        }
+    }
     mount_to_body(|| view! { <App /> })
 }
 
