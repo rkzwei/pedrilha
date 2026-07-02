@@ -1901,11 +1901,13 @@ pub fn VerifyPage() -> impl IntoView {
     let navigate = use_navigate();
     let auth = use_context::<RwSignal<Option<AuthState>>>().expect("auth context missing");
     let (status, set_status) = signal("Verifying…".to_string());
+    let (failed, set_failed) = signal(false);
 
     let token_val = query.with_untracked(|q| q.get("token").unwrap_or_default().to_string());
 
     if token_val.is_empty() {
-        set_status.set("Invalid link — no token provided.".to_string());
+        set_status.set("This sign-in link is incomplete — no token provided.".to_string());
+        set_failed.set(true);
     } else {
         spawn_local(async move {
             match api::verify_token(&token_val).await {
@@ -1921,7 +1923,13 @@ pub fn VerifyPage() -> impl IntoView {
                     }));
                     navigate("/", NavigateOptions::default());
                 }
-                Err(e) => set_status.set(format!("Sign-in failed: {}", e)),
+                Err(_) => {
+                    set_status.set(
+                        "This sign-in link is invalid or has expired — they last 15 minutes."
+                            .to_string(),
+                    );
+                    set_failed.set(true);
+                }
             }
         });
     }
@@ -1929,8 +1937,14 @@ pub fn VerifyPage() -> impl IntoView {
     view! {
         <Title text="Signing in — Gem Finder" />
         <div class="max-w-md mx-auto px-4 py-16 text-center">
-            <p class="text-2xl mb-4">"🔑"</p>
+            <p class="text-2xl mb-4" aria-hidden="true">"🔑"</p>
             <p class="text-stone-300">{move || status.get()}</p>
+            {move || failed.get().then(|| view!{
+                <A href="/signin"
+                    attr:class="inline-block mt-6 text-sm text-sc-accent hover:text-sc-accent-hover border border-sc-accent-border rounded px-4 py-2">
+                    "Request a new link"
+                </A>
+            })}
         </div>
     }
 }
@@ -2256,19 +2270,27 @@ pub fn WatchlistPage() -> impl IntoView {
                         set_loading.set(false);
                     }
                     Ok(entries) => {
-                        let mut results = Vec::new();
-                        for entry in entries {
-                            if entry.state == WatchState::NotInterested {
-                                continue;
-                            }
-                            let encoded = encode_movie_id(entry.movie_id);
-                            if let Ok(movie) = api::fetch_movie(&encoded).await {
-                                results.push(WatchlistItem {
-                                    movie,
-                                    state: entry.state,
-                                });
-                            }
-                        }
+                        // Fetch all movies concurrently — a 30-film list costs one
+                        // round-trip of latency instead of thirty.
+                        let futs = entries
+                            .iter()
+                            .filter(|e| e.state != WatchState::NotInterested)
+                            .map(|entry| {
+                                let encoded = encode_movie_id(entry.movie_id);
+                                let state = entry.state.clone();
+                                async move {
+                                    api::fetch_movie(&encoded)
+                                        .await
+                                        .ok()
+                                        .map(|movie| WatchlistItem { movie, state })
+                                }
+                            })
+                            .collect::<Vec<_>>();
+                        let results: Vec<WatchlistItem> = futures::future::join_all(futs)
+                            .await
+                            .into_iter()
+                            .flatten()
+                            .collect();
                         set_items.set(results);
                         set_loading.set(false);
                     }

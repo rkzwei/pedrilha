@@ -1406,6 +1406,7 @@ name = "gem-finder-frontend"
 version = "0.2.1"
 dependencies = [
  "console_error_panic_hook",
+ "futures",
  "gem-finder-shared",
  "js-sys",
  "leptos",
