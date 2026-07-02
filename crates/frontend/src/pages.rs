@@ -1592,12 +1592,13 @@ fn MovieCard(movie: MovieSummary) -> impl IntoView {
     let encoded_id = encode_movie_id(movie.id);
     let poster = movie.poster_url.clone().unwrap_or_default();
     let has_poster = !poster.is_empty();
-    let gem_score = movie.gem_score.map(|s| format!("{:.0}%", s * 100.0));
+    // Card numerals drop the % sign — the glyph carries the unit, tooltips spell it out.
+    let gem_score = movie.gem_score.map(|s| format!("{:.0}", s * 100.0));
     let year = movie.year.map(|y| y.to_string()).unwrap_or_default();
     let title = movie.title.clone();
     let director = movie.director.clone().unwrap_or_default();
     let imdb = movie.imdb_rating.map(|r| format!("{:.1}", r));
-    let rt = movie.rt_critic_score.map(|r| format!("{}%", r));
+    let rt = movie.rt_critic_score.map(|r| r.to_string());
 
     view! {
         <a
@@ -1633,9 +1634,9 @@ fn MovieCard(movie: MovieSummary) -> impl IntoView {
                 <div class="flex items-center justify-between text-xs mb-0.5">
                     <span class="text-stone-400 tabular-nums">{year}</span>
                     <div class="flex flex-wrap justify-end gap-x-1.5 gap-y-0.5 items-center tabular-nums">
-                        {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold whitespace-nowrap" title="Gem Score — how undiscovered this film is (100% = top gem)" aria-label=format!("Gem score {}", s)>"✦ "{s.clone()}</span> })}
+                        {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold whitespace-nowrap" title="Gem Score — how undiscovered this film is (100% = top gem)" aria-label=format!("Gem score {} percent", s)>"✦ "{s.clone()}</span> })}
                         {imdb.map(|r| view!{ <span class="text-yellow-400 whitespace-nowrap" title="Community rating (0–10)" aria-label=format!("Community rating {} out of 10", r)>"★ "{r.clone()}</span> })}
-                        {rt.map(|r|  view!{ <span class="text-red-400 whitespace-nowrap" title="Critic score" aria-label=format!("Critic score {}", r)>"🍅 "{r.clone()}</span> })}
+                        {rt.map(|r|  view!{ <span class="text-red-400 whitespace-nowrap" title="Critic score" aria-label=format!("Critic score {} percent", r)>"🍅 "{r.clone()}</span> })}
                     </div>
                 </div>
                 {if !director.is_empty() {
@@ -2131,7 +2132,7 @@ fn WatchlistCard(item: WatchlistItem) -> impl IntoView {
     let year = item.movie.year.map(|y| y.to_string()).unwrap_or_default();
     let director = item.movie.director.clone().unwrap_or_default();
     let imdb = item.movie.imdb_rating.map(|r| format!("{:.1}", r));
-    let gem_score = item.movie.gem_score.map(|s| format!("{:.0}%", s * 100.0));
+    let gem_score = item.movie.gem_score.map(|s| format!("{:.0}", s * 100.0));
 
     let (badge_label, badge_class) = match item.state {
         WatchState::WantToWatch => (
@@ -2173,7 +2174,7 @@ fn WatchlistCard(item: WatchlistItem) -> impl IntoView {
                 <div class="flex items-center justify-between text-xs mb-0.5">
                     <span class="text-stone-400 tabular-nums">{year}</span>
                     <div class="flex flex-wrap justify-end gap-x-1.5 gap-y-0.5 items-center tabular-nums">
-                        {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold whitespace-nowrap" title="Gem Score — how undiscovered this film is (100% = top gem)" aria-label=format!("Gem score {}", s)>"✦ "{s.clone()}</span> })}
+                        {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold whitespace-nowrap" title="Gem Score — how undiscovered this film is (100% = top gem)" aria-label=format!("Gem score {} percent", s)>"✦ "{s.clone()}</span> })}
                         {imdb.map(|r| view!{ <span class="text-yellow-400 whitespace-nowrap" title="Community rating (0–10)" aria-label=format!("Community rating {} out of 10", r)>"★ "{r.clone()}</span> })}
                     </div>
                 </div>
