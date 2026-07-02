@@ -5,6 +5,7 @@ use gem_finder_shared::types::{Movie, MovieSummary, WatchState};
 use js_sys;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use leptos_meta::Title;
 use leptos_router::{
     components::A,
     hooks::{use_navigate, use_params_map, use_query_map},
@@ -571,6 +572,7 @@ pub fn HomePage() -> impl IntoView {
     let nav_pg = navigate;
 
     view! {
+        <Title text="Hidden Gems — Gem Finder" />
         <div class="max-w-7xl mx-auto px-4 py-8">
             <div class="mb-6">
                 <h1 class="text-4xl font-bold text-stone-100 mb-1">"Hidden Gems"</h1>
@@ -810,6 +812,7 @@ pub fn AcclaimedPage() -> impl IntoView {
     let nav_pg = navigate;
 
     view! {
+        <Title text="Acclaimed — Gem Finder" />
         <div class="max-w-7xl mx-auto px-4 py-8">
             <div class="mb-6">
                 <h1 class="text-4xl font-bold text-stone-100 mb-1">"Acclaimed"</h1>
@@ -1049,6 +1052,7 @@ pub fn WildcardsPage() -> impl IntoView {
     let nav_pg = navigate;
 
     view! {
+        <Title text="Wildcards — Gem Finder" />
         <div class="max-w-7xl mx-auto px-4 py-8">
             <div class="mb-6">
                 <h1 class="text-4xl font-bold text-stone-100 mb-1">"Wildcards"</h1>
@@ -1143,6 +1147,7 @@ pub fn SignInPage() -> impl IntoView {
     };
 
     view! {
+        <Title text="Sign in — Gem Finder" />
         <div class="min-h-96 flex items-start justify-center pt-16 px-4">
             <div class="w-full max-w-md">
                 {move || if sent.get() {
@@ -1283,6 +1288,16 @@ pub fn MovieDetail() -> impl IntoView {
     });
 
     view! {
+        <Title text=move || {
+            movie.get().map(|m| {
+                let year = m.year.map(|y| y.to_string()).unwrap_or_default();
+                if year.is_empty() {
+                    format!("{} — Gem Finder", m.title)
+                } else {
+                    format!("{} ({}) — Gem Finder", m.title, year)
+                }
+            }).unwrap_or_else(|| "Gem Finder".to_string())
+        } />
         <div class="max-w-4xl mx-auto px-4 py-8">
             <button
                 class="text-sc-accent hover:text-sc-accent-hover text-sm mb-6 inline-block bg-transparent border-none cursor-pointer p-0"
@@ -1637,6 +1652,7 @@ pub fn VerifyPage() -> impl IntoView {
     }
 
     view! {
+        <Title text="Signing in — Gem Finder" />
         <div class="max-w-md mx-auto px-4 py-16 text-center">
             <p class="text-2xl mb-4">"🔑"</p>
             <p class="text-stone-300">{move || status.get()}</p>
@@ -1761,6 +1777,7 @@ pub fn AdminPage() -> impl IntoView {
     };
 
     view! {
+        <Title text="Admin — Gem Finder" />
         <div class="max-w-3xl mx-auto px-4 py-8">
             <h1 class="text-3xl font-bold text-stone-100 mb-2">"Admin"</h1>
             <p class="text-stone-400 mb-3">"Operations run on the server — you can close this page. Check logs below for progress."</p>
@@ -1986,6 +2003,7 @@ pub fn WatchlistPage() -> impl IntoView {
     });
 
     view! {
+        <Title text="Watchlist — Gem Finder" />
         <div class="max-w-7xl mx-auto px-4 py-8">
             <div class="mb-6">
                 <h1 class="text-4xl font-bold text-stone-100 mb-1">"Watchlist"</h1>
@@ -2135,6 +2153,7 @@ fn WatchlistCard(item: WatchlistItem) -> impl IntoView {
 #[component]
 pub fn PrivacyPage() -> impl IntoView {
     view! {
+        <Title text="Privacy Policy — Gem Finder" />
         <div class="max-w-3xl mx-auto px-4 py-12 text-stone-300">
             <h1 class="font-display text-4xl tracking-widest text-stone-100 mb-2">"PRIVACY POLICY"</h1>
             <p class="text-stone-500 text-sm mb-10">"Effective date: 2025-01-01 · Last updated: 2026-06-28"</p>
@@ -2321,6 +2340,7 @@ pub fn ChangelogPage() -> impl IntoView {
         .collect();
 
     view! {
+        <Title text="Changelog — Gem Finder" />
         <div class="max-w-2xl mx-auto px-4 py-12">
             <h1 class="text-3xl font-bold text-stone-100 mb-1">"Changelog"</h1>
             <p class="text-stone-500 text-sm mb-8">"Notable changes to Gem Finder."</p>
