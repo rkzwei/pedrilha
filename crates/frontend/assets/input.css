@@ -66,3 +66,13 @@ input[type="number"] {
 }
 
 * { scrollbar-width: thin; scrollbar-color: var(--sc-border) var(--sc-panel); }
+
+/* ── Keyboard focus visibility ────────────────────────────────────────────────
+   Default outlines vanish against the dark palette. :focus-visible applies to
+   keyboard focus only; text inputs keep their border-color affordance (their
+   focus:outline-none utility outranks this rule by specificity).
+   ─────────────────────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--sc-accent-border);
+  outline-offset: 2px;
+}
