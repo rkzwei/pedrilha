@@ -1056,8 +1056,8 @@ pub fn WildcardsPage() -> impl IntoView {
         <div class="max-w-7xl mx-auto px-4 py-8">
             <div class="mb-6">
                 <h1 class="text-4xl font-bold text-stone-100 mb-1">"Wildcards"</h1>
-                <p class="text-stone-400">"Films critics disagreed on — they score well algorithmically but have RT below 50%."</p>
-                <p class="text-stone-600 text-sm mt-1">"Low votes may reflect critical rejection rather than genuine undiscovery."</p>
+                <p class="text-stone-400">"Loved by the algorithm, panned by critics — cult classics and guilty pleasures live here."</p>
+                <p class="text-stone-600 text-sm mt-1">"A low critic score isn't always wrong — but sometimes it is."</p>
             </div>
             <FilterBar
                 genres=Signal::derive(genres) year=Signal::derive(year)
