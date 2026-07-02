@@ -13,21 +13,18 @@
     <link data-trunk rel="css" href="assets/tailwind.css" />
     <!-- Umami analytics — deferred, non-blocking -->
     <script defer src="https://stats.rkzwei.dev/script.js" data-website-id="187f4aa5-e419-40f5-80c8-688a7aaa3c62"></script>
-    <!-- Ko-fi tip button — lazy-loaded after app starts to avoid blocking first paint -->
-    <script>
-        addEventListener("TrunkApplicationStarted", function() {
-            var s = document.createElement("script");
-            s.src = "https://storage.ko-fi.com/cdn/widget/Widget_2.js";
-            s.onload = function() { kofiwidget2.init('spare some change?', '#452512', 'A8F6229LBN'); kofiwidget2.draw(); };
-            document.body.appendChild(s);
-        }, { once: true });
-    </script>
+    <!-- Ko-fi tip button — static HTML (the official Widget_2.js uses document.write,
+         which wipes the whole DOM when run after page load; never load that script async) -->
     <style>
-        .btn-container { position: fixed !important; top: auto !important; bottom: 16px !important; left: auto !important; right: 16px !important; }
+        .btn-container { position: fixed; bottom: 16px; right: 16px; z-index: 100; white-space: nowrap; }
+        a.kofi-button { box-shadow: 1px 1px 0 rgba(0,0,0,0.2); line-height: 36px; display: inline-block; background-color: #452512; padding: 2px 12px; text-align: center; border-radius: 7px; color: #fff; cursor: pointer; font-size: 14px; font-family: Barlow, sans-serif; text-decoration: none; }
+        a.kofi-button:hover { opacity: .85; color: #f5f5f5; }
+        img.kofiimg { display: inline; vertical-align: middle; height: 15px; width: 22px; border: none; margin: 0 6px 3px 0; }
         @keyframes gf-pulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
     </style>
 </head>
 <body style="background-color:#0d0906;color:#e7e5e4;margin:0">
+    <div class="btn-container"><a title="Support me on ko-fi.com" class="kofi-button" href="https://ko-fi.com/A8F6229LBN" target="_blank" rel="noopener noreferrer"><img src="https://storage.ko-fi.com/cdn/cup-border.png" alt="" class="kofiimg" loading="lazy">spare some change?</a></div>
     <div id="app-loading" style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0d0906;z-index:9999">
         <div style="font-family:'Bebas Neue',sans-serif;letter-spacing:0.15em;font-size:3rem;color:#e7e5e4;animation:gf-pulse 2s ease-in-out infinite">GEM FINDER</div>
         <div style="color:#78716c;font-size:0.875rem;margin-top:1rem;font-family:Barlow,sans-serif">Digging for gems…</div>
