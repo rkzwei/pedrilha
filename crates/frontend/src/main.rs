@@ -7,6 +7,7 @@ use leptos_router::{
 };
 
 mod api;
+mod components;
 mod pages;
 
 #[derive(Clone, Debug)]
@@ -94,6 +95,7 @@ pub fn logout(auth: RwSignal<Option<AuthState>>) {
 }
 
 fn main() {
+    console_error_panic_hook::set_once();
     if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
         if let Some(el) = doc.get_element_by_id("app-loading") {
             el.remove();

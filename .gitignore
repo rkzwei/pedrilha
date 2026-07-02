@@ -41,6 +41,7 @@ dist/
 
 # Generated CSS (built by CI / npm run build:css)
 crates/frontend/assets/tailwind.css
+assets/tailwind.css
 
 # Temporary files
 *.tmp
