@@ -185,10 +185,11 @@ fn App() -> impl IntoView {
 
                 <main>
                     <Routes fallback=|| view! {
-                        <div class="max-w-7xl mx-auto px-4 py-16 text-center">
-                            <p class="text-4xl mb-4">"404"</p>
-                            <p class="text-stone-400 mb-8">"Page not found"</p>
-                            <A href="/" attr:class="text-sc-accent hover:text-sc-accent-hover">"Back to Gems"</A>
+                        <div class="max-w-7xl mx-auto px-4 py-24 text-center">
+                            <Title text="Not found — Gem Finder" />
+                            <h1 class="font-display text-4xl sm:text-6xl tracking-wide text-stone-100 mb-4">"404 — NOT IN THE VAULT"</h1>
+                            <p class="text-stone-400 mb-8">"This reel doesn't exist."</p>
+                            <A href="/" attr:class="text-sc-accent hover:text-sc-accent-hover">"← Back to the gems"</A>
                         </div>
                     }>
                         <Route path=path!("/") view=pages::HomePage />
