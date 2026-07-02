@@ -449,14 +449,16 @@ pub fn HomePage() -> impl IntoView {
         }
     });
 
-    // Fetch data on mount — use spawn_local directly to avoid reactive loop
-    {
+    // Refetch whenever the URL query (page/filters/search/sort) changes.
+    Effect::new(move |_| {
         let p = page();
         let y = year();
         let g = gstr();
         let s = search();
         let sf = sort();
         let sd = sort_dir();
+        set_loading.set(true);
+        set_error.set(None);
         spawn_local(async move {
             match api::fetch_gems(p, PER_PAGE, y, g, s, Some(sf), Some(sd)).await {
                 Ok(r) => {
@@ -470,7 +472,7 @@ pub fn HomePage() -> impl IntoView {
                 }
             }
         });
-    }
+    });
 
     let total_pages = move || ((total.get() as f64) / (PER_PAGE as f64)).ceil() as i32;
 
@@ -672,14 +674,16 @@ pub fn AcclaimedPage() -> impl IntoView {
         }
     });
 
-    // Fetch data on mount — avoid reactive loop via effect tracking query reads
-    {
+    // Refetch whenever the URL query (page/filters/search/sort) changes.
+    Effect::new(move |_| {
         let p = page();
         let y = year();
         let g = gstr();
         let s = search();
         let sf = sort();
         let sd = sort_dir();
+        set_loading.set(true);
+        set_error.set(None);
         spawn_local(async move {
             match api::fetch_acclaimed(p, PER_PAGE, y, g, s, Some(sf), Some(sd)).await {
                 Ok(r) => {
@@ -693,7 +697,7 @@ pub fn AcclaimedPage() -> impl IntoView {
                 }
             }
         });
-    }
+    });
 
     let total_pages = move || ((total.get() as f64) / (PER_PAGE as f64)).ceil() as i32;
 
@@ -911,14 +915,16 @@ pub fn WildcardsPage() -> impl IntoView {
         }
     });
 
-    // Fetch data on mount — avoid reactive loop via effect tracking query reads
-    {
+    // Refetch whenever the URL query (page/filters/search/sort) changes.
+    Effect::new(move |_| {
         let p = page();
         let y = year();
         let g = gstr();
         let s = search();
         let sf = sort();
         let sd = sort_dir();
+        set_loading.set(true);
+        set_error.set(None);
         spawn_local(async move {
             match api::fetch_wildcards(p, PER_PAGE, y, g, s, Some(sf), Some(sd)).await {
                 Ok(r) => {
@@ -932,7 +938,7 @@ pub fn WildcardsPage() -> impl IntoView {
                 }
             }
         });
-    }
+    });
 
     let total_pages = move || ((total.get() as f64) / (PER_PAGE as f64)).ceil() as i32;
 
