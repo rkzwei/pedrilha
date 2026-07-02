@@ -702,7 +702,7 @@ pub fn HomePage() -> impl IntoView {
     let nav_pg = navigate;
 
     view! {
-        <Title text="Hidden Gems — Gem Finder" />
+        <Title text="Hidden Gems — Pedrilha" />
         <div class="max-w-7xl mx-auto px-4 py-8">
             <div class="mb-6">
                 <h1 class="text-4xl font-bold text-stone-100 mb-1">"Hidden Gems"</h1>
@@ -956,7 +956,7 @@ pub fn AcclaimedPage() -> impl IntoView {
     let nav_pg = navigate;
 
     view! {
-        <Title text="Acclaimed — Gem Finder" />
+        <Title text="Acclaimed — Pedrilha" />
         <div class="max-w-7xl mx-auto px-4 py-8">
             <div class="mb-6">
                 <h1 class="text-4xl font-bold text-stone-100 mb-1">"Acclaimed"</h1>
@@ -1210,7 +1210,7 @@ pub fn WildcardsPage() -> impl IntoView {
     let nav_pg = navigate;
 
     view! {
-        <Title text="Wildcards — Gem Finder" />
+        <Title text="Wildcards — Pedrilha" />
         <div class="max-w-7xl mx-auto px-4 py-8">
             <div class="mb-6">
                 <h1 class="text-4xl font-bold text-stone-100 mb-1">"Wildcards"</h1>
@@ -1305,7 +1305,7 @@ pub fn SignInPage() -> impl IntoView {
     };
 
     view! {
-        <Title text="Sign in — Gem Finder" />
+        <Title text="Sign in — Pedrilha" />
         <div class="min-h-96 flex items-start justify-center pt-16 px-4">
             <div class="w-full max-w-md">
                 {move || if sent.get() {
@@ -1332,7 +1332,7 @@ pub fn SignInPage() -> impl IntoView {
                         <div>
                             <div class="text-center mb-8">
                                 <A href="/" attr:class="font-display text-4xl tracking-widest text-stone-100 hover:text-sc-accent transition-colors">
-                                    "GEM FINDER"
+                                    "PEDRILHA"
                                 </A>
                                 <p class="text-stone-500 mt-2 text-sm">"Track films you want to see or have seen."</p>
                             </div>
@@ -1374,7 +1374,7 @@ pub fn SignInPage() -> impl IntoView {
                             </div>
 
                             <p class="text-center text-stone-600 text-xs mt-6">
-                                <A href="/" attr:class="hover:text-stone-400 transition-colors">"← Back to Gem Finder"</A>
+                                <A href="/" attr:class="hover:text-stone-400 transition-colors">"← Back to Pedrilha"</A>
                             </p>
                         </div>
                     }.into_any()
@@ -1458,11 +1458,11 @@ pub fn MovieDetail() -> impl IntoView {
             movie.get().map(|m| {
                 let year = m.year.map(|y| y.to_string()).unwrap_or_default();
                 if year.is_empty() {
-                    format!("{} — Gem Finder", m.title)
+                    format!("{} — Pedrilha", m.title)
                 } else {
-                    format!("{} ({}) — Gem Finder", m.title, year)
+                    format!("{} ({}) — Pedrilha", m.title, year)
                 }
-            }).unwrap_or_else(|| "Gem Finder".to_string())
+            }).unwrap_or_else(|| "Pedrilha".to_string())
         } />
         <div class="max-w-4xl mx-auto px-4 py-8">
             <button
@@ -1933,7 +1933,7 @@ pub fn VerifyPage() -> impl IntoView {
     }
 
     view! {
-        <Title text="Signing in — Gem Finder" />
+        <Title text="Signing in — Pedrilha" />
         <div class="max-w-md mx-auto px-4 py-16 text-center">
             <p class="text-2xl mb-4" aria-hidden="true">"🔑"</p>
             <p class="text-stone-300">{move || status.get()}</p>
@@ -2064,7 +2064,7 @@ pub fn AdminPage() -> impl IntoView {
     };
 
     view! {
-        <Title text="Admin — Gem Finder" />
+        <Title text="Admin — Pedrilha" />
         <div class="max-w-3xl mx-auto px-4 py-8">
             <h1 class="text-3xl font-bold text-stone-100 mb-2">"Admin"</h1>
             <p class="text-stone-400 mb-3">"Operations run on the server — you can close this page. Check logs below for progress."</p>
@@ -2298,7 +2298,7 @@ pub fn WatchlistPage() -> impl IntoView {
     });
 
     view! {
-        <Title text="Watchlist — Gem Finder" />
+        <Title text="Watchlist — Pedrilha" />
         <div class="max-w-7xl mx-auto px-4 py-8">
             <div class="mb-6">
                 <h1 class="text-4xl font-bold text-stone-100 mb-1">"Watchlist"</h1>
@@ -2448,7 +2448,7 @@ fn WatchlistCard(item: WatchlistItem) -> impl IntoView {
 #[component]
 pub fn PrivacyPage() -> impl IntoView {
     view! {
-        <Title text="Privacy Policy — Gem Finder" />
+        <Title text="Privacy Policy — Pedrilha" />
         <div class="max-w-3xl mx-auto px-4 py-12 text-stone-300">
             <h1 class="font-display text-4xl tracking-widest text-stone-100 mb-2">"PRIVACY POLICY"</h1>
             <p class="text-stone-500 text-sm mb-10">"Effective date: 2025-01-01 · Last updated: 2026-06-28"</p>
@@ -2456,7 +2456,7 @@ pub fn PrivacyPage() -> impl IntoView {
             <section class="mb-8">
                 <h2 class="text-stone-100 font-semibold text-lg mb-3">"Who we are"</h2>
                 <p class="text-stone-400 leading-relaxed">
-                    "Gem Finder is operated by RK. Questions: "
+                    "Pedrilha is operated by RK. Questions: "
                     <a href="mailto:rk@rkzwei.dev" class="text-sc-accent hover:text-sc-accent-hover transition-colors">
                         "rk@rkzwei.dev"
                     </a>
@@ -2566,7 +2566,7 @@ pub fn PrivacyPage() -> impl IntoView {
 #[component]
 pub fn AboutPage() -> impl IntoView {
     view! {
-        <Title text="How it works — Gem Finder" />
+        <Title text="How it works — Pedrilha" />
         <div class="max-w-3xl mx-auto px-4 py-12 text-stone-300">
             <h1 class="font-display text-4xl tracking-widest text-stone-100 mb-2">"HOW IT WORKS"</h1>
             <p class="text-stone-500 text-sm mb-10">"Understanding the Gem Score"</p>
@@ -2604,6 +2604,20 @@ pub fn AboutPage() -> impl IntoView {
                     "Scores well by the numbers, but critics hated it. "
                     "Cult classics, midnight movies, guilty pleasures. "
                     "The kind of films that find their audience years later."
+                </p>
+            </section>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">"The Name"</h2>
+                <p class="text-stone-400 leading-relaxed">
+                    <em>"Pedrilha"</em>
+                    " is an affectionate diminutive of "
+                    <em>"pedra"</em>
+                    " — stone, in Portuguese. There is an old Brazilian folk song, "
+                    <em>"Se Essa Rua Se Essa Rua"</em>
+                    ", that ends with a quiet wish: "
+                    <em>"eu mandava jogar fora toda pedra que havia"</em>
+                    " — I would throw away every stone in the road. This app picks them back up."
                 </p>
             </section>
         </div>
@@ -2683,10 +2697,10 @@ pub fn ChangelogPage() -> impl IntoView {
         .collect();
 
     view! {
-        <Title text="Changelog — Gem Finder" />
+        <Title text="Changelog — Pedrilha" />
         <div class="max-w-2xl mx-auto px-4 py-12">
             <h1 class="text-3xl font-bold text-stone-100 mb-1">"Changelog"</h1>
-            <p class="text-stone-500 text-sm mb-8">"Notable changes to Gem Finder."</p>
+            <p class="text-stone-500 text-sm mb-8">"Notable changes to Pedrilha."</p>
             <ul>{nodes}</ul>
         </div>
     }

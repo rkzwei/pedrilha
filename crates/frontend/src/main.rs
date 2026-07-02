@@ -125,14 +125,14 @@ fn App() -> impl IntoView {
 
     view! {
         <Router>
-            <Title text="Gem Finder" />
+            <Title text="Pedrilha" />
             <Meta name="description" content="Discover hidden gem movies" />
 
             <div class="min-h-screen bg-sc-base text-stone-200">
                 <header class="border-b border-sc-border sticky top-0 z-[60]" style="background-color: rgba(23,16,10,0.88); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
                     <nav class="max-w-7xl mx-auto px-4 py-4 flex flex-col sm:flex-row sm:justify-between items-center gap-3 sm:gap-0">
                         <A href="/" attr:class="font-display text-2xl sm:text-3xl tracking-widest text-stone-100 hover:text-sc-accent transition-colors">
-                            "GEM FINDER"
+                            "PEDRILHA"
                         </A>
                         <div class="flex flex-wrap justify-center gap-x-4 gap-y-1 sm:gap-6 items-center">
                             <A href="/" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide aria-[current=page]:text-sc-accent aria-[current=page]:border-b-2 aria-[current=page]:border-sc-accent">
@@ -187,7 +187,7 @@ fn App() -> impl IntoView {
                 <main>
                     <Routes fallback=|| view! {
                         <div class="max-w-7xl mx-auto px-4 py-24 text-center">
-                            <Title text="Not found — Gem Finder" />
+                            <Title text="Not found — Pedrilha" />
                             <h1 class="font-display text-4xl sm:text-6xl tracking-wide text-stone-100 mb-4">"404 — NOT IN THE VAULT"</h1>
                             <p class="text-stone-400 mb-8">"This reel doesn't exist."</p>
                             <A href="/" attr:class="text-sc-accent hover:text-sc-accent-hover">"← Back to the gems"</A>
@@ -208,7 +208,7 @@ fn App() -> impl IntoView {
                 </main>
 
                 <footer class="bg-sc-panel border-t border-sc-border py-8 text-center text-stone-600 text-sm">
-                    <p>"Gem Finder — Unearthing what the blockbusters buried."</p>
+                    <p>"Pedrilha — Unearthing what the blockbusters buried."</p>
                     <p class="text-xs text-stone-700 mt-2 tracking-widest">
                         "// "
                         <a href="https://www.imdb.com/title/tt0076740/"
