@@ -64,6 +64,27 @@ fn fmt_thousands(n: i64) -> String {
     }
 }
 
+/// "1994-03-10" → "10 Mar" (year is shown separately).
+fn fmt_release_day(d: &str) -> Option<String> {
+    let mut it = d.split('-');
+    let _year = it.next()?;
+    let month: usize = it.next()?.parse().ok()?;
+    let day: u32 = it.next()?.parse().ok()?;
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    if !(1..=12).contains(&month) {
+        return None;
+    }
+    Some(format!("{} {}", day, MONTHS[month - 1]))
+}
+
+/// Percent-encode a URL query component.
+fn urlenc(s: &str) -> String {
+    String::from(js_sys::encode_uri_component(s))
+}
+
 // ── URL builder ───────────────────────────────────────────────────────────────
 fn build_url(
     path: &str,
@@ -1377,6 +1398,7 @@ pub fn MovieDetail() -> impl IntoView {
     let (wl_state, set_wl_state) = signal(Option::<WatchState>::None);
     let (wl_loading, set_wl_loading) = signal(false);
     let (wl_error, set_wl_error) = signal(Option::<String>::None);
+    let (wl_saved, set_wl_saved) = signal(false);
 
     let auth = use_context::<RwSignal<Option<AuthState>>>().unwrap_or_else(|| RwSignal::new(None));
 
@@ -1489,17 +1511,41 @@ pub fn MovieDetail() -> impl IntoView {
                 let rt_str   = m.rt_critic_score.map(|r| format!("{}%", r));
                 let gem_str  = m.gem_score.map(|s| format!("{:.0}%", s * 100.0));
                 let gem_rank = m.gem_rank.filter(|r| *r >= 1);
+                let audience_str = m.rt_audience_score.map(|r| format!("{}%", r));
+                let release_day = m.release_date.as_deref().and_then(fmt_release_day);
+                let keywords: Vec<String> = m.keywords.clone().unwrap_or_default()
+                    .split(',')
+                    .map(|k| k.trim().to_string())
+                    .filter(|k| !k.is_empty())
+                    .collect();
+                let first_genre = genre.split(", ").next().unwrap_or("").to_string();
+                let decade = m.year.map(|y| (y / 10) * 10).filter(|d| *d >= 1900);
+                let poster_bg = poster.clone();
+                let yt_url = format!(
+                    "https://www.youtube.com/results?search_query={}+{}+trailer",
+                    urlenc(&title), year
+                );
+                let jw_url = format!("https://www.justwatch.com/us/search?q={}", urlenc(&title));
                 let imdb_id  = m.imdb_id.clone();
                 let movie_db_id = m.id.unwrap_or(0);
 
                 view!{
-                    <div class="mt-6">
+                    <div class="mt-6 relative isolate">
+                        // De-focused poster as an ambient backdrop behind the header.
+                        {(!poster_bg.is_empty()).then(|| view!{
+                            <div class="absolute -inset-x-4 -top-8 h-64 overflow-hidden pointer-events-none -z-10" aria-hidden="true">
+                                <img src=poster_bg.clone() alt="" class="w-full h-full object-cover blur-2xl opacity-20 saturate-50" />
+                            </div>
+                        })}
                         <h1 class="text-3xl font-bold text-stone-100 mb-1">{title.clone()}</h1>
-                        <p class="text-stone-400 mb-6">{year} " · " {director}</p>
+                        <p class="text-stone-400 mb-6">
+                            {year.clone()} " · " {director}
+                            {release_day.map(|d| view!{ <span>" · " {d}</span> })}
+                        </p>
                         <div class="flex gap-8 flex-wrap">
-                            <div class="flex-shrink-0 w-32 sm:w-48">
+                            <div class="flex-shrink-0 w-48 sm:w-64">
                                 {if poster.is_empty() {
-                                    view!{ <div class="w-full h-48 sm:h-72 bg-sc-card rounded flex items-center justify-center">
+                                    view!{ <div class="w-full h-72 sm:h-96 bg-sc-card rounded flex items-center justify-center">
                                         <span class="text-5xl">"🎬"</span></div> }.into_any()
                                 } else {
                                     view!{ <img src=poster alt=format!("{} poster", title) class="w-full rounded shadow-xl" /> }.into_any()
@@ -1532,24 +1578,50 @@ pub fn MovieDetail() -> impl IntoView {
                                             <span class="text-2xl font-bold text-red-300">{r}</span>
                                         </div>
                                     })}
+                                    {audience_str.map(|r| view!{
+                                        <div class="flex flex-col items-center bg-red-900 border border-red-700 rounded px-4 py-2">
+                                            <span class="text-xs text-red-400 uppercase tracking-wide">"Audience"</span>
+                                            <span class="text-2xl font-bold text-red-300">{r}</span>
+                                        </div>
+                                    })}
                                 </div>
-                                {if !genre.is_empty() {
-                                    let tags: Vec<_> = genre.split(", ").map(|g| {
+                                {{
+                                    let gtags: Vec<_> = genre.split(", ").filter(|g| !g.is_empty()).map(|g| {
                                         let g = g.to_string();
-                                        view!{ <span class="px-2 py-1 bg-sc-card border border-sc-border rounded text-xs text-stone-300">{g}</span> }
+                                        view!{ <span class="px-2 py-1 bg-sc-card border border-sc-border rounded text-xs text-stone-300">{g}</span> }.into_any()
                                     }).collect();
-                                    view!{ <div class="flex flex-wrap gap-2 mb-4">{tags}</div> }.into_any()
-                                } else { view!{ <div /> }.into_any() }}
+                                    let ktags: Vec<_> = keywords.iter().map(|k| {
+                                        view!{ <span class="px-2 py-1 border border-sc-border rounded text-xs text-stone-500">{k.clone()}</span> }.into_any()
+                                    }).collect();
+                                    let all: Vec<_> = gtags.into_iter().chain(ktags).collect();
+                                    if all.is_empty() {
+                                        view!{ <div /> }.into_any()
+                                    } else {
+                                        view!{ <div class="flex flex-wrap gap-2 mb-4">{all}</div> }.into_any()
+                                    }
+                                }}
                                 {if !overview.is_empty() {
                                     view!{ <p class="text-stone-300 leading-relaxed mb-6">{overview}</p> }.into_any()
                                 } else { view!{ <div /> }.into_any() }}
-                                {imdb_id.map(|id| view!{
-                                    <a href={format!("https://www.imdb.com/title/{}", id)}
+                                <div class="flex flex-wrap gap-2">
+                                    {imdb_id.map(|id| view!{
+                                        <a href={format!("https://www.imdb.com/title/{}", id)}
+                                            target="_blank" rel="noopener noreferrer"
+                                            class="text-sm text-yellow-400 hover:text-yellow-300 border border-yellow-700 rounded px-3 py-1.5">
+                                            "View on IMDb →"
+                                        </a>
+                                    })}
+                                    <a href=yt_url
                                         target="_blank" rel="noopener noreferrer"
-                                        class="text-sm text-yellow-400 hover:text-yellow-300 border border-yellow-700 rounded px-3 py-1">
-                                        "View on IMDb →"
+                                        class="text-sm text-stone-300 hover:text-stone-100 border border-sc-border hover:border-stone-600 rounded px-3 py-1.5">
+                                        "Trailer on YouTube →"
                                     </a>
-                                })}
+                                    <a href=jw_url
+                                        target="_blank" rel="noopener noreferrer"
+                                        class="text-sm text-stone-300 hover:text-stone-100 border border-sc-border hover:border-stone-600 rounded px-3 py-1.5">
+                                        "Where to watch →"
+                                    </a>
+                                </div>
 
                                 // ── Watchlist ─────────────────────────────────────────────────────
                                 <div class="mt-6 pt-6 border-t border-sc-border">
@@ -1574,7 +1646,7 @@ pub fn MovieDetail() -> impl IntoView {
                                                 set_wl_loading.set(true); set_wl_error.set(None);
                                                 spawn_local(async move {
                                                     match api::upsert_watchlist(movie_db_id, WatchState::WantToWatch, None, &t).await {
-                                                        Ok(_)  => set_wl_state.set(Some(WatchState::WantToWatch)),
+                                                        Ok(_)  => { set_wl_state.set(Some(WatchState::WantToWatch)); set_wl_saved.set(true); },
                                                         Err(e) => set_wl_error.set(Some(e)),
                                                     }
                                                     set_wl_loading.set(false);
@@ -1585,7 +1657,7 @@ pub fn MovieDetail() -> impl IntoView {
                                                 set_wl_loading.set(true); set_wl_error.set(None);
                                                 spawn_local(async move {
                                                     match api::upsert_watchlist(movie_db_id, WatchState::Watched, None, &t).await {
-                                                        Ok(_)  => set_wl_state.set(Some(WatchState::Watched)),
+                                                        Ok(_)  => { set_wl_state.set(Some(WatchState::Watched)); set_wl_saved.set(true); },
                                                         Err(e) => set_wl_error.set(Some(e)),
                                                     }
                                                     set_wl_loading.set(false);
@@ -1596,7 +1668,7 @@ pub fn MovieDetail() -> impl IntoView {
                                                 set_wl_loading.set(true); set_wl_error.set(None);
                                                 spawn_local(async move {
                                                     match api::upsert_watchlist(movie_db_id, WatchState::NotInterested, None, &t).await {
-                                                        Ok(_)  => set_wl_state.set(Some(WatchState::NotInterested)),
+                                                        Ok(_)  => { set_wl_state.set(Some(WatchState::NotInterested)); set_wl_saved.set(true); },
                                                         Err(e) => set_wl_error.set(Some(e)),
                                                     }
                                                     set_wl_loading.set(false);
@@ -1607,7 +1679,7 @@ pub fn MovieDetail() -> impl IntoView {
                                                 set_wl_loading.set(true); set_wl_error.set(None);
                                                 spawn_local(async move {
                                                     match api::delete_watchlist(movie_db_id, &t).await {
-                                                        Ok(_)  => set_wl_state.set(None),
+                                                        Ok(_)  => { set_wl_state.set(None); set_wl_saved.set(false); },
                                                         Err(e) => set_wl_error.set(Some(e)),
                                                     }
                                                     set_wl_loading.set(false);
@@ -1620,27 +1692,27 @@ pub fn MovieDetail() -> impl IntoView {
                                                     <div class="flex flex-wrap gap-2">
                                                         <button
                                                             class=move || if wl_state.get() == Some(WatchState::WantToWatch) {
-                                                                "px-3 py-1.5 rounded text-sm bg-sc-accent-bg text-stone-100 border border-sc-accent-border"
+                                                                "px-3 py-1.5 rounded text-sm bg-sc-accent-bg text-stone-100 border border-sc-accent-border disabled:opacity-50"
                                                             } else {
-                                                                "px-3 py-1.5 rounded text-sm text-stone-400 border border-sc-border hover:border-sc-accent-border hover:text-stone-200"
+                                                                "px-3 py-1.5 rounded text-sm text-stone-400 border border-sc-border hover:border-sc-accent-border hover:text-stone-200 disabled:opacity-50"
                                                             }
                                                             on:click=on_want
                                                             prop:disabled=move || wl_loading.get()
                                                         >"🔖 Want to watch"</button>
                                                         <button
                                                             class=move || if wl_state.get() == Some(WatchState::Watched) {
-                                                                "px-3 py-1.5 rounded text-sm bg-sc-accent-bg text-stone-100 border border-sc-accent-border"
+                                                                "px-3 py-1.5 rounded text-sm bg-sc-accent-bg text-stone-100 border border-sc-accent-border disabled:opacity-50"
                                                             } else {
-                                                                "px-3 py-1.5 rounded text-sm text-stone-400 border border-sc-border hover:border-sc-accent-border hover:text-stone-200"
+                                                                "px-3 py-1.5 rounded text-sm text-stone-400 border border-sc-border hover:border-sc-accent-border hover:text-stone-200 disabled:opacity-50"
                                                             }
                                                             on:click=on_watched
                                                             prop:disabled=move || wl_loading.get()
                                                         >"✓ Watched"</button>
                                                         <button
                                                             class=move || if wl_state.get() == Some(WatchState::NotInterested) {
-                                                                "px-3 py-1.5 rounded text-sm bg-sc-accent-bg text-stone-100 border border-sc-accent-border"
+                                                                "px-3 py-1.5 rounded text-sm bg-sc-accent-bg text-stone-100 border border-sc-accent-border disabled:opacity-50"
                                                             } else {
-                                                                "px-3 py-1.5 rounded text-sm text-stone-400 border border-sc-border hover:border-sc-accent-border hover:text-stone-200"
+                                                                "px-3 py-1.5 rounded text-sm text-stone-400 border border-sc-border hover:border-sc-accent-border hover:text-stone-200 disabled:opacity-50"
                                                             }
                                                             on:click=on_nope
                                                             prop:disabled=move || wl_loading.get()
@@ -1653,6 +1725,12 @@ pub fn MovieDetail() -> impl IntoView {
                                                             prop:disabled=move || wl_loading.get()
                                                         >"Remove"</button>
                                                     </div>
+                                                    {move || wl_saved.get().then(|| view! {
+                                                        <p class="text-sc-accent text-xs mt-2">
+                                                            "Saved — "
+                                                            <A href="/watchlist" attr:class="underline hover:text-sc-accent-hover">"view your watchlist →"</A>
+                                                        </p>
+                                                    })}
                                                     {move || wl_error.get().map(|e| view! {
                                                         <p class="text-red-400 text-xs mt-2">{e}</p>
                                                     })}
@@ -1660,6 +1738,25 @@ pub fn MovieDetail() -> impl IntoView {
                                             }.into_any()
                                         }
                                     }}
+                                </div>
+
+                                // ── More like this — pure filter links ────────────────
+                                <div class="mt-6 flex flex-wrap gap-2">
+                                    {(!first_genre.is_empty()).then(|| {
+                                        let fg = first_genre.clone();
+                                        view!{
+                                            <A href=format!("/?genres={}", urlenc(&fg))
+                                                attr:class="text-xs text-stone-400 hover:text-stone-200 bg-sc-panel border border-sc-border hover:border-stone-600 rounded-full px-4 py-1.5">
+                                                {format!("More {} gems →", fg)}
+                                            </A>
+                                        }
+                                    })}
+                                    {decade.map(|d| view!{
+                                        <A href=format!("/?year={}", d)
+                                            attr:class="text-xs text-stone-400 hover:text-stone-200 bg-sc-panel border border-sc-border hover:border-stone-600 rounded-full px-4 py-1.5">
+                                            {format!("More from the {}s →", d)}
+                                        </A>
+                                    })}
                                 </div>
                             </div>
                         </div>
