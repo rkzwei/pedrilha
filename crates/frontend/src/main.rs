@@ -134,17 +134,17 @@ fn App() -> impl IntoView {
                             "GEM FINDER"
                         </A>
                         <div class="flex flex-wrap justify-center gap-x-4 gap-y-1 sm:gap-6 items-center">
-                            <A href="/" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide">
+                            <A href="/" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide aria-[current=page]:text-sc-accent aria-[current=page]:border-b-2 aria-[current=page]:border-sc-accent">
                                 "GEMS"
                             </A>
-                            <A href="/acclaimed" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide">
+                            <A href="/acclaimed" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide aria-[current=page]:text-sc-accent aria-[current=page]:border-b-2 aria-[current=page]:border-sc-accent">
                                 "ACCLAIMED"
                             </A>
-                            <A href="/wildcards" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide">
+                            <A href="/wildcards" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide aria-[current=page]:text-sc-accent aria-[current=page]:border-b-2 aria-[current=page]:border-sc-accent">
                                 "WILDCARDS"
                             </A>
                             {move || auth.get().filter(|a| a.is_admin).map(|_| view! {
-                                <A href="/admin" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide">
+                                <A href="/admin" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide aria-[current=page]:text-sc-accent aria-[current=page]:border-b-2 aria-[current=page]:border-sc-accent">
                                     "ADMIN"
                                 </A>
                             })}
@@ -155,7 +155,7 @@ fn App() -> impl IntoView {
                                             a.email.split('@').next().unwrap_or("user").to_string()
                                         });
                                     view! {
-                                        <A href="/watchlist" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide">
+                                        <A href="/watchlist" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide aria-[current=page]:text-sc-accent aria-[current=page]:border-b-2 aria-[current=page]:border-sc-accent">
                                             "WATCHLIST"
                                         </A>
                                         <span class="hidden md:inline text-stone-500 text-xs sm:text-sm">{display}</span>
