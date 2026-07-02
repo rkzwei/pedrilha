@@ -2613,11 +2613,12 @@ pub fn AboutPage() -> impl IntoView {
                     <em>"Pedrilha"</em>
                     " is an affectionate diminutive of "
                     <em>"pedra"</em>
-                    " — stone, in Portuguese. There is an old Brazilian folk song, "
-                    <em>"Se Essa Rua Se Essa Rua"</em>
-                    ", that ends with a quiet wish: "
-                    <em>"eu mandava jogar fora toda pedra que havia"</em>
-                    " — I would throw away every stone in the road. This app picks them back up."
+                    " — stone, in Portuguese. There's an old Brazilian folk song, "
+                    <em>"Se Essa Rua Fosse Minha"</em>
+                    ", that dreams of paving a street "
+                    <em>"com pedrinhas de brilhantes"</em>
+                    " — with little diamond stones — for someone you love to walk on. "
+                    "That's the idea here: a lot of small, overlooked stones, laid out for someone to find."
                 </p>
             </section>
         </div>
