@@ -7,7 +7,10 @@ use leptos_router::{
 };
 
 mod api;
+mod i18n;
 mod pages;
+
+use i18n::{dict, Lang};
 
 #[derive(Clone, Debug)]
 pub struct AuthState {
@@ -110,6 +113,21 @@ fn App() -> impl IntoView {
     let auth: RwSignal<Option<AuthState>> = RwSignal::new(load_auth_from_storage());
     provide_context(auth);
 
+    // Locale: default from browser/localStorage, persisted on change, and mirrored
+    // onto <html lang> for accessibility/SEO.
+    let lang: RwSignal<Lang> = RwSignal::new(i18n::detect_lang());
+    provide_context(lang);
+    Effect::new(move |_| {
+        let l = lang.get();
+        i18n::save_lang(l);
+        if let Some(el) = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.document_element())
+        {
+            let _ = el.set_attribute("lang", l.html_tag());
+        }
+    });
+
     let smtp_ok: RwSignal<bool> = RwSignal::new(true);
     provide_context(smtp_ok);
 
@@ -123,10 +141,13 @@ fn App() -> impl IntoView {
         }
     });
 
+    // Current dictionary; `d()` re-reads the locale signal so strings swap reactively.
+    let d = move || dict(lang.get());
+
     view! {
         <Router>
             <Title text="Pedrilha" />
-            <Meta name="description" content="Discover hidden gem movies" />
+            <Meta name="description" content=move || d().meta_description />
 
             <div class="min-h-screen bg-sc-base text-stone-200">
                 <header class="border-b border-sc-border sticky top-0 z-[60]" style="background-color: rgba(23,16,10,0.88); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
@@ -136,17 +157,17 @@ fn App() -> impl IntoView {
                         </A>
                         <div class="flex flex-wrap justify-center gap-x-4 gap-y-1 sm:gap-6 items-center">
                             <A href="/" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide aria-[current=page]:text-sc-accent aria-[current=page]:border-b-2 aria-[current=page]:border-sc-accent">
-                                "GEMS"
+                                {move || d().nav_gems}
                             </A>
                             <A href="/acclaimed" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide aria-[current=page]:text-sc-accent aria-[current=page]:border-b-2 aria-[current=page]:border-sc-accent">
-                                "ACCLAIMED"
+                                {move || d().nav_acclaimed}
                             </A>
                             <A href="/wildcards" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide aria-[current=page]:text-sc-accent aria-[current=page]:border-b-2 aria-[current=page]:border-sc-accent">
-                                "WILDCARDS"
+                                {move || d().nav_wildcards}
                             </A>
                             {move || auth.get().filter(|a| a.is_admin).map(|_| view! {
                                 <A href="/admin" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide aria-[current=page]:text-sc-accent aria-[current=page]:border-b-2 aria-[current=page]:border-sc-accent">
-                                    "ADMIN"
+                                    {move || d().nav_admin}
                                 </A>
                             })}
                             {move || match auth.get() {
@@ -157,14 +178,14 @@ fn App() -> impl IntoView {
                                         });
                                     view! {
                                         <A href="/watchlist" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide aria-[current=page]:text-sc-accent aria-[current=page]:border-b-2 aria-[current=page]:border-sc-accent">
-                                            "WATCHLIST"
+                                            {move || d().nav_watchlist}
                                         </A>
                                         <span class="hidden md:inline text-stone-500 text-xs sm:text-sm">{display}</span>
                                         <button
                                             class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide"
                                             on:click=move |_| logout(auth)
                                         >
-                                            "SIGN OUT"
+                                            {move || d().nav_signout}
                                         </button>
                                     }.into_any()
                                 }
@@ -172,7 +193,7 @@ fn App() -> impl IntoView {
                                     if smtp_ok.get() {
                                         view! {
                                             <A href="/signin" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide">
-                                                "SIGN IN"
+                                                {move || d().nav_signin}
                                             </A>
                                         }.into_any()
                                     } else {
@@ -180,17 +201,18 @@ fn App() -> impl IntoView {
                                     }
                                 }
                             }}
+                            <LocaleToggle />
                         </div>
                     </nav>
                 </header>
 
                 <main>
-                    <Routes fallback=|| view! {
+                    <Routes fallback=move || view! {
                         <div class="max-w-7xl mx-auto px-4 py-24 text-center">
-                            <Title text="Not found — Pedrilha" />
-                            <h1 class="font-display text-4xl sm:text-6xl tracking-wide text-stone-100 mb-4">"404 — NOT IN THE VAULT"</h1>
-                            <p class="text-stone-400 mb-8">"This reel doesn't exist."</p>
-                            <A href="/" attr:class="text-sc-accent hover:text-sc-accent-hover">"← Back to the gems"</A>
+                            <Title text=move || d().nf_meta_title />
+                            <h1 class="font-display text-4xl sm:text-6xl tracking-wide text-stone-100 mb-4">{move || d().nf_title}</h1>
+                            <p class="text-stone-400 mb-8">{move || d().nf_body}</p>
+                            <A href="/" attr:class="text-sc-accent hover:text-sc-accent-hover">{move || d().nf_back}</A>
                         </div>
                     }>
                         <Route path=path!("/") view=pages::HomePage />
@@ -208,7 +230,7 @@ fn App() -> impl IntoView {
                 </main>
 
                 <footer class="bg-sc-panel border-t border-sc-border py-8 text-center text-stone-600 text-sm">
-                    <p>"Pedrilha — Unearthing what the blockbusters buried."</p>
+                    <p>{move || d().footer_tagline}</p>
                     <p class="text-xs text-stone-700 mt-2 tracking-widest">
                         "// "
                         <a href="https://www.imdb.com/title/tt0076740/"
@@ -219,13 +241,13 @@ fn App() -> impl IntoView {
                     </p>
                     <p class="text-xs text-stone-700 mt-3">
                         <A href="/about" attr:class="hover:text-stone-500 transition-colors">
-                            "How it works"
+                            {move || d().footer_how_it_works}
                         </A>
                         " · "
                         <A href="/privacy" attr:class="hover:text-stone-500 transition-colors">
-                            "Privacy Policy"
+                            {move || d().footer_privacy}
                         </A>
-                        " · No cookies · No ads · "
+                        " · " {move || d().footer_no_cookies_ads} " · "
                         <a href="mailto:rk@rkzwei.dev" class="hover:text-stone-500 transition-colors">
                             "rk@rkzwei.dev"
                         </a>
@@ -237,5 +259,33 @@ fn App() -> impl IntoView {
                 </footer>
             </div>
         </Router>
+    }
+}
+
+/// `PT | EN` locale switch. Reads/writes the `Lang` context signal; the active
+/// language is highlighted with the accent color.
+#[component]
+fn LocaleToggle() -> impl IntoView {
+    let lang = i18n::use_lang();
+    let cls = |active: bool| -> String {
+        let base = "bg-transparent border-none p-0 cursor-pointer transition-colors text-xs sm:text-sm tracking-wide";
+        if active {
+            format!("{} text-sc-accent", base)
+        } else {
+            format!("{} text-stone-500 hover:text-stone-200", base)
+        }
+    };
+    view! {
+        <div class="flex items-center gap-1.5" aria-label="Language">
+            <button
+                class=move || cls(lang.get() == Lang::Pt)
+                on:click=move |_| lang.set(Lang::Pt)
+            >"PT"</button>
+            <span class="text-stone-700 text-xs">"|"</span>
+            <button
+                class=move || cls(lang.get() == Lang::En)
+                on:click=move |_| lang.set(Lang::En)
+            >"EN"</button>
+        </div>
     }
 }

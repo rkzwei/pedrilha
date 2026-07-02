@@ -15,5 +15,5 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 reqwest = { version = "0.12", features = ["json"] }
-web-sys = { version = "0.3", features = ["Window", "History", "Storage", "Location", "Document", "Element", "MouseEvent", "KeyboardEvent", "HtmlInputElement", "HtmlElement", "Node", "EventTarget", "FocusEvent"] }
+web-sys = { version = "0.3", features = ["Window", "Navigator", "History", "Storage", "Location", "Document", "Element", "MouseEvent", "KeyboardEvent", "HtmlInputElement", "HtmlElement", "Node", "EventTarget", "FocusEvent"] }
 console_error_panic_hook = "0.1"

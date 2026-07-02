@@ -1,4 +1,5 @@
 use crate::api;
+use crate::i18n::{dict, genre_label, sort_label, use_lang};
 use crate::{jwt_is_admin, save_auth_to_storage, AuthState};
 use gem_finder_shared::id_encode::encode_movie_id;
 use gem_finder_shared::types::{Movie, MovieSummary, WatchState};
@@ -138,6 +139,8 @@ fn FilterBar(
     sort_dir: Signal<String>,
     on_sort: Callback<(String, String)>,
 ) -> impl IntoView {
+    let lang = use_lang();
+    let d = move || dict(lang.get());
     let (open_dd, set_open_dd) = signal(0u8);
     let active_count = move || genres.get().len() + year.get().map(|_| 1).unwrap_or(0);
 
@@ -219,7 +222,7 @@ fn FilterBar(
             <div class="relative">
                 <input
                     type="text"
-                    placeholder="Search titles…  ( / )"
+                    placeholder=move || d().filter_search_placeholder
                     node_ref=search_ref
                     class="w-full bg-sc-card text-stone-200 border border-sc-border-input rounded-md px-4 py-2.5 text-sm placeholder-stone-600 focus:outline-none focus:border-sc-accent-border"
                     prop:value=move || local_search.get()
@@ -250,7 +253,7 @@ fn FilterBar(
                 {move || (!local_search.get().is_empty()).then(|| view! {
                     <button
                         class="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-200 text-sm leading-none px-1"
-                        aria-label="Clear search"
+                        aria-label=move || d().filter_clear_search
                         on:click=move |_| {
                             // Cancel pending debounce, clear instantly.
                             if let Some(h) = debounce_handle.get_value() {
@@ -280,10 +283,14 @@ fn FilterBar(
                         <span class="truncate max-w-[200px]">
                             {move || {
                                 let g = genres.get();
+                                let l = lang.get();
                                 match g.len() {
-                                    0 => "Genre".to_string(),
-                                    1..=3 => g.join(", "),
-                                    n => format!("Genre ({})", n),
+                                    0 => d().filter_genre.to_string(),
+                                    1..=3 => g.iter()
+                                        .map(|x| genre_label(l, x))
+                                        .collect::<Vec<_>>()
+                                        .join(", "),
+                                    n => d().filter_genre_count.replace("{}", &n.to_string()),
                                 }
                             }}
                         </span>
@@ -292,11 +299,12 @@ fn FilterBar(
 
                     {move || (open_dd.get() == 1).then(|| view! {
                         <div style="position:absolute;top:calc(100% + 6px);left:0;min-width:260px;background-color:var(--sc-panel,#17100a);border:1px solid var(--sc-border);border-radius:10px;box-shadow:0 24px 48px rgba(0,0,0,0.7);padding:12px;z-index:200">
-                            <p style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--sc-accent-border);margin-bottom:8px;font-weight:600">"Genre"</p>
+                            <p style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--sc-accent-border);margin-bottom:8px;font-weight:600">{move || d().filter_genre}</p>
                             <div class="grid grid-cols-2 gap-1">
                                 {GENRES.iter().map(|g| {
                                     let gs = g.to_string();
                                     let gs2 = gs.clone();
+                                    let gv = *g;
                                     view! {
                                         <button
                                             class=move || opt_btn(genres.get().contains(&gs))
@@ -309,7 +317,7 @@ fn FilterBar(
                                                 }
                                                 on_genres.run(cur);
                                             }
-                                        >{*g}</button>
+                                        >{move || genre_label(lang.get(), gv)}</button>
                                     }
                                 }).collect::<Vec<_>>()}
                             </div>
@@ -327,13 +335,13 @@ fn FilterBar(
                     >
                         {move || year.get()
                             .and_then(|y| DECADE_OPTIONS.iter().find(|(v,_)| *v == y).map(|(_,l)| *l))
-                            .unwrap_or("Era")}
+                            .unwrap_or(d().filter_era)}
                         <span class="text-stone-600 text-xs">"▾"</span>
                     </button>
 
                     {move || (open_dd.get() == 2).then(|| view! {
                         <div style="position:absolute;top:calc(100% + 6px);left:0;min-width:160px;background-color:var(--sc-panel,#17100a);border:1px solid var(--sc-border);border-radius:10px;box-shadow:0 24px 48px rgba(0,0,0,0.7);padding:12px;z-index:200">
-                            <p style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--sc-accent-border);margin-bottom:8px;font-weight:600">"From era"</p>
+                            <p style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--sc-accent-border);margin-bottom:8px;font-weight:600">{move || d().filter_from_era}</p>
                             <div class="flex flex-col gap-1">
                                 {DECADE_OPTIONS.iter().map(|(y, l)| {
                                     let yv = *y;
@@ -365,10 +373,7 @@ fn FilterBar(
                         on:click=move |_| set_open_dd.update(|v| *v = if *v == 3 { 0 } else { 3 })
                     >
                         {move || {
-                            let label = SORT_OPTIONS.iter()
-                                .find(|(v, _)| *v == sort.get().as_str())
-                                .map(|(_, l)| *l)
-                                .unwrap_or("Score");
+                            let label = sort_label(lang.get(), &sort.get());
                             let dir = if sort_dir.get() == "asc" { "↑" } else { "↓" };
                             format!("{} {}", label, dir)
                         }}
@@ -380,11 +385,12 @@ fn FilterBar(
                         let cur_dir = sort_dir.get();
                         view! {
                             <div style="position:absolute;top:calc(100% + 6px);left:0;min-width:150px;background-color:var(--sc-panel,#17100a);border:1px solid var(--sc-border);border-radius:10px;box-shadow:0 24px 48px rgba(0,0,0,0.7);padding:12px;z-index:200">
-                                <p style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--sc-accent-border);margin-bottom:8px;font-weight:600">"Sort by"</p>
+                                <p style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--sc-accent-border);margin-bottom:8px;font-weight:600">{move || d().filter_sort_by}</p>
                                 <div class="flex flex-col gap-1 mb-3">
-                                    {SORT_OPTIONS.iter().map(|(val, label)| {
+                                    {SORT_OPTIONS.iter().map(|(val, _label)| {
                                         let v = val.to_string();
                                         let v2 = v.clone();
+                                        let vlabel = *val;
                                         let cd = cur_dir.clone();
                                         let cs = cur_sort.clone();
                                         view! {
@@ -394,11 +400,11 @@ fn FilterBar(
                                                     on_sort.run((v2.clone(), cd.clone()));
                                                     set_open_dd.set(0);
                                                 }
-                                            >{*label}</button>
+                                            >{move || sort_label(lang.get(), vlabel)}</button>
                                         }
                                     }).collect::<Vec<_>>()}
                                 </div>
-                                <p style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--sc-accent-border);margin-bottom:6px;font-weight:600">"Direction"</p>
+                                <p style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--sc-accent-border);margin-bottom:6px;font-weight:600">{move || d().filter_direction}</p>
                                 <div class="flex gap-1">
                                     {
                                         let cs2 = cur_sort.clone();
@@ -410,7 +416,7 @@ fn FilterBar(
                                                     on_sort.run((cs2.clone(), "desc".to_string()));
                                                     set_open_dd.set(0);
                                                 }
-                                            >"↓ Desc"</button>
+                                            >{move || d().filter_desc}</button>
                                         }
                                     }
                                     {
@@ -423,7 +429,7 @@ fn FilterBar(
                                                     on_sort.run((cs3.clone(), "asc".to_string()));
                                                     set_open_dd.set(0);
                                                 }
-                                            >"↑ Asc"</button>
+                                            >{move || d().filter_asc}</button>
                                         }
                                     }
                                 </div>
@@ -437,9 +443,9 @@ fn FilterBar(
                     let t = total.get();
                     let filtered = active_count() > 0 || search.get().is_some();
                     let label = if t == 0 && filtered {
-                        "No matches".to_string()
+                        d().filter_no_matches.to_string()
                     } else {
-                        format!("{} films", fmt_thousands(t))
+                        d().filter_films_count.replace("{}", &fmt_thousands(t))
                     };
                     view! {
                         <span class="ml-auto flex items-center gap-3">
@@ -448,7 +454,7 @@ fn FilterBar(
                                 <button
                                     class="text-xs text-stone-500 hover:text-stone-300 transition-colors"
                                     on:click=move |_| { on_genres.run(vec![]); on_year.run(None); }
-                                >"✕ clear"</button>
+                                >{move || d().filter_clear}</button>
                             })}
                         </span>
                     }
@@ -470,6 +476,8 @@ fn PaginationBar(
     on_last: Callback<()>,
     on_page: Callback<i32>,
 ) -> impl IntoView {
+    let lang = use_lang();
+    let d = move || dict(lang.get());
     let btn = "px-3 py-2 bg-sc-card text-stone-200 rounded disabled:opacity-30 hover:bg-sc-border text-sm";
     let at_start = page <= 1;
     let at_end = page == total_pages || total_pages < 1;
@@ -483,9 +491,9 @@ fn PaginationBar(
             <button class=btn prop:disabled=at_start
                 on:click=move |_| on_first.run(())>"«"</button>
             <button class=btn prop:disabled=at_start
-                on:click=move |_| on_prev.run(())>"← Prev"</button>
+                on:click=move |_| on_prev.run(())>{move || d().page_prev}</button>
             <span class="flex items-center gap-1 text-stone-400 text-sm">
-                <span>"Page"</span>
+                <span>{move || d().page_label}</span>
                 <input
                     type="number"
                     min="1"
@@ -503,7 +511,7 @@ fn PaginationBar(
                 <span>{format!("/ {}", total_pages)}</span>
             </span>
             <button class=btn prop:disabled=at_end
-                on:click=move |_| on_next.run(())>"Next →"</button>
+                on:click=move |_| on_next.run(())>{move || d().page_next}</button>
             <button class=btn prop:disabled=at_end
                 on:click=move |_| on_last.run(())>"»"</button>
         </div>
@@ -700,13 +708,15 @@ pub fn HomePage() -> impl IntoView {
     });
     let on_retry_cb = Callback::new(move |_| set_retry.update(|v| *v += 1));
     let nav_pg = navigate;
+    let lang = use_lang();
+    let d = move || dict(lang.get());
 
     view! {
-        <Title text="Hidden Gems — Pedrilha" />
+        <Title text=move || d().title_home />
         <div class="max-w-7xl mx-auto px-4 py-8">
             <div class="mb-6">
-                <h1 class="text-4xl font-bold text-stone-100 mb-1">"Hidden Gems"</h1>
-                <p class="text-stone-400">"Films in the 6.5–7.9 rating sweet spot — seen by few, worth seeing by many."</p>
+                <h1 class="text-4xl font-bold text-stone-100 mb-1">{move || d().home_h1}</h1>
+                <p class="text-stone-400">{move || d().home_desc}</p>
             </div>
             <FilterBar
                 genres=Signal::derive(genres) year=Signal::derive(year)
@@ -954,13 +964,15 @@ pub fn AcclaimedPage() -> impl IntoView {
     });
     let on_retry_cb = Callback::new(move |_| set_retry.update(|v| *v += 1));
     let nav_pg = navigate;
+    let lang = use_lang();
+    let d = move || dict(lang.get());
 
     view! {
-        <Title text="Acclaimed — Pedrilha" />
+        <Title text=move || d().title_acclaimed />
         <div class="max-w-7xl mx-auto px-4 py-8">
             <div class="mb-6">
-                <h1 class="text-4xl font-bold text-stone-100 mb-1">"Acclaimed"</h1>
-                <p class="text-stone-400">"8.0+ community rating and 80%+ critic score — films everyone should see."</p>
+                <h1 class="text-4xl font-bold text-stone-100 mb-1">{move || d().acclaimed_h1}</h1>
+                <p class="text-stone-400">{move || d().acclaimed_desc}</p>
             </div>
             <FilterBar
                 genres=Signal::derive(genres) year=Signal::derive(year)
@@ -1208,14 +1220,16 @@ pub fn WildcardsPage() -> impl IntoView {
     });
     let on_retry_cb = Callback::new(move |_| set_retry.update(|v| *v += 1));
     let nav_pg = navigate;
+    let lang = use_lang();
+    let d = move || dict(lang.get());
 
     view! {
-        <Title text="Wildcards — Pedrilha" />
+        <Title text=move || d().title_wildcards />
         <div class="max-w-7xl mx-auto px-4 py-8">
             <div class="mb-6">
-                <h1 class="text-4xl font-bold text-stone-100 mb-1">"Wildcards"</h1>
-                <p class="text-stone-400">"Loved by the algorithm, panned by critics — cult classics and guilty pleasures live here."</p>
-                <p class="text-stone-600 text-sm mt-1">"A low critic score isn't always wrong — but sometimes it is."</p>
+                <h1 class="text-4xl font-bold text-stone-100 mb-1">{move || d().wildcards_h1}</h1>
+                <p class="text-stone-400">{move || d().wildcards_desc}</p>
+                <p class="text-stone-600 text-sm mt-1">{move || d().wildcards_desc2}</p>
             </div>
             <FilterBar
                 genres=Signal::derive(genres) year=Signal::derive(year)
@@ -1267,6 +1281,8 @@ pub fn SignInPage() -> impl IntoView {
     let (sent, set_sent) = signal(false);
     let (error, set_error) = signal(Option::<String>::None);
     let (loading, set_loading) = signal(false);
+    let lang = use_lang();
+    let d = move || dict(lang.get());
 
     Effect::new(move |_| {
         if auth.get().is_some() {
@@ -1278,11 +1294,11 @@ pub fn SignInPage() -> impl IntoView {
         let raw = email.get_untracked();
         let e = raw.trim().to_lowercase();
         if e.is_empty() {
-            set_error.set(Some("Please enter your email address.".into()));
+            set_error.set(Some(d().signin_err_empty.into()));
             return;
         }
         if !is_valid_email_client(&e) {
-            set_error.set(Some("That doesn't look like a valid email address.".into()));
+            set_error.set(Some(d().signin_err_invalid.into()));
             return;
         }
         set_loading.set(true);
@@ -1292,9 +1308,9 @@ pub fn SignInPage() -> impl IntoView {
                 Ok(_) => set_sent.set(true),
                 Err(msg) => {
                     let clean = if msg.to_lowercase().contains("invalid email") {
-                        "That doesn't look like a valid email address.".to_string()
+                        d().signin_err_invalid.to_string()
                     } else {
-                        "Something went wrong — please try again.".to_string()
+                        d().signin_err_generic.to_string()
                     };
                     set_error.set(Some(clean));
                     set_loading.set(false);
@@ -1305,26 +1321,26 @@ pub fn SignInPage() -> impl IntoView {
     };
 
     view! {
-        <Title text="Sign in — Pedrilha" />
+        <Title text=move || d().title_signin />
         <div class="min-h-96 flex items-start justify-center pt-16 px-4">
             <div class="w-full max-w-md">
                 {move || if sent.get() {
                     view! {
                         <div class="text-center py-8">
                             <p class="text-5xl mb-6">"📬"</p>
-                            <h1 class="text-2xl font-bold text-stone-100 mb-3">"Check your email"</h1>
+                            <h1 class="text-2xl font-bold text-stone-100 mb-3">{move || d().signin_check_email}</h1>
                             <p class="text-stone-400 mb-2">
-                                "We sent a sign-in link to "
+                                {move || d().signin_sent_prefix}
                                 <span class="text-stone-200">{email.get()}</span>
                                 "."
                             </p>
                             <p class="text-stone-500 text-sm mt-4 mb-8">
-                                "Click the link in the email to sign in. It expires in 15 minutes."
+                                {move || d().signin_expires}
                             </p>
                             <button
                                 class="text-sm text-stone-500 hover:text-stone-300 transition-colors underline"
                                 on:click=move |_| { set_sent.set(false); set_email.set(String::new()); set_error.set(None); }
-                            >"Use a different email"</button>
+                            >{move || d().signin_use_different}</button>
                         </div>
                     }.into_any()
                 } else {
@@ -1334,17 +1350,16 @@ pub fn SignInPage() -> impl IntoView {
                                 <A href="/" attr:class="font-display text-4xl tracking-widest text-stone-100 hover:text-sc-accent transition-colors">
                                     "PEDRILHA"
                                 </A>
-                                <p class="text-stone-500 mt-2 text-sm">"Track films you want to see or have seen."</p>
+                                <p class="text-stone-500 mt-2 text-sm">{move || d().signin_tagline}</p>
                             </div>
 
                             <div class="bg-sc-panel border border-sc-border rounded-lg p-8">
-                                <h2 class="text-xl font-bold text-stone-100 mb-1">"Sign in"</h2>
+                                <h2 class="text-xl font-bold text-stone-100 mb-1">{move || d().signin_heading}</h2>
                                 <p class="text-stone-500 text-sm mb-6">
-                                    "Enter your email — we'll send a magic link. "
-                                    "New here? Your account is created automatically."
+                                    {move || d().signin_blurb}
                                 </p>
 
-                                <label class="block text-xs text-stone-500 uppercase tracking-widest mb-1.5">"Email"</label>
+                                <label class="block text-xs text-stone-500 uppercase tracking-widest mb-1.5">{move || d().signin_email_label}</label>
                                 <input
                                     type="email"
                                     placeholder="your@email.com"
@@ -1369,12 +1384,12 @@ pub fn SignInPage() -> impl IntoView {
                                     on:click=move |_| submit()
                                     prop:disabled=move || loading.get()
                                 >
-                                    {move || if loading.get() { "Sending…" } else { "Send sign-in link" }}
+                                    {move || if loading.get() { d().signin_sending } else { d().signin_send_link }}
                                 </button>
                             </div>
 
                             <p class="text-center text-stone-600 text-xs mt-6">
-                                <A href="/" attr:class="hover:text-stone-400 transition-colors">"← Back to Pedrilha"</A>
+                                <A href="/" attr:class="hover:text-stone-400 transition-colors">{move || d().signin_back}</A>
                             </p>
                         </div>
                     }.into_any()
@@ -1399,6 +1414,8 @@ pub fn MovieDetail() -> impl IntoView {
     let (wl_saved, set_wl_saved) = signal(false);
 
     let auth = use_context::<RwSignal<Option<AuthState>>>().unwrap_or_else(|| RwSignal::new(None));
+    let lang = use_lang();
+    let d = move || dict(lang.get());
 
     let movie_id = move || params.with_untracked(|p| p.get("id").map(|v| v.to_string()));
     let (retry, set_retry) = signal(0u32);
@@ -1472,7 +1489,7 @@ pub fn MovieDetail() -> impl IntoView {
                         if let Ok(h) = w.history() { let _ = h.back(); }
                     }
                 }
-            >"← Back"</button>
+            >{move || d().detail_back}</button>
 
             {move || if loading.get() {
                 view!{ <div class="animate-pulse mt-6 space-y-4">
@@ -1488,21 +1505,21 @@ pub fn MovieDetail() -> impl IntoView {
                 </div> }.into_any()
             } else if let Some(err) = error.get() {
                 view!{ <div class="py-16 text-center">
-                    <p class="text-stone-300 mb-2">"Couldn't load this film — the server may be waking up."</p>
+                    <p class="text-stone-300 mb-2">{move || d().detail_err_load}</p>
                     <p class="text-xs text-stone-600 mb-6">{err}</p>
                     <div class="flex items-center justify-center gap-4">
                         <button
                             class="text-sm text-sc-accent hover:text-sc-accent-hover border border-sc-accent-border rounded px-4 py-2"
                             on:click=move |_| set_retry.update(|v| *v += 1)
-                        >"Try again"</button>
-                        <A href="/" attr:class="text-sm text-stone-400 hover:text-stone-200">"← Back to Gems"</A>
+                        >{move || d().grid_try_again}</button>
+                        <A href="/" attr:class="text-sm text-stone-400 hover:text-stone-200">{move || d().detail_back_gems}</A>
                     </div>
                 </div> }.into_any()
             } else if let Some(m) = movie.get() {
                 let poster   = m.poster_url.clone().unwrap_or_default();
                 let title    = m.title.clone();
                 let year     = m.year.map(|y| y.to_string()).unwrap_or_default();
-                let director = m.director.clone().unwrap_or_else(|| "Unknown".into());
+                let director = m.director.clone();
                 let genre    = m.genre.clone().unwrap_or_default();
                 let overview = m.overview.clone().unwrap_or_default();
                 let imdb_str = m.imdb_rating.map(|r| format!("{:.1}", r));
@@ -1537,8 +1554,8 @@ pub fn MovieDetail() -> impl IntoView {
                         })}
                         <h1 class="text-3xl font-bold text-stone-100 mb-1">{title.clone()}</h1>
                         <p class="text-stone-400 mb-6">
-                            {year.clone()} " · " {director}
-                            {release_day.map(|d| view!{ <span>" · " {d}</span> })}
+                            {year.clone()} " · " {move || director.clone().unwrap_or_else(|| d().detail_unknown_director.to_string())}
+                            {release_day.map(|rd| view!{ <span>" · " {rd}</span> })}
                         </p>
                         <div class="flex gap-8 flex-wrap">
                             <div class="flex-shrink-0 w-48 sm:w-64">
@@ -1546,39 +1563,39 @@ pub fn MovieDetail() -> impl IntoView {
                                     view!{ <div class="w-full h-72 sm:h-96 bg-sc-card rounded flex items-center justify-center">
                                         <span class="text-5xl">"🎬"</span></div> }.into_any()
                                 } else {
-                                    view!{ <img src=poster alt=format!("{} poster", title) class="w-full rounded shadow-xl" /> }.into_any()
+                                    view!{ <img src=poster alt=d().detail_poster_alt.replace("{}", &title) class="w-full rounded shadow-xl" /> }.into_any()
                                 }}
                             </div>
                             <div class="flex-1 min-w-0">
                                 <div class="flex flex-wrap gap-3 mb-6">
                                     {gem_str.map(|s| view!{
                                         <A href="/about"
-                                           attr:title="What is this? — how scoring works"
+                                           attr:title=move || d().detail_gem_tooltip
                                            attr:class="block">
                                             <div class="flex flex-col items-center bg-sc-accent-deep border border-sc-accent-border rounded px-4 py-2 hover:border-sc-accent transition-colors">
-                                                <span class="text-xs text-sc-accent uppercase tracking-wide">"✦ Gem Score"</span>
+                                                <span class="text-xs text-sc-accent uppercase tracking-wide">{move || d().detail_gem_score}</span>
                                                 <span class="text-2xl font-bold text-sc-accent-hover">{s}</span>
                                                 {gem_rank.map(|r| view!{
-                                                    <span class="text-[11px] text-sc-accent">{format!("rank #{}", r)}</span>
+                                                    <span class="text-[11px] text-sc-accent">{move || d().detail_rank.replace("{}", &r.to_string())}</span>
                                                 })}
                                             </div>
                                         </A>
                                     })}
                                     {imdb_str.map(|r| view!{
                                         <div class="flex flex-col items-center bg-yellow-900 border border-yellow-700 rounded px-4 py-2">
-                                            <span class="text-xs text-yellow-400 uppercase tracking-wide">"Rating"</span>
+                                            <span class="text-xs text-yellow-400 uppercase tracking-wide">{move || d().detail_rating}</span>
                                             <span class="text-2xl font-bold text-yellow-300">{r}</span>
                                         </div>
                                     })}
                                     {rt_str.map(|r| view!{
                                         <div class="flex flex-col items-center bg-red-900 border border-red-700 rounded px-4 py-2">
-                                            <span class="text-xs text-red-400 uppercase tracking-wide">"Critics"</span>
+                                            <span class="text-xs text-red-400 uppercase tracking-wide">{move || d().detail_critics}</span>
                                             <span class="text-2xl font-bold text-red-300">{r}</span>
                                         </div>
                                     })}
                                     {audience_str.map(|r| view!{
                                         <div class="flex flex-col items-center bg-red-900 border border-red-700 rounded px-4 py-2">
-                                            <span class="text-xs text-red-400 uppercase tracking-wide">"Audience"</span>
+                                            <span class="text-xs text-red-400 uppercase tracking-wide">{move || d().detail_audience}</span>
                                             <span class="text-2xl font-bold text-red-300">{r}</span>
                                         </div>
                                     })}
@@ -1606,18 +1623,18 @@ pub fn MovieDetail() -> impl IntoView {
                                         <a href={format!("https://www.imdb.com/title/{}", id)}
                                             target="_blank" rel="noopener noreferrer"
                                             class="text-sm text-yellow-400 hover:text-yellow-300 border border-yellow-700 rounded px-3 py-1.5">
-                                            "View on IMDb →"
+                                            {move || d().detail_imdb_link}
                                         </a>
                                     })}
                                     <a href=yt_url
                                         target="_blank" rel="noopener noreferrer"
                                         class="text-sm text-stone-300 hover:text-stone-100 border border-sc-border hover:border-stone-600 rounded px-3 py-1.5">
-                                        "Trailer on YouTube →"
+                                        {move || d().detail_trailer}
                                     </a>
                                     <a href=jw_url
                                         target="_blank" rel="noopener noreferrer"
                                         class="text-sm text-stone-300 hover:text-stone-100 border border-sc-border hover:border-stone-600 rounded px-3 py-1.5">
-                                        "Where to watch →"
+                                        {move || d().detail_where_watch}
                                     </a>
                                 </div>
 
@@ -1626,11 +1643,11 @@ pub fn MovieDetail() -> impl IntoView {
                                     {move || match auth.get() {
                                         None => view! {
                                             <div>
-                                                <p class="text-stone-500 text-sm mb-2">"Track this film in your watchlist"</p>
+                                                <p class="text-stone-500 text-sm mb-2">{move || d().detail_track}</p>
                                                 <A
                                                     href="/signin"
                                                     attr:class="inline-block text-sm text-sc-accent hover:text-sc-accent-hover border border-sc-accent-border rounded px-3 py-1.5"
-                                                >"Sign in to add"</A>
+                                                >{move || d().detail_signin_add}</A>
                                             </div>
                                         }.into_any(),
                                         Some(a) => {
@@ -1686,7 +1703,7 @@ pub fn MovieDetail() -> impl IntoView {
 
                                             view! {
                                                 <div>
-                                                    <p class="text-xs text-stone-600 uppercase tracking-widest mb-3">"Your list"</p>
+                                                    <p class="text-xs text-stone-600 uppercase tracking-widest mb-3">{move || d().detail_your_list}</p>
                                                     <div class="flex flex-wrap gap-2">
                                                         <button
                                                             class=move || if wl_state.get() == Some(WatchState::WantToWatch) {
@@ -1696,7 +1713,7 @@ pub fn MovieDetail() -> impl IntoView {
                                                             }
                                                             on:click=on_want
                                                             prop:disabled=move || wl_loading.get()
-                                                        >"🔖 Want to watch"</button>
+                                                        >{move || d().wl_want}</button>
                                                         <button
                                                             class=move || if wl_state.get() == Some(WatchState::Watched) {
                                                                 "px-3 py-1.5 rounded text-sm bg-sc-accent-bg text-stone-100 border border-sc-accent-border disabled:opacity-50"
@@ -1705,7 +1722,7 @@ pub fn MovieDetail() -> impl IntoView {
                                                             }
                                                             on:click=on_watched
                                                             prop:disabled=move || wl_loading.get()
-                                                        >"✓ Watched"</button>
+                                                        >{move || d().wl_watched}</button>
                                                         <button
                                                             class=move || if wl_state.get() == Some(WatchState::NotInterested) {
                                                                 "px-3 py-1.5 rounded text-sm bg-sc-accent-bg text-stone-100 border border-sc-accent-border disabled:opacity-50"
@@ -1714,19 +1731,19 @@ pub fn MovieDetail() -> impl IntoView {
                                                             }
                                                             on:click=on_nope
                                                             prop:disabled=move || wl_loading.get()
-                                                        >"✗ Not interested"</button>
+                                                        >{move || d().wl_not_interested}</button>
                                                         <button
                                                             class=move || if wl_state.get().is_some() {
                                                                 "px-3 py-1.5 rounded text-sm text-stone-600 hover:text-stone-400 border border-sc-border"
                                                             } else { "hidden" }
                                                             on:click=on_remove
                                                             prop:disabled=move || wl_loading.get()
-                                                        >"Remove"</button>
+                                                        >{move || d().wl_remove}</button>
                                                     </div>
                                                     {move || wl_saved.get().then(|| view! {
                                                         <p class="text-sc-accent text-xs mt-2">
-                                                            "Saved — "
-                                                            <A href="/watchlist" attr:class="underline hover:text-sc-accent-hover">"view your watchlist →"</A>
+                                                            {move || d().detail_saved_prefix}
+                                                            <A href="/watchlist" attr:class="underline hover:text-sc-accent-hover">{move || d().detail_saved_link}</A>
                                                         </p>
                                                     })}
                                                     {move || wl_error.get().map(|e| view! {
@@ -1745,14 +1762,14 @@ pub fn MovieDetail() -> impl IntoView {
                                         view!{
                                             <A href=format!("/?genres={}", urlenc(&fg))
                                                 attr:class="text-xs text-stone-400 hover:text-stone-200 bg-sc-panel border border-sc-border hover:border-stone-600 rounded-full px-4 py-1.5">
-                                                {format!("More {} gems →", fg)}
+                                                {move || d().detail_more_genre.replace("{}", genre_label(lang.get(), &fg))}
                                             </A>
                                         }
                                     })}
-                                    {decade.map(|d| view!{
-                                        <A href=format!("/?year={}", d)
+                                    {decade.map(|dec| view!{
+                                        <A href=format!("/?year={}", dec)
                                             attr:class="text-xs text-stone-400 hover:text-stone-200 bg-sc-panel border border-sc-border hover:border-stone-600 rounded-full px-4 py-1.5">
-                                            {format!("More from the {}s →", d)}
+                                            {move || d().detail_more_decade.replace("{}", &dec.to_string())}
                                         </A>
                                     })}
                                 </div>
@@ -1773,6 +1790,8 @@ fn render_movie_grid(
     on_clear: Callback<()>,
     on_retry: Callback<()>,
 ) -> impl IntoView {
+    let lang = use_lang();
+    let d = move || dict(lang.get());
     let inner = if loading {
         view! { <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {(0..PER_PAGE).map(|_| view!{ <SkeletonCard /> }).collect::<Vec<_>>()}
@@ -1780,20 +1799,20 @@ fn render_movie_grid(
         .into_any()
     } else if let Some(err) = error {
         view! { <div class="py-16 text-center">
-            <p class="text-stone-300 mb-2">"Couldn't load films — the server may be waking up."</p>
+            <p class="text-stone-300 mb-2">{move || d().grid_err_load}</p>
             <p class="text-xs text-stone-600 mb-6">{err}</p>
             <button
                 class="text-sm text-sc-accent hover:text-sc-accent-hover border border-sc-accent-border rounded px-4 py-2"
                 on:click=move |_| on_retry.run(())
-            >"Try again"</button>
+            >{move || d().grid_try_again}</button>
         </div> }.into_any()
     } else if movies.is_empty() {
         view! { <div class="py-16 text-center">
-            <p class="text-stone-500 mb-6">"No gems match those filters."</p>
+            <p class="text-stone-500 mb-6">{move || d().grid_no_gems}</p>
             <button
                 class="text-sm text-stone-300 hover:text-stone-100 border border-sc-border hover:border-stone-600 rounded px-4 py-2"
                 on:click=move |_| on_clear.run(())
-            >"Clear filters"</button>
+            >{move || d().grid_clear_filters}</button>
         </div> }.into_any()
     } else {
         view! { <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4" style="isolation:isolate">
@@ -1823,6 +1842,8 @@ fn SkeletonCard() -> impl IntoView {
 #[component]
 fn MovieCard(movie: MovieSummary) -> impl IntoView {
     let navigate = use_navigate();
+    let lang = use_lang();
+    let d = move || dict(lang.get());
     let href = format!("/movie/{}", encode_movie_id(movie.id));
     let href_nav = href.clone();
     let encoded_id = encode_movie_id(movie.id);
@@ -1870,9 +1891,9 @@ fn MovieCard(movie: MovieSummary) -> impl IntoView {
                 <div class="flex items-center justify-between text-xs mb-0.5">
                     <span class="text-stone-400 tabular-nums">{year}</span>
                     <div class="flex flex-wrap justify-end gap-x-1.5 gap-y-0.5 items-center tabular-nums">
-                        {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold whitespace-nowrap" title="Gem Score — how undiscovered this film is (100% = top gem)" aria-label=format!("Gem score {} percent", s)>"✦ "{s.clone()}</span> })}
-                        {imdb.map(|r| view!{ <span class="text-yellow-400 whitespace-nowrap" title="Community rating (0–10)" aria-label=format!("Community rating {} out of 10", r)>"★ "{r.clone()}</span> })}
-                        {rt.map(|r|  view!{ <span class="text-red-400 whitespace-nowrap" title="Critic score" aria-label=format!("Critic score {} percent", r)>"🍅 "{r.clone()}</span> })}
+                        {gem_score.map(|s| { let sa = s.clone(); view!{ <span class="text-sc-accent font-semibold whitespace-nowrap" title=move || d().card_gem_tooltip aria-label=move || d().card_gem_aria.replace("{}", &sa)>"✦ "{s}</span> } })}
+                        {imdb.map(|r| { let ra = r.clone(); view!{ <span class="text-yellow-400 whitespace-nowrap" title=move || d().card_rating_tooltip aria-label=move || d().card_rating_aria.replace("{}", &ra)>"★ "{r}</span> } })}
+                        {rt.map(|r|  { let ra = r.clone(); view!{ <span class="text-red-400 whitespace-nowrap" title=move || d().card_critic_tooltip aria-label=move || d().card_critic_aria.replace("{}", &ra)>"🍅 "{r}</span> } })}
                     </div>
                 </div>
                 {if !director.is_empty() {
@@ -1898,13 +1919,15 @@ pub fn VerifyPage() -> impl IntoView {
     let query = use_query_map();
     let navigate = use_navigate();
     let auth = use_context::<RwSignal<Option<AuthState>>>().expect("auth context missing");
-    let (status, set_status) = signal("Verifying…".to_string());
+    let lang = use_lang();
+    let d = move || dict(lang.get());
+    let (status, set_status) = signal(d().verify_verifying.to_string());
     let (failed, set_failed) = signal(false);
 
     let token_val = query.with_untracked(|q| q.get("token").unwrap_or_default().to_string());
 
     if token_val.is_empty() {
-        set_status.set("This sign-in link is incomplete — no token provided.".to_string());
+        set_status.set(d().verify_incomplete.to_string());
         set_failed.set(true);
     } else {
         spawn_local(async move {
@@ -1922,10 +1945,7 @@ pub fn VerifyPage() -> impl IntoView {
                     navigate("/", NavigateOptions::default());
                 }
                 Err(_) => {
-                    set_status.set(
-                        "This sign-in link is invalid or has expired — they last 15 minutes."
-                            .to_string(),
-                    );
+                    set_status.set(d().verify_invalid.to_string());
                     set_failed.set(true);
                 }
             }
@@ -1933,14 +1953,14 @@ pub fn VerifyPage() -> impl IntoView {
     }
 
     view! {
-        <Title text="Signing in — Pedrilha" />
+        <Title text=move || d().title_signing_in />
         <div class="max-w-md mx-auto px-4 py-16 text-center">
             <p class="text-2xl mb-4" aria-hidden="true">"🔑"</p>
             <p class="text-stone-300">{move || status.get()}</p>
             {move || failed.get().then(|| view!{
                 <A href="/signin"
                     attr:class="inline-block mt-6 text-sm text-sc-accent hover:text-sc-accent-hover border border-sc-accent-border rounded px-4 py-2">
-                    "Request a new link"
+                    {move || d().verify_request_new}
                 </A>
             })}
         </div>
@@ -1958,6 +1978,9 @@ pub fn AdminPage() -> impl IntoView {
             navigate("/", NavigateOptions::default());
         }
     });
+
+    let lang = use_lang();
+    let d = move || dict(lang.get());
 
     // JWT from auth state — used as the bearer token for all admin API calls
     let get_token = move || auth.get_untracked().map(|a| a.token).unwrap_or_default();
@@ -2022,7 +2045,7 @@ pub fn AdminPage() -> impl IntoView {
         set_seed_state.set(ActionState::Running);
         spawn_local(async move {
             match api::admin_seed(&tok).await {
-                Ok(_) => set_seed_state.set(ActionState::Done("Started — watch logs below".into())),
+                Ok(_) => set_seed_state.set(ActionState::Done(d().admin_started.into())),
                 Err(e) => set_seed_state.set(ActionState::Failed(e)),
             }
         });
@@ -2032,7 +2055,7 @@ pub fn AdminPage() -> impl IntoView {
         set_sync_state.set(ActionState::Running);
         spawn_local(async move {
             match api::admin_sync(&tok).await {
-                Ok(_) => set_sync_state.set(ActionState::Done("Started — watch logs below".into())),
+                Ok(_) => set_sync_state.set(ActionState::Done(d().admin_started.into())),
                 Err(e) => set_sync_state.set(ActionState::Failed(e)),
             }
         });
@@ -2043,9 +2066,7 @@ pub fn AdminPage() -> impl IntoView {
         set_enrich_state.set(ActionState::Running);
         spawn_local(async move {
             match api::admin_enrich(limit, &tok).await {
-                Ok(_) => {
-                    set_enrich_state.set(ActionState::Done("Started — watch logs below".into()))
-                }
+                Ok(_) => set_enrich_state.set(ActionState::Done(d().admin_started.into())),
                 Err(e) => set_enrich_state.set(ActionState::Failed(e)),
             }
         });
@@ -2055,27 +2076,25 @@ pub fn AdminPage() -> impl IntoView {
         set_score_state.set(ActionState::Running);
         spawn_local(async move {
             match api::admin_score(&tok).await {
-                Ok(_) => {
-                    set_score_state.set(ActionState::Done("Started — watch logs below".into()))
-                }
+                Ok(_) => set_score_state.set(ActionState::Done(d().admin_started.into())),
                 Err(e) => set_score_state.set(ActionState::Failed(e)),
             }
         });
     };
 
     view! {
-        <Title text="Admin — Pedrilha" />
+        <Title text=move || d().title_admin />
         <div class="max-w-3xl mx-auto px-4 py-8">
-            <h1 class="text-3xl font-bold text-stone-100 mb-2">"Admin"</h1>
-            <p class="text-stone-400 mb-3">"Operations run on the server — you can close this page. Check logs below for progress."</p>
+            <h1 class="text-3xl font-bold text-stone-100 mb-2">{move || d().admin_h1}</h1>
+            <p class="text-stone-400 mb-3">{move || d().admin_intro}</p>
 
             {move || {
                 let has_warn = smtp_warn.get() || tmdb_warn.get() || omdb_warn.get();
                 if !has_warn { return view!{ <div /> }.into_any(); }
                 let items: Vec<(&str, &str)> = vec![
-                    ("SMTP_HOST / SMTP_USER", "Magic-link sign-in is unavailable. Users cannot create accounts or sign in."),
-                    ("TMDB_API_KEY", "Movie sync is unavailable. The database cannot be populated with new films."),
-                    ("OMDB_API_KEY", "OMDb enrichment is unavailable. IMDb ratings and RT scores will not be fetched."),
+                    ("SMTP_HOST / SMTP_USER", d().admin_warn_smtp),
+                    ("TMDB_API_KEY", d().admin_warn_tmdb),
+                    ("OMDB_API_KEY", d().admin_warn_omdb),
                 ];
                 let warnings: Vec<_> = [
                     (smtp_warn.get(), items[0]),
@@ -2101,18 +2120,18 @@ pub fn AdminPage() -> impl IntoView {
                 }.into_any()
             }}
 
-                <div class="mb-4 p-3 bg-sc-panel rounded border border-sc-border text-xs text-stone-400 flex gap-4 items-center"><span class="uppercase tracking-widest">"Log rotation"</span><span class="text-stone-200">{move || log_rotation.get()}</span><span class="text-stone-600">"set LOG_ROTATION=never|daily|hourly in .env, restart to apply"</span></div>
+                <div class="mb-4 p-3 bg-sc-panel rounded border border-sc-border text-xs text-stone-400 flex gap-4 items-center"><span class="uppercase tracking-widest">{move || d().admin_log_rotation}</span><span class="text-stone-200">{move || log_rotation.get()}</span><span class="text-stone-600">{move || d().admin_log_rotation_hint}</span></div>
             <div class="mb-6 p-4 bg-sc-panel rounded border border-sc-accent-border">
                 <div class="flex items-start justify-between gap-4">
                     <div class="flex-1 min-w-0">
-                        <p class="text-sc-accent-hover font-semibold text-sm">"Seed Test Data"</p>
-                        <p class="text-xs text-stone-400 mt-0.5">"Runs the full pipeline: sync all eras + blockbusters, enrich via OMDb (2000 limit), score, classify acclaimed. Use on a fresh database. Takes 20–60+ min."</p>
+                        <p class="text-sc-accent-hover font-semibold text-sm">{move || d().admin_seed_title}</p>
+                        <p class="text-xs text-stone-400 mt-0.5">{move || d().admin_seed_desc}</p>
                     </div>
                     <div class="flex items-center gap-3 flex-shrink-0">
                         <AdminStatus state=seed_state.into() />
                         <button class="px-3 py-1.5 bg-sc-accent-bg hover:bg-sc-accent-bg-hover text-stone-100 text-xs rounded disabled:opacity-50"
                             disabled=move || seed_state.get() == ActionState::Running
-                            on:click=run_seed>"Seed"</button>
+                            on:click=run_seed>{move || d().admin_seed_btn}</button>
                     </div>
                 </div>
             </div>
@@ -2120,14 +2139,14 @@ pub fn AdminPage() -> impl IntoView {
             <div class="mb-4 p-4 bg-sc-panel rounded border border-sc-border">
                 <div class="flex items-start justify-between gap-4">
                     <div class="flex-1 min-w-0">
-                        <p class="text-stone-200 font-semibold text-sm">"Sync Movies"</p>
-                        <p class="text-xs text-stone-400 mt-0.5">"Fetch new movies from TMDB across all era windows + blockbusters. 5–15 min."</p>
+                        <p class="text-stone-200 font-semibold text-sm">{move || d().admin_sync_title}</p>
+                        <p class="text-xs text-stone-400 mt-0.5">{move || d().admin_sync_desc}</p>
                     </div>
                     <div class="flex items-center gap-3 flex-shrink-0">
                         <AdminStatus state=sync_state.into() />
                         <button class="px-3 py-1.5 bg-sc-accent-bg hover:bg-sc-accent-bg-hover text-stone-100 text-xs rounded disabled:opacity-50"
                             disabled=move || sync_state.get() == ActionState::Running
-                            on:click=run_sync>"Sync"</button>
+                            on:click=run_sync>{move || d().admin_sync_btn}</button>
                     </div>
                 </div>
             </div>
@@ -2135,10 +2154,10 @@ pub fn AdminPage() -> impl IntoView {
             <div class="mb-4 p-4 bg-sc-panel rounded border border-sc-border">
                 <div class="flex items-start justify-between gap-4">
                     <div class="flex-1 min-w-0">
-                        <p class="text-stone-200 font-semibold text-sm">"Enrich via OMDb"</p>
-                        <p class="text-xs text-stone-400 mt-0.5">"Fetch community ratings and critic scores. 10–30 min for large batches."</p>
+                        <p class="text-stone-200 font-semibold text-sm">{move || d().admin_enrich_title}</p>
+                        <p class="text-xs text-stone-400 mt-0.5">{move || d().admin_enrich_desc}</p>
                         <div class="flex items-center gap-2 mt-2">
-                            <label class="text-xs text-stone-500">"Limit:"</label>
+                            <label class="text-xs text-stone-500">{move || d().admin_enrich_limit}</label>
                             <input type="number" min="1" max="50000"
                                 class="w-24 bg-sc-card border border-sc-border-input text-stone-200 text-xs rounded px-2 py-1"
                                 prop:value=move || enrich_limit.get().to_string()
@@ -2154,7 +2173,7 @@ pub fn AdminPage() -> impl IntoView {
                         <AdminStatus state=enrich_state.into() />
                         <button class="px-3 py-1.5 bg-sc-accent-bg hover:bg-sc-accent-bg-hover text-stone-100 text-xs rounded disabled:opacity-50"
                             disabled=move || enrich_state.get() == ActionState::Running
-                            on:click=run_enrich>"Enrich"</button>
+                            on:click=run_enrich>{move || d().admin_enrich_btn}</button>
                     </div>
                 </div>
             </div>
@@ -2162,28 +2181,28 @@ pub fn AdminPage() -> impl IntoView {
             <div class="mb-8 p-4 bg-sc-panel rounded border border-sc-border">
                 <div class="flex items-start justify-between gap-4">
                     <div class="flex-1 min-w-0">
-                        <p class="text-stone-200 font-semibold text-sm">"Run Scoring"</p>
-                        <p class="text-xs text-stone-400 mt-0.5">"Recalculate gem scores and re-classify wildcards. Under 1 min."</p>
+                        <p class="text-stone-200 font-semibold text-sm">{move || d().admin_score_title}</p>
+                        <p class="text-xs text-stone-400 mt-0.5">{move || d().admin_score_desc}</p>
                     </div>
                     <div class="flex items-center gap-3 flex-shrink-0">
                         <AdminStatus state=score_state.into() />
                         <button class="px-3 py-1.5 bg-sc-accent-bg hover:bg-sc-accent-bg-hover text-stone-100 text-xs rounded disabled:opacity-50"
                             disabled=move || score_state.get() == ActionState::Running
-                            on:click=run_score>"Score"</button>
+                            on:click=run_score>{move || d().admin_score_btn}</button>
                     </div>
                 </div>
             </div>
 
             <div>
                 <div class="flex items-center justify-between mb-3">
-                    <h2 class="text-lg font-semibold text-stone-200">"Run Logs"</h2>
+                    <h2 class="text-lg font-semibold text-stone-200">{move || d().admin_run_logs}</h2>
                     <button class="text-xs text-stone-400 hover:text-stone-200 px-2 py-1 bg-sc-card rounded border border-sc-border"
-                        on:click=move |_| fetch_logs()>"Refresh"</button>
+                        on:click=move |_| fetch_logs()>{move || d().admin_refresh}</button>
                 </div>
                 {move || if logs_loading.get() {
-                    view!{ <p class="text-stone-500 text-sm">"Loading…"</p> }.into_any()
+                    view!{ <p class="text-stone-500 text-sm">{move || d().admin_loading}</p> }.into_any()
                 } else if logs.get().is_empty() {
-                    view!{ <p class="text-stone-500 text-sm">"No logs yet. Run an operation above."</p> }.into_any()
+                    view!{ <p class="text-stone-500 text-sm">{move || d().admin_no_logs}</p> }.into_any()
                 } else {
                     view!{
                         <div class="space-y-1 font-mono text-xs max-h-96 overflow-y-auto">
@@ -2217,6 +2236,8 @@ pub fn AdminPage() -> impl IntoView {
 // ── Admin status chip ─────────────────────────────────────────────────────────
 #[component]
 fn AdminStatus(state: Signal<ActionState>) -> impl IntoView {
+    let lang = use_lang();
+    let d = move || dict(lang.get());
     view! {
         <span class="text-xs max-w-xs truncate"
             class:text-stone-500={move || state.get() == ActionState::Idle}
@@ -2226,7 +2247,7 @@ fn AdminStatus(state: Signal<ActionState>) -> impl IntoView {
             class:text-red-400={move || matches!(state.get(), ActionState::Failed(_))}>
             {move || match state.get() {
                 ActionState::Idle      => String::new(),
-                ActionState::Running   => "Running…".to_string(),
+                ActionState::Running   => d().admin_running.to_string(),
                 ActionState::Done(msg) => msg,
                 ActionState::Failed(e) => format!("✗ {}", e),
             }}
@@ -2251,6 +2272,8 @@ pub fn WatchlistPage() -> impl IntoView {
     let (error, set_error) = signal(Option::<String>::None);
     let (show_want, set_show_want) = signal(true);
     let (show_watched, set_show_watched) = signal(false);
+    let lang = use_lang();
+    let d = move || dict(lang.get());
 
     Effect::new(move |_| match auth.get() {
         None => {
@@ -2298,11 +2321,11 @@ pub fn WatchlistPage() -> impl IntoView {
     });
 
     view! {
-        <Title text="Watchlist — Pedrilha" />
+        <Title text=move || d().title_watchlist />
         <div class="max-w-7xl mx-auto px-4 py-8">
             <div class="mb-6">
-                <h1 class="text-4xl font-bold text-stone-100 mb-1">"Watchlist"</h1>
-                <p class="text-stone-400">"Films you're tracking."</p>
+                <h1 class="text-4xl font-bold text-stone-100 mb-1">{move || d().watchlist_h1}</h1>
+                <p class="text-stone-400">{move || d().watchlist_desc}</p>
             </div>
 
             // ── Status filter checkboxes ──────────────────────────────────────
@@ -2315,7 +2338,7 @@ pub fn WatchlistPage() -> impl IntoView {
                             on:change=move |_| set_show_want.update(|v| *v = !*v)
                             class="accent-sc-accent w-4 h-4 cursor-pointer"
                         />
-                        <span class="text-sm text-stone-300">"🔖 Want to Watch"</span>
+                        <span class="text-sm text-stone-300">{move || d().watchlist_cb_want}</span>
                     </label>
                     <label class="flex items-center gap-2 cursor-pointer select-none">
                         <input
@@ -2324,7 +2347,7 @@ pub fn WatchlistPage() -> impl IntoView {
                             on:change=move |_| set_show_watched.update(|v| *v = !*v)
                             class="accent-sc-accent w-4 h-4 cursor-pointer"
                         />
-                        <span class="text-sm text-stone-300">"✓ Watched"</span>
+                        <span class="text-sm text-stone-300">{move || d().watchlist_cb_watched}</span>
                     </label>
                 </div>
             })}
@@ -2333,10 +2356,10 @@ pub fn WatchlistPage() -> impl IntoView {
                 if auth.get().is_none() {
                     return view! {
                         <div class="py-16 text-center">
-                            <p class="text-stone-400 mb-4">"Sign in to see your watchlist."</p>
+                            <p class="text-stone-400 mb-4">{move || d().watchlist_signin_prompt}</p>
                             <A href="/signin"
                                 attr:class="text-sc-accent hover:text-sc-accent-hover border border-sc-accent-border rounded px-4 py-2 text-sm">
-                                "Sign in"
+                                {move || d().watchlist_signin_btn}
                             </A>
                         </div>
                     }.into_any();
@@ -2364,7 +2387,7 @@ pub fn WatchlistPage() -> impl IntoView {
                 if its.is_empty() {
                     return view! {
                         <div class="py-16 text-center text-stone-500">
-                            "Nothing here yet — find a film and add it to your watchlist."
+                            {move || d().watchlist_empty}
                         </div>
                     }.into_any();
                 }
@@ -2382,6 +2405,8 @@ pub fn WatchlistPage() -> impl IntoView {
 #[component]
 fn WatchlistCard(item: WatchlistItem) -> impl IntoView {
     let navigate = use_navigate();
+    let lang = use_lang();
+    let d = move || dict(lang.get());
     let href = format!("/movie/{}", encode_movie_id(item.movie.id.unwrap_or(0)));
     let href_nav = href.clone();
     let poster = item.movie.poster_url.clone().unwrap_or_default();
@@ -2392,16 +2417,16 @@ fn WatchlistCard(item: WatchlistItem) -> impl IntoView {
     let imdb = item.movie.imdb_rating.map(|r| format!("{:.1}", r));
     let gem_score = item.movie.gem_score.map(|s| format!("{:.0}", s * 100.0));
 
-    let (badge_label, badge_class) = match item.state {
-        WatchState::WantToWatch => (
-            "🔖 Want to watch",
-            "bg-sc-accent-deep border-sc-accent text-sc-accent",
-        ),
-        WatchState::Watched => ("✓ Watched", "bg-green-950 border-green-700 text-green-400"),
-        WatchState::NotInterested => (
-            "✗ Not interested",
-            "bg-stone-800 border-stone-600 text-stone-400",
-        ),
+    let state = item.state.clone();
+    let badge_class = match &state {
+        WatchState::WantToWatch => "bg-sc-accent-deep border-sc-accent text-sc-accent",
+        WatchState::Watched => "bg-green-950 border-green-700 text-green-400",
+        WatchState::NotInterested => "bg-stone-800 border-stone-600 text-stone-400",
+    };
+    let badge_label = move || match &state {
+        WatchState::WantToWatch => d().wl_want,
+        WatchState::Watched => d().wl_watched,
+        WatchState::NotInterested => d().wl_not_interested,
     };
 
     view! {
@@ -2424,7 +2449,7 @@ fn WatchlistCard(item: WatchlistItem) -> impl IntoView {
                         <span class="text-5xl">"🎬"</span></div> }.into_any()
                 }}
                 <div class={format!("absolute bottom-1.5 left-1.5 px-1.5 py-0.5 text-xs rounded border {}", badge_class)}>
-                    {badge_label}
+                    {move || badge_label()}
                 </div>
             </div>
             <div class="p-3">
@@ -2432,8 +2457,8 @@ fn WatchlistCard(item: WatchlistItem) -> impl IntoView {
                 <div class="flex items-center justify-between text-xs mb-0.5">
                     <span class="text-stone-400 tabular-nums">{year}</span>
                     <div class="flex flex-wrap justify-end gap-x-1.5 gap-y-0.5 items-center tabular-nums">
-                        {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold whitespace-nowrap" title="Gem Score — how undiscovered this film is (100% = top gem)" aria-label=format!("Gem score {} percent", s)>"✦ "{s.clone()}</span> })}
-                        {imdb.map(|r| view!{ <span class="text-yellow-400 whitespace-nowrap" title="Community rating (0–10)" aria-label=format!("Community rating {} out of 10", r)>"★ "{r.clone()}</span> })}
+                        {gem_score.map(|s| { let sa = s.clone(); view!{ <span class="text-sc-accent font-semibold whitespace-nowrap" title=move || d().card_gem_tooltip aria-label=move || d().card_gem_aria.replace("{}", &sa)>"✦ "{s}</span> } })}
+                        {imdb.map(|r| { let ra = r.clone(); view!{ <span class="text-yellow-400 whitespace-nowrap" title=move || d().card_rating_tooltip aria-label=move || d().card_rating_aria.replace("{}", &ra)>"★ "{r}</span> } })}
                     </div>
                 </div>
                 {if !director.is_empty() {
@@ -2447,16 +2472,18 @@ fn WatchlistCard(item: WatchlistItem) -> impl IntoView {
 // ── Privacy Policy page ───────────────────────────────────────────────────────
 #[component]
 pub fn PrivacyPage() -> impl IntoView {
+    let lang = use_lang();
+    let d = move || dict(lang.get());
     view! {
-        <Title text="Privacy Policy — Pedrilha" />
+        <Title text=move || d().title_privacy />
         <div class="max-w-3xl mx-auto px-4 py-12 text-stone-300">
-            <h1 class="font-display text-4xl tracking-widest text-stone-100 mb-2">"PRIVACY POLICY"</h1>
-            <p class="text-stone-500 text-sm mb-10">"Effective date: 2025-01-01 · Last updated: 2026-06-28"</p>
+            <h1 class="font-display text-4xl tracking-widest text-stone-100 mb-2">{move || d().privacy_h1}</h1>
+            <p class="text-stone-500 text-sm mb-10">{move || d().privacy_dates}</p>
 
             <section class="mb-8">
-                <h2 class="text-stone-100 font-semibold text-lg mb-3">"Who we are"</h2>
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">{move || d().privacy_who_h}</h2>
                 <p class="text-stone-400 leading-relaxed">
-                    "Pedrilha is operated by RK. Questions: "
+                    {move || d().privacy_who_p1}
                     <a href="mailto:rk@rkzwei.dev" class="text-sc-accent hover:text-sc-accent-hover transition-colors">
                         "rk@rkzwei.dev"
                     </a>
@@ -2465,98 +2492,58 @@ pub fn PrivacyPage() -> impl IntoView {
             </section>
 
             <section class="mb-8">
-                <h2 class="text-stone-100 font-semibold text-lg mb-3">"What we collect"</h2>
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">{move || d().privacy_collect_h}</h2>
+                <p class="text-stone-400 leading-relaxed mb-4">{move || d().privacy_collect_p1}</p>
+                <p class="text-stone-400 leading-relaxed mb-4">{move || d().privacy_collect_p2}</p>
+                <p class="text-stone-400 leading-relaxed">{move || d().privacy_collect_p3}</p>
+            </section>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">{move || d().privacy_session_h}</h2>
                 <p class="text-stone-400 leading-relaxed mb-4">
-                    "If you create an account, we store your email address to send you a sign-in link "
-                    "and to identify your watchlist and ratings. We do not store passwords."
+                    {move || d().privacy_session_p1a}
+                    <em>{move || d().privacy_session_em}</em>
+                    {move || d().privacy_session_p1b}
                 </p>
+                <p class="text-stone-400 leading-relaxed">{move || d().privacy_session_p2}</p>
+            </section>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">{move || d().privacy_providers_h}</h2>
+                <p class="text-stone-400 leading-relaxed">{move || d().privacy_providers_p}</p>
+            </section>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">{move || d().privacy_where_h}</h2>
+                <p class="text-stone-400 leading-relaxed">{move || d().privacy_where_p}</p>
+            </section>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">{move || d().privacy_retention_h}</h2>
+                <p class="text-stone-400 leading-relaxed">{move || d().privacy_retention_p}</p>
+            </section>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">{move || d().privacy_legal_h}</h2>
+                <p class="text-stone-400 leading-relaxed mb-4">{move || d().privacy_legal_p1}</p>
+                <p class="text-stone-400 leading-relaxed">{move || d().privacy_legal_p2}</p>
+            </section>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">{move || d().privacy_rights_h}</h2>
                 <p class="text-stone-400 leading-relaxed mb-4">
-                    "We also collect anonymous usage analytics to understand how the site is used and improve it: "
-                    "pages visited, movies clicked, filters applied, and pagination events. "
-                    "This data contains no personal information."
-                </p>
-                <p class="text-stone-400 leading-relaxed">
-                    "We use no advertising trackers and sell no data to third parties — ever."
-                </p>
-            </section>
-
-            <section class="mb-8">
-                <h2 class="text-stone-100 font-semibold text-lg mb-3">"How session identity works"</h2>
-                <p class="text-stone-400 leading-relaxed mb-4">
-                    "For analytics, we compute a one-way SHA-256 hash from your IP address, "
-                    "browser user-agent string, and the current UTC date. "
-                    "This hash rotates every day — the same device produces a different hash on different days. "
-                    "Your raw IP address and user-agent are "
-                    <em>"never written to disk"</em>
-                    ". The hash cannot be reversed."
-                </p>
-                <p class="text-stone-400 leading-relaxed">
-                    "We use no cookies for analytics. Authentication uses a short-lived token "
-                    "stored in your browser's local storage, which is cleared when you sign out."
-                </p>
-            </section>
-
-            <section class="mb-8">
-                <h2 class="text-stone-100 font-semibold text-lg mb-3">"Analytics providers"</h2>
-                <p class="text-stone-400 leading-relaxed">
-                    "We run self-hosted, privacy-first analytics (Umami) on our own infrastructure. "
-                    "No data is shared with Google Analytics, Meta, or any third-party analytics service. "
-                    "All data stays on our servers."
-                </p>
-            </section>
-
-            <section class="mb-8">
-                <h2 class="text-stone-100 font-semibold text-lg mb-3">"Where data is stored"</h2>
-                <p class="text-stone-400 leading-relaxed">
-                    "All data is stored on servers located in New York, USA."
-                </p>
-            </section>
-
-            <section class="mb-8">
-                <h2 class="text-stone-100 font-semibold text-lg mb-3">"Retention"</h2>
-                <p class="text-stone-400 leading-relaxed">
-                    "Analytics events are automatically deleted after 12 months. "
-                    "Account data (email address, watchlist, ratings) is retained until you request deletion."
-                </p>
-            </section>
-
-            <section class="mb-8">
-                <h2 class="text-stone-100 font-semibold text-lg mb-3">"Legal basis"</h2>
-                <p class="text-stone-400 leading-relaxed mb-4">
-                    "We process your email address to perform the contract you enter into when creating an account "
-                    "(GDPR Art. 6(1)(b))."
-                </p>
-                <p class="text-stone-400 leading-relaxed">
-                    "We process analytics data on the basis of legitimate interest (GDPR Art. 6(1)(f)): "
-                    "understanding how the site is used so we can improve it. "
-                    "Because we use no cookies and store no personal data in analytics, no consent is required "
-                    "under the ePrivacy Directive."
-                </p>
-            </section>
-
-            <section class="mb-8">
-                <h2 class="text-stone-100 font-semibold text-lg mb-3">"Your rights"</h2>
-                <p class="text-stone-400 leading-relaxed mb-4">
-                    "Under GDPR you have the right to access, correct, or erase data we hold about you, "
-                    "and to object to processing. To exercise any of these rights, email "
+                    {move || d().privacy_rights_p1}
                     <a href="mailto:rk@rkzwei.dev" class="text-sc-accent hover:text-sc-accent-hover transition-colors">
                         "rk@rkzwei.dev"
                     </a>
                     "."
                 </p>
-                <p class="text-stone-400 leading-relaxed">
-                    "Because analytics events are stored as daily-rotating anonymous hashes with no link to your "
-                    "account, we cannot identify or delete your specific analytics history. "
-                    "We can delete your account and all associated watchlist and rating data on request."
-                </p>
+                <p class="text-stone-400 leading-relaxed">{move || d().privacy_rights_p2}</p>
             </section>
 
             <section class="mb-8">
-                <h2 class="text-stone-100 font-semibold text-lg mb-3">"Changes"</h2>
-                <p class="text-stone-400 leading-relaxed">
-                    "If we materially change how we handle data, we will update the date at the top of this page. "
-                    "Continued use of the site constitutes acceptance."
-                </p>
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">{move || d().privacy_changes_h}</h2>
+                <p class="text-stone-400 leading-relaxed">{move || d().privacy_changes_p}</p>
             </section>
         </div>
     }
@@ -2565,60 +2552,42 @@ pub fn PrivacyPage() -> impl IntoView {
 // ── About page ────────────────────────────────────────────────────────────────
 #[component]
 pub fn AboutPage() -> impl IntoView {
+    let lang = use_lang();
+    let d = move || dict(lang.get());
     view! {
-        <Title text="How it works — Pedrilha" />
+        <Title text=move || d().title_about />
         <div class="max-w-3xl mx-auto px-4 py-12 text-stone-300">
-            <h1 class="font-display text-4xl tracking-widest text-stone-100 mb-2">"HOW IT WORKS"</h1>
-            <p class="text-stone-500 text-sm mb-10">"Understanding the Gem Score"</p>
+            <h1 class="font-display text-4xl tracking-widest text-stone-100 mb-2">{move || d().about_h1}</h1>
+            <p class="text-stone-500 text-sm mb-10">{move || d().about_subtitle}</p>
 
             <section class="mb-8">
-                <h2 class="text-stone-100 font-semibold text-lg mb-3">"The Gem Score"</h2>
-                <p class="text-stone-400 leading-relaxed mb-4">
-                    "The sweet spot is a community rating between 6.5 and 7.9. High enough that "
-                    "people genuinely liked it, low enough that it never became a household name. "
-                    "Films with fewer votes rank higher than films everyone has already seen, and "
-                    "older films get a small nudge up because time buries things."
-                </p>
-                <p class="text-stone-400 leading-relaxed mb-4">
-                    "Critics panning a film knocks it out of contention entirely. This isn't a "
-                    "list of so-bad-they're-good movies. If a film opened the same weekend as a "
-                    "massive blockbuster and got overshadowed, it picks up a small boost for that."
-                </p>
-                <p class="text-stone-400 leading-relaxed">
-                    "Each time scores are calculated, the best-ranking film gets 100%. "
-                    "Everything else is measured against it."
-                </p>
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">{move || d().about_gem_h}</h2>
+                <p class="text-stone-400 leading-relaxed mb-4">{move || d().about_gem_p1}</p>
+                <p class="text-stone-400 leading-relaxed mb-4">{move || d().about_gem_p2}</p>
+                <p class="text-stone-400 leading-relaxed">{move || d().about_gem_p3}</p>
             </section>
 
             <section class="mb-8">
-                <h2 class="text-stone-100 font-semibold text-lg mb-3">"Acclaimed"</h2>
-                <p class="text-stone-400 leading-relaxed">
-                    "Community rating of 8.0 or above, critic score of 80% or above. "
-                    "Films that audiences and critics both got behind."
-                </p>
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">{move || d().about_acclaimed_h}</h2>
+                <p class="text-stone-400 leading-relaxed">{move || d().about_acclaimed_p}</p>
             </section>
 
             <section class="mb-8">
-                <h2 class="text-stone-100 font-semibold text-lg mb-3">"Wildcards"</h2>
-                <p class="text-stone-400 leading-relaxed">
-                    "Scores well by the numbers, but critics hated it. "
-                    "Cult classics, midnight movies, guilty pleasures. "
-                    "The kind of films that find their audience years later."
-                </p>
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">{move || d().about_wildcards_h}</h2>
+                <p class="text-stone-400 leading-relaxed">{move || d().about_wildcards_p}</p>
             </section>
 
             <section class="mb-8">
-                <h2 class="text-stone-100 font-semibold text-lg mb-3">"The Name"</h2>
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">{move || d().about_name_h}</h2>
                 <p class="text-stone-400 leading-relaxed">
                     <em>"Pedrilha"</em>
-                    " is an affectionate diminutive of "
+                    {move || d().about_name_1}
                     <em>"pedra"</em>
-                    " — stone, in Portuguese. There's an old Brazilian folk song, "
+                    {move || d().about_name_2}
                     <em>"Se Essa Rua Fosse Minha"</em>
-                    ", that dreams of paving a street "
+                    {move || d().about_name_3}
                     <em>"com pedrinhas de brilhantes"</em>
-                    " — with little diamond stones — for someone you love to walk on. "
-                    "That's the idea here: a lot of small, overlooked stones, laid out for someone to find."
+                    {move || d().about_name_4}
                 </p>
             </section>
         </div>
@@ -2661,6 +2630,8 @@ fn changelog_clean_header(s: &str) -> String {
 
 #[component]
 pub fn ChangelogPage() -> impl IntoView {
+    let lang = use_lang();
+    let d = move || dict(lang.get());
     const RAW: &str = include_str!("../../../CHANGELOG.md");
 
     let nodes: Vec<_> = RAW
@@ -2698,10 +2669,10 @@ pub fn ChangelogPage() -> impl IntoView {
         .collect();
 
     view! {
-        <Title text="Changelog — Pedrilha" />
+        <Title text=move || d().title_changelog />
         <div class="max-w-2xl mx-auto px-4 py-12">
-            <h1 class="text-3xl font-bold text-stone-100 mb-1">"Changelog"</h1>
-            <p class="text-stone-500 text-sm mb-8">"Notable changes to Pedrilha."</p>
+            <h1 class="text-3xl font-bold text-stone-100 mb-1">{move || d().changelog_h1}</h1>
+            <p class="text-stone-500 text-sm mb-8">{move || d().changelog_desc}</p>
             <ul>{nodes}</ul>
         </div>
     }
