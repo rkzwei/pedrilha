@@ -124,6 +124,49 @@ fn FilterBar(
     // Local signal so the input feels instant; on_search is debounced 300ms.
     let (local_search, set_local_search) = signal(search.get_untracked().unwrap_or_default());
     let debounce_handle: StoredValue<Option<i32>> = StoredValue::new(None);
+    let search_ref: NodeRef<leptos::html::Input> = NodeRef::new();
+
+    // Escape closes any open panel; "/" focuses search (unless already typing).
+    let key_handle = window_event_listener(leptos::ev::keydown, move |ev| {
+        match ev.key().as_str() {
+            "Escape" => set_open_dd.set(0),
+            "/" => {
+                let in_field = ev
+                    .target()
+                    .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+                    .map(|e| matches!(e.tag_name().as_str(), "INPUT" | "TEXTAREA"))
+                    .unwrap_or(false);
+                if !in_field {
+                    ev.prevent_default();
+                    if let Some(inp) = search_ref.get_untracked() {
+                        let _ = inp.focus();
+                    }
+                }
+            }
+            _ => {}
+        }
+    });
+    on_cleanup(move || key_handle.remove());
+
+    // Sync the box when the URL's q changes externally (Clear filters, back/forward)
+    // — but never while the user is typing in it.
+    Effect::new(move |_| {
+        let s = search.get().unwrap_or_default();
+        let focused = search_ref
+            .get_untracked()
+            .map(|inp| {
+                let node: &web_sys::Node = inp.as_ref();
+                web_sys::window()
+                    .and_then(|w| w.document())
+                    .and_then(|d| d.active_element())
+                    .map(|a| a.is_same_node(Some(node)))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
+        if !focused && s != local_search.get_untracked() {
+            set_local_search.set(s);
+        }
+    });
 
     // Button class helpers
     let dd_btn = |is_open: bool, is_active: bool| -> String {
@@ -154,35 +197,54 @@ fn FilterBar(
             })}
 
             // ── Search ────────────────────────────────────────────────────────
-            <input
-                type="text"
-                placeholder="Search titles…"
-                class="w-full bg-sc-card text-stone-200 border border-sc-border-input rounded-md px-4 py-2.5 text-sm placeholder-stone-600 focus:outline-none focus:border-sc-accent-border"
-                prop:value=move || local_search.get()
-                on:input=move |ev| {
-                    let v = event_target_value(&ev);
-                    set_local_search.set(v.clone());
-                    // Cancel any pending debounce timer.
-                    if let Some(h) = debounce_handle.get_value() {
-                        if let Some(w) = web_sys::window() {
-                            w.clear_timeout_with_handle(h);
+            <div class="relative">
+                <input
+                    type="text"
+                    placeholder="Search titles…  ( / )"
+                    node_ref=search_ref
+                    class="w-full bg-sc-card text-stone-200 border border-sc-border-input rounded-md px-4 py-2.5 text-sm placeholder-stone-600 focus:outline-none focus:border-sc-accent-border"
+                    prop:value=move || local_search.get()
+                    on:input=move |ev| {
+                        let v = event_target_value(&ev);
+                        set_local_search.set(v.clone());
+                        // Cancel any pending debounce timer.
+                        if let Some(h) = debounce_handle.get_value() {
+                            if let Some(w) = web_sys::window() {
+                                w.clear_timeout_with_handle(h);
+                            }
                         }
+                        // Schedule search 300 ms after the user stops typing.
+                        let val = if v.is_empty() { None } else { Some(v) };
+                        let cb = Closure::once(move || { on_search.run(val); });
+                        let handle = web_sys::window()
+                            .and_then(|w| {
+                                w.set_timeout_with_callback_and_timeout_and_arguments_0(
+                                    cb.as_ref().unchecked_ref::<js_sys::Function>(),
+                                    300,
+                                ).ok()
+                            })
+                            .unwrap_or(-1);
+                        cb.forget();
+                        debounce_handle.set_value(Some(handle));
                     }
-                    // Schedule search 300 ms after the user stops typing.
-                    let val = if v.is_empty() { None } else { Some(v) };
-                    let cb = Closure::once(move || { on_search.run(val); });
-                    let handle = web_sys::window()
-                        .and_then(|w| {
-                            w.set_timeout_with_callback_and_timeout_and_arguments_0(
-                                cb.as_ref().unchecked_ref::<js_sys::Function>(),
-                                300,
-                            ).ok()
-                        })
-                        .unwrap_or(-1);
-                    cb.forget();
-                    debounce_handle.set_value(Some(handle));
-                }
-            />
+                />
+                {move || (!local_search.get().is_empty()).then(|| view! {
+                    <button
+                        class="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-200 text-sm leading-none px-1"
+                        aria-label="Clear search"
+                        on:click=move |_| {
+                            // Cancel pending debounce, clear instantly.
+                            if let Some(h) = debounce_handle.get_value() {
+                                if let Some(w) = web_sys::window() {
+                                    w.clear_timeout_with_handle(h);
+                                }
+                            }
+                            set_local_search.set(String::new());
+                            on_search.run(None);
+                        }
+                    >"✕"</button>
+                })}
+            </div>
 
             // ── Filter buttons row ────────────────────────────────────────────
             <div class="flex items-center gap-2" style="position:relative;z-index:50">
@@ -191,15 +253,21 @@ fn FilterBar(
                 <div class="relative">
                     <button
                         class=move || dd_btn(open_dd.get() == 1, !genres.get().is_empty())
+                        aria-haspopup="true"
+                        aria-expanded=move || if open_dd.get() == 1 { "true" } else { "false" }
                         on:click=move |_| set_open_dd.update(|v| *v = if *v == 1 { 0 } else { 1 })
                     >
-                        "Genre"
-                        {move || {
-                            let n = genres.get().len();
-                            (n > 0).then(|| view! {
-                                <span style="background:var(--sc-accent);color:#0d0906;border-radius:9999px;font-size:0.65rem;font-weight:700;padding:1px 6px;line-height:1.4">{n}</span>
-                            })
-                        }}
+                        // Closed-state label shows what's selected: names for 1–3, count for more.
+                        <span class="truncate max-w-[200px]">
+                            {move || {
+                                let g = genres.get();
+                                match g.len() {
+                                    0 => "Genre".to_string(),
+                                    1..=3 => g.join(", "),
+                                    n => format!("Genre ({})", n),
+                                }
+                            }}
+                        </span>
                         <span class="text-stone-600 text-xs">"▾"</span>
                     </button>
 
@@ -234,6 +302,8 @@ fn FilterBar(
                 <div class="relative">
                     <button
                         class=move || dd_btn(open_dd.get() == 2, year.get().is_some())
+                        aria-haspopup="true"
+                        aria-expanded=move || if open_dd.get() == 2 { "true" } else { "false" }
                         on:click=move |_| set_open_dd.update(|v| *v = if *v == 2 { 0 } else { 2 })
                     >
                         {move || year.get()
@@ -271,6 +341,8 @@ fn FilterBar(
                 <div class="relative">
                     <button
                         class=move || dd_btn(open_dd.get() == 3, false)
+                        aria-haspopup="true"
+                        aria-expanded=move || if open_dd.get() == 3 { "true" } else { "false" }
                         on:click=move |_| set_open_dd.update(|v| *v = if *v == 3 { 0 } else { 3 })
                     >
                         {move || {
@@ -455,6 +527,7 @@ pub fn HomePage() -> impl IntoView {
     let (total, set_total) = signal(0i64);
     let (loading, set_loading) = signal(true);
     let (error, set_error) = signal(Option::<String>::None);
+    let (retry, set_retry) = signal(0u32);
 
     // section_view fires once on mount (no reactive reads → no re-runs)
     Effect::new(move |prev: Option<()>| {
@@ -476,6 +549,7 @@ pub fn HomePage() -> impl IntoView {
 
     // Refetch whenever the URL query (page/filters/search/sort) changes.
     Effect::new(move |_| {
+        let _ = retry.get(); // bumped by "Try again"
         let p = page();
         let y = year();
         let g = gstr();
@@ -595,6 +669,17 @@ pub fn HomePage() -> impl IntoView {
             },
         );
     });
+    let n_clear = navigate.clone();
+    let on_clear_cb = Callback::new(move |_| {
+        n_clear(
+            &build_url("/", 1, &None, &None, &None, &sort(), &sort_dir()),
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        );
+    });
+    let on_retry_cb = Callback::new(move |_| set_retry.update(|v| *v += 1));
     let nav_pg = navigate;
 
     view! {
@@ -610,7 +695,7 @@ pub fn HomePage() -> impl IntoView {
                 on_genres=on_genres_cb on_year=on_year_cb on_search=on_search_cb
                 sort=Signal::derive(sort) sort_dir=Signal::derive(sort_dir) on_sort=on_sort_cb
             />
-            {move || render_movie_grid(loading.get(), error.get(), movies.get())}
+            {move || render_movie_grid(loading.get(), error.get(), movies.get(), on_clear_cb, on_retry_cb)}
             {move || {
                 let tp = total_pages(); let p = page();
                 let n1 = nav_pg.clone(); let n2 = nav_pg.clone();
@@ -680,6 +765,7 @@ pub fn AcclaimedPage() -> impl IntoView {
     let (total, set_total) = signal(0i64);
     let (loading, set_loading) = signal(true);
     let (error, set_error) = signal(Option::<String>::None);
+    let (retry, set_retry) = signal(0u32);
 
     // section_view fires once on mount (no reactive reads → no re-runs)
     Effect::new(move |prev: Option<()>| {
@@ -701,6 +787,7 @@ pub fn AcclaimedPage() -> impl IntoView {
 
     // Refetch whenever the URL query (page/filters/search/sort) changes.
     Effect::new(move |_| {
+        let _ = retry.get(); // bumped by "Try again"
         let p = page();
         let y = year();
         let g = gstr();
@@ -836,6 +923,17 @@ pub fn AcclaimedPage() -> impl IntoView {
             },
         );
     });
+    let n_clear = navigate.clone();
+    let on_clear_cb = Callback::new(move |_| {
+        n_clear(
+            &build_url("/acclaimed", 1, &None, &None, &None, &sort(), &sort_dir()),
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        );
+    });
+    let on_retry_cb = Callback::new(move |_| set_retry.update(|v| *v += 1));
     let nav_pg = navigate;
 
     view! {
@@ -851,7 +949,7 @@ pub fn AcclaimedPage() -> impl IntoView {
                 on_genres=on_genres_cb on_year=on_year_cb on_search=on_search_cb
                 sort=Signal::derive(sort) sort_dir=Signal::derive(sort_dir) on_sort=on_sort_cb
             />
-            {move || render_movie_grid(loading.get(), error.get(), movies.get())}
+            {move || render_movie_grid(loading.get(), error.get(), movies.get(), on_clear_cb, on_retry_cb)}
             {move || {
                 let tp = total_pages(); let p = page();
                 let n1 = nav_pg.clone(); let n2 = nav_pg.clone();
@@ -921,6 +1019,7 @@ pub fn WildcardsPage() -> impl IntoView {
     let (total, set_total) = signal(0i64);
     let (loading, set_loading) = signal(true);
     let (error, set_error) = signal(Option::<String>::None);
+    let (retry, set_retry) = signal(0u32);
 
     // section_view fires once on mount (no reactive reads → no re-runs)
     Effect::new(move |prev: Option<()>| {
@@ -942,6 +1041,7 @@ pub fn WildcardsPage() -> impl IntoView {
 
     // Refetch whenever the URL query (page/filters/search/sort) changes.
     Effect::new(move |_| {
+        let _ = retry.get(); // bumped by "Try again"
         let p = page();
         let y = year();
         let g = gstr();
@@ -1077,6 +1177,17 @@ pub fn WildcardsPage() -> impl IntoView {
             },
         );
     });
+    let n_clear = navigate.clone();
+    let on_clear_cb = Callback::new(move |_| {
+        n_clear(
+            &build_url("/wildcards", 1, &None, &None, &None, &sort(), &sort_dir()),
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        );
+    });
+    let on_retry_cb = Callback::new(move |_| set_retry.update(|v| *v += 1));
     let nav_pg = navigate;
 
     view! {
@@ -1093,7 +1204,7 @@ pub fn WildcardsPage() -> impl IntoView {
                 on_genres=on_genres_cb on_year=on_year_cb on_search=on_search_cb
                 sort=Signal::derive(sort) sort_dir=Signal::derive(sort_dir) on_sort=on_sort_cb
             />
-            {move || render_movie_grid(loading.get(), error.get(), movies.get())}
+            {move || render_movie_grid(loading.get(), error.get(), movies.get(), on_clear_cb, on_retry_cb)}
             {move || {
                 let tp = total_pages(); let p = page();
                 let n1 = nav_pg.clone(); let n2 = nav_pg.clone();
@@ -1269,9 +1380,15 @@ pub fn MovieDetail() -> impl IntoView {
 
     let auth = use_context::<RwSignal<Option<AuthState>>>().unwrap_or_else(|| RwSignal::new(None));
 
-    let movie_id = move || params.with(|p| p.get("id").map(|v| v.to_string()));
+    let movie_id = move || params.with_untracked(|p| p.get("id").map(|v| v.to_string()));
+    let (retry, set_retry) = signal(0u32);
 
-    spawn_local(async move {
+    // Refetch when "Try again" bumps the retry signal (first run = initial load).
+    Effect::new(move |_| {
+        let _ = retry.get();
+        set_loading.set(true);
+        set_error.set(None);
+        spawn_local(async move {
         match movie_id() {
             None => {
                 set_error.set(Some("Invalid movie ID".into()));
@@ -1313,6 +1430,7 @@ pub fn MovieDetail() -> impl IntoView {
                 }
             },
         }
+        });
     });
 
     view! {
@@ -1350,8 +1468,15 @@ pub fn MovieDetail() -> impl IntoView {
                 </div> }.into_any()
             } else if let Some(err) = error.get() {
                 view!{ <div class="py-16 text-center">
-                    <p class="text-red-400 mb-4">{err}</p>
-                    <A href="/" attr:class="text-sc-accent">"← Back to Gems"</A>
+                    <p class="text-stone-300 mb-2">"Couldn't load this film — the server may be waking up."</p>
+                    <p class="text-xs text-stone-600 mb-6">{err}</p>
+                    <div class="flex items-center justify-center gap-4">
+                        <button
+                            class="text-sm text-sc-accent hover:text-sc-accent-hover border border-sc-accent-border rounded px-4 py-2"
+                            on:click=move |_| set_retry.update(|v| *v += 1)
+                        >"Try again"</button>
+                        <A href="/" attr:class="text-sm text-stone-400 hover:text-stone-200">"← Back to Gems"</A>
+                    </div>
                 </div> }.into_any()
             } else if let Some(m) = movie.get() {
                 let poster   = m.poster_url.clone().unwrap_or_default();
@@ -1550,23 +1675,39 @@ fn render_movie_grid(
     loading: bool,
     error: Option<String>,
     movies: Vec<MovieSummary>,
+    on_clear: Callback<()>,
+    on_retry: Callback<()>,
 ) -> impl IntoView {
-    if loading {
+    let inner = if loading {
         view! { <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {(0..PER_PAGE).map(|_| view!{ <SkeletonCard /> }).collect::<Vec<_>>()}
         </div> }
         .into_any()
     } else if let Some(err) = error {
-        view! { <div class="py-16 text-center"><p class="text-red-400">{err}</p></div> }.into_any()
+        view! { <div class="py-16 text-center">
+            <p class="text-stone-300 mb-2">"Couldn't load films — the server may be waking up."</p>
+            <p class="text-xs text-stone-600 mb-6">{err}</p>
+            <button
+                class="text-sm text-sc-accent hover:text-sc-accent-hover border border-sc-accent-border rounded px-4 py-2"
+                on:click=move |_| on_retry.run(())
+            >"Try again"</button>
+        </div> }.into_any()
     } else if movies.is_empty() {
-        view! { <div class="py-16 text-center text-stone-500">"No films match your filters."</div> }
-            .into_any()
+        view! { <div class="py-16 text-center">
+            <p class="text-stone-500 mb-6">"No gems match those filters."</p>
+            <button
+                class="text-sm text-stone-300 hover:text-stone-100 border border-sc-border hover:border-stone-600 rounded px-4 py-2"
+                on:click=move |_| on_clear.run(())
+            >"Clear filters"</button>
+        </div> }.into_any()
     } else {
         view! { <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4" style="isolation:isolate">
             {movies.into_iter().map(|m| view!{ <MovieCard movie=m /> }).collect::<Vec<_>>()}
         </div> }
         .into_any()
-    }
+    };
+    // Stable minimum height so loading → error/empty transitions don't collapse the page.
+    view! { <div class="min-h-[400px]">{inner}</div> }
 }
 
 // ── Skeleton card ─────────────────────────────────────────────────────────────
