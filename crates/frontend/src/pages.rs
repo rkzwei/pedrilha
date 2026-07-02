@@ -1631,8 +1631,8 @@ fn MovieCard(movie: MovieSummary) -> impl IntoView {
             <div class="p-3">
                 <h3 class="text-stone-100 font-medium text-sm leading-snug line-clamp-2 mb-1">{title}</h3>
                 <div class="flex items-center justify-between text-xs mb-0.5">
-                    <span class="text-stone-400">{year}</span>
-                    <div class="flex flex-wrap justify-end gap-x-2 gap-y-0.5 items-center tabular-nums">
+                    <span class="text-stone-400 tabular-nums">{year}</span>
+                    <div class="flex flex-wrap justify-end gap-x-1.5 gap-y-0.5 items-center tabular-nums">
                         {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold whitespace-nowrap" title="Gem Score — how undiscovered this film is (100% = top gem)" aria-label=format!("Gem score {}", s)>"✦ "{s.clone()}</span> })}
                         {imdb.map(|r| view!{ <span class="text-yellow-400 whitespace-nowrap" title="Community rating (0–10)" aria-label=format!("Community rating {} out of 10", r)>"★ "{r.clone()}</span> })}
                         {rt.map(|r|  view!{ <span class="text-red-400 whitespace-nowrap" title="Critic score" aria-label=format!("Critic score {}", r)>"🍅 "{r.clone()}</span> })}
@@ -2171,8 +2171,8 @@ fn WatchlistCard(item: WatchlistItem) -> impl IntoView {
             <div class="p-3">
                 <h3 class="text-stone-100 font-medium text-sm leading-snug line-clamp-2 mb-1">{title}</h3>
                 <div class="flex items-center justify-between text-xs mb-0.5">
-                    <span class="text-stone-400">{year}</span>
-                    <div class="flex flex-wrap justify-end gap-x-2 gap-y-0.5 items-center tabular-nums">
+                    <span class="text-stone-400 tabular-nums">{year}</span>
+                    <div class="flex flex-wrap justify-end gap-x-1.5 gap-y-0.5 items-center tabular-nums">
                         {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold whitespace-nowrap" title="Gem Score — how undiscovered this film is (100% = top gem)" aria-label=format!("Gem score {}", s)>"✦ "{s.clone()}</span> })}
                         {imdb.map(|r| view!{ <span class="text-yellow-400 whitespace-nowrap" title="Community rating (0–10)" aria-label=format!("Community rating {} out of 10", r)>"★ "{r.clone()}</span> })}
                     </div>
