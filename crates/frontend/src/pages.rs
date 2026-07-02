@@ -1354,10 +1354,14 @@ pub fn MovieDetail() -> impl IntoView {
                             <div class="flex-1 min-w-0">
                                 <div class="flex flex-wrap gap-3 mb-6">
                                     {gem_str.map(|s| view!{
-                                        <div class="flex flex-col items-center bg-sc-accent-deep border border-sc-accent-border rounded px-4 py-2">
-                                            <span class="text-xs text-sc-accent uppercase tracking-wide">"✦ Gem Score"</span>
-                                            <span class="text-2xl font-bold text-sc-accent-hover">{s}</span>
-                                        </div>
+                                        <A href="/about"
+                                           attr:title="What is this? — how scoring works"
+                                           attr:class="block">
+                                            <div class="flex flex-col items-center bg-sc-accent-deep border border-sc-accent-border rounded px-4 py-2 hover:border-sc-accent transition-colors">
+                                                <span class="text-xs text-sc-accent uppercase tracking-wide">"✦ Gem Score"</span>
+                                                <span class="text-2xl font-bold text-sc-accent-hover">{s}</span>
+                                            </div>
+                                        </A>
                                     })}
                                     {imdb_str.map(|r| view!{
                                         <div class="flex flex-col items-center bg-yellow-900 border border-yellow-700 rounded px-4 py-2">
@@ -1597,9 +1601,9 @@ fn MovieCard(movie: MovieSummary) -> impl IntoView {
                 <div class="flex items-center justify-between text-xs mb-0.5">
                     <span class="text-stone-400">{year}</span>
                     <div class="flex gap-2 items-center">
-                        {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold">"✦ "{s}</span> })}
-                        {imdb.map(|r| view!{ <span class="text-yellow-400">"★ "{r}</span> })}
-                        {rt.map(|r|  view!{ <span class="text-red-400">"🍅 "{r}</span> })}
+                        {gem_score.map(|s| view!{ <span class="text-sc-accent font-semibold" title="Gem Score — how undiscovered this film is (100% = top gem)">"✦ "{s}</span> })}
+                        {imdb.map(|r| view!{ <span class="text-yellow-400" title="Community rating (0–10)">"★ "{r}</span> })}
+                        {rt.map(|r|  view!{ <span class="text-red-400" title="Critic score">"🍅 "{r}</span> })}
                     </div>
                 </div>
                 {if !director.is_empty() {
@@ -2261,6 +2265,54 @@ pub fn PrivacyPage() -> impl IntoView {
                 <p class="text-stone-400 leading-relaxed">
                     "If we materially change how we handle data, we will update the date at the top of this page. "
                     "Continued use of the site constitutes acceptance."
+                </p>
+            </section>
+        </div>
+    }
+}
+
+// ── About page ────────────────────────────────────────────────────────────────
+#[component]
+pub fn AboutPage() -> impl IntoView {
+    view! {
+        <Title text="How it works — Gem Finder" />
+        <div class="max-w-3xl mx-auto px-4 py-12 text-stone-300">
+            <h1 class="font-display text-4xl tracking-widest text-stone-100 mb-2">"HOW IT WORKS"</h1>
+            <p class="text-stone-500 text-sm mb-10">"Understanding the Gem Score"</p>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">"The Gem Score"</h2>
+                <p class="text-stone-400 leading-relaxed mb-4">
+                    "The sweet spot is a community rating between 6.5 and 7.9. High enough that "
+                    "people genuinely liked it, low enough that it never became a household name. "
+                    "Films with fewer votes rank higher than films everyone has already seen, and "
+                    "older films get a small nudge up because time buries things."
+                </p>
+                <p class="text-stone-400 leading-relaxed mb-4">
+                    "Critics panning a film knocks it out of contention entirely. This isn't a "
+                    "list of so-bad-they're-good movies. If a film opened the same weekend as a "
+                    "massive blockbuster and got overshadowed, it picks up a small boost for that."
+                </p>
+                <p class="text-stone-400 leading-relaxed">
+                    "Each time scores are calculated, the best-ranking film gets 100%. "
+                    "Everything else is measured against it."
+                </p>
+            </section>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">"Acclaimed"</h2>
+                <p class="text-stone-400 leading-relaxed">
+                    "Community rating of 8.0 or above, critic score of 80% or above. "
+                    "Films that audiences and critics both got behind."
+                </p>
+            </section>
+
+            <section class="mb-8">
+                <h2 class="text-stone-100 font-semibold text-lg mb-3">"Wildcards"</h2>
+                <p class="text-stone-400 leading-relaxed">
+                    "Scores well by the numbers, but critics hated it. "
+                    "Cult classics, midnight movies, guilty pleasures. "
+                    "The kind of films that find their audience years later."
                 </p>
             </section>
         </div>

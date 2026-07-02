@@ -202,6 +202,7 @@ fn App() -> impl IntoView {
                         <Route path=path!("/auth/verify") view=pages::VerifyPage />
                         <Route path=path!("/privacy") view=pages::PrivacyPage />
                         <Route path=path!("/changelog") view=pages::ChangelogPage />
+                        <Route path=path!("/about") view=pages::AboutPage />
                     </Routes>
                 </main>
 
@@ -216,6 +217,10 @@ fn App() -> impl IntoView {
                         </a>
                     </p>
                     <p class="text-xs text-stone-700 mt-3">
+                        <A href="/about" attr:class="hover:text-stone-500 transition-colors">
+                            "How it works"
+                        </A>
+                        " · "
                         <A href="/privacy" attr:class="hover:text-stone-500 transition-colors">
                             "Privacy Policy"
                         </A>
