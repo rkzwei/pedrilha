@@ -71,8 +71,7 @@ fn fmt_release_day(d: &str) -> Option<String> {
     let month: usize = it.next()?.parse().ok()?;
     let day: u32 = it.next()?.parse().ok()?;
     const MONTHS: [&str; 12] = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
     if !(1..=12).contains(&month) {
         return None;
@@ -148,8 +147,8 @@ fn FilterBar(
     let search_ref: NodeRef<leptos::html::Input> = NodeRef::new();
 
     // Escape closes any open panel; "/" focuses search (unless already typing).
-    let key_handle = window_event_listener(leptos::ev::keydown, move |ev| {
-        match ev.key().as_str() {
+    let key_handle =
+        window_event_listener(leptos::ev::keydown, move |ev| match ev.key().as_str() {
             "Escape" => set_open_dd.set(0),
             "/" => {
                 let in_field = ev
@@ -165,8 +164,7 @@ fn FilterBar(
                 }
             }
             _ => {}
-        }
-    });
+        });
     on_cleanup(move || key_handle.remove());
 
     // Sync the box when the URL's q changes externally (Clear filters, back/forward)
@@ -1411,47 +1409,47 @@ pub fn MovieDetail() -> impl IntoView {
         set_loading.set(true);
         set_error.set(None);
         spawn_local(async move {
-        match movie_id() {
-            None => {
-                set_error.set(Some("Invalid movie ID".into()));
-                set_loading.set(false);
-            }
-            Some(id) => match api::fetch_movie(&id).await {
-                Ok(m) => {
-                    if let Some(a) = auth.get_untracked() {
-                        if let Some(db_id) = m.id {
-                            if let Ok(entry) = api::get_watchlist_entry(db_id, &a.token).await {
-                                set_wl_state.set(entry.map(|e| e.state));
+            match movie_id() {
+                None => {
+                    set_error.set(Some("Invalid movie ID".into()));
+                    set_loading.set(false);
+                }
+                Some(id) => match api::fetch_movie(&id).await {
+                    Ok(m) => {
+                        if let Some(a) = auth.get_untracked() {
+                            if let Some(db_id) = m.id {
+                                if let Ok(entry) = api::get_watchlist_entry(db_id, &a.token).await {
+                                    set_wl_state.set(entry.map(|e| e.state));
+                                }
                             }
                         }
+                        // Track movie detail view — fire-and-forget, swallow errors.
+                        if let Some(ref enc_id) = movie_id() {
+                            let mid = enc_id.clone();
+                            let title_str = m.title.clone();
+                            api::track_umami(
+                                "movie_view",
+                                &format!(r#"{{"id":"{}","title":"{}"}}"#, mid, title_str),
+                            );
+                            api::track_event(api::TrackEventPayload {
+                                event_type: "movie_view",
+                                movie_id: Some(mid),
+                                genre: None,
+                                era: None,
+                                section: None,
+                                page_num: None,
+                            })
+                            .await;
+                        }
+                        set_movie.set(Some(m));
+                        set_loading.set(false);
                     }
-                    // Track movie detail view — fire-and-forget, swallow errors.
-                    if let Some(ref enc_id) = movie_id() {
-                        let mid = enc_id.clone();
-                        let title_str = m.title.clone();
-                        api::track_umami(
-                            "movie_view",
-                            &format!(r#"{{"id":"{}","title":"{}"}}"#, mid, title_str),
-                        );
-                        api::track_event(api::TrackEventPayload {
-                            event_type: "movie_view",
-                            movie_id: Some(mid),
-                            genre: None,
-                            era: None,
-                            section: None,
-                            page_num: None,
-                        })
-                        .await;
+                    Err(e) => {
+                        set_error.set(Some(e));
+                        set_loading.set(false);
                     }
-                    set_movie.set(Some(m));
-                    set_loading.set(false);
-                }
-                Err(e) => {
-                    set_error.set(Some(e));
-                    set_loading.set(false);
-                }
-            },
-        }
+                },
+            }
         });
     });
 
