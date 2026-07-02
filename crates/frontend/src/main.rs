@@ -256,6 +256,9 @@ fn App() -> impl IntoView {
                             {concat!("v", env!("CARGO_PKG_VERSION"))}
                         </A>
                     </p>
+                    <div class="flex justify-center mt-4">
+                        <LocaleToggle />
+                    </div>
                 </footer>
             </div>
         </Router>
