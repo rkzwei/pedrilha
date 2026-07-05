@@ -382,6 +382,7 @@ fn App() -> impl IntoView {
                         <Route path=path!("/acclaimed") view=pages::AcclaimedPage />
                         <Route path=path!("/wildcards") view=pages::WildcardsPage />
                         <Route path=path!("/movie/:id") view=pages::MovieDetail />
+                        <Route path=path!("/r/:token") view=recs::RecLandingPage />
                         <Route path=path!("/admin") view=pages::AdminPage />
                         <Route path=path!("/watchlist") view=pages::WatchlistPage />
                         <Route path=path!("/signin") view=pages::SignInPage />

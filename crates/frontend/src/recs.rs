@@ -1,9 +1,12 @@
 //! Friend-recommendation UI (Ethos C1). All rec components live here —
 //! pages.rs is already ~3k lines and must not grow with this feature.
 
-use gem_finder_shared::types::FriendInfo;
+use gem_finder_shared::id_encode::encode_movie_id;
+use gem_finder_shared::types::{FriendInfo, RecPublic, WatchState};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use leptos_router::hooks::{use_navigate, use_params_map};
+use leptos_router::NavigateOptions;
 use wasm_bindgen::prelude::*;
 
 use crate::i18n::{dict, use_lang};
@@ -343,6 +346,134 @@ pub fn RecommendButton(movie_id: i64) -> impl IntoView {
                 RecFlow::Sent => modal_shell(close, view! {
                     <p class="text-stone-100 text-sm">{move || d().rec_sent}</p>
                 }).into_any(),
+            }}
+        </div>
+    }
+}
+
+// ── /r/{token} landing page ─────────────────────────────────────────────────
+
+/// Public landing page for a share-link rec. Reached with or without a
+/// session; the CTA differs accordingly. Signed-in visitors are auto-claimed
+/// silently on arrival — the movie is the point (C3), the claim is bookkeeping.
+#[component]
+pub fn RecLandingPage() -> impl IntoView {
+    let params = use_params_map();
+    let auth = use_context::<RwSignal<Option<AuthState>>>().unwrap_or_else(|| RwSignal::new(None));
+    let lang = use_lang();
+    let d = move || dict(lang.get());
+    // `StoredValue` makes the non-`Copy` `navigate` handle `Copy` itself, so
+    // every closure that captures it (`want_to_watch`, nested per-render
+    // view closures) stays `Fn`/reusable instead of degrading to `FnOnce`
+    // the moment it's moved into a nested `move ||`.
+    let navigate: StoredValue<_> = StoredValue::new(use_navigate());
+
+    let token = move || params.with_untracked(|p| p.get("token").unwrap_or_default().to_string());
+
+    let (loading, set_loading) = signal(true);
+    let (rec, set_rec) = signal(Option::<RecPublic>::None);
+    let (not_found, set_not_found) = signal(false);
+    let (claiming, set_claiming) = signal(false);
+
+    Effect::new(move |_| {
+        let t = token();
+        set_loading.set(true);
+        set_not_found.set(false);
+        spawn_local(async move {
+            match api::fetch_rec_public(&t).await {
+                Ok(r) => set_rec.set(Some(r)),
+                Err(_) => set_not_found.set(true),
+            }
+            set_loading.set(false);
+        });
+
+        // Auto-claim: silent, idempotent, self-claim already a server no-op.
+        if let Some(a) = auth.get_untracked() {
+            let t2 = token();
+            spawn_local(async move {
+                let _ = api::claim_rec(&a.token, &t2).await;
+            });
+        }
+    });
+
+    let want_to_watch = move |_: web_sys::MouseEvent| {
+        let Some(a) = auth.get_untracked() else {
+            return;
+        };
+        let Some(r) = rec.get_untracked() else {
+            return;
+        };
+        let t = token();
+        set_claiming.set(true);
+        spawn_local(async move {
+            let _ = api::claim_rec(&a.token, &t).await;
+            let _ = api::mark_rec_read(&a.token, &t).await;
+            let _ = api::upsert_watchlist_via_rec(
+                r.movie.id,
+                WatchState::WantToWatch,
+                None,
+                Some(t.clone()),
+                &a.token,
+            )
+            .await;
+            navigate.with_value(|nav| {
+                nav(&format!("/movie/{}", encode_movie_id(r.movie.id)), NavigateOptions::default())
+            });
+        });
+    };
+
+    view! {
+        <div class="max-w-md mx-auto px-4 py-16">
+            {move || if loading.get() {
+                view! {
+                    <div class="animate-pulse space-y-4">
+                        <div class="h-72 bg-sc-border rounded" />
+                        <div class="h-6 bg-sc-border rounded w-2/3 mx-auto" />
+                    </div>
+                }.into_any()
+            } else if not_found.get() {
+                view! {
+                    <div class="text-center">
+                        <h1 class="font-display text-4xl text-stone-100 mb-4">{move || d().nf_title}</h1>
+                        <p class="text-stone-400 mb-8">{move || d().nf_body}</p>
+                        <a href="/" class="text-sc-accent hover:text-sc-accent-hover">{move || d().nf_back}</a>
+                    </div>
+                }.into_any()
+            } else if let Some(r) = rec.get() {
+                view! {
+                    <div class="text-center">
+                        {r.movie.poster_url.clone().map(|p| view! {
+                            <img src=p alt=r.movie.title.clone() class="w-48 mx-auto rounded shadow-lg mb-6" />
+                        })}
+                        <h1 class="font-display text-2xl text-stone-100 mb-1">{r.movie.title.clone()}</h1>
+                        <p class="text-stone-500 text-sm mb-4">{r.movie.year.map(|y| y.to_string()).unwrap_or_default()}</p>
+                        <p class="text-stone-300 mb-2">
+                            {move || d().rec_landing_recommended_you.replace("{}", &r.sender_username)}
+                        </p>
+                        {r.note.clone().map(|n| view! {
+                            <p class="text-stone-400 text-sm italic mb-4">"\u{201c}"{n}"\u{201d}"</p>
+                        })}
+                        <div class="mt-6">
+                            {move || match auth.get() {
+                                Some(_) => view! {
+                                    <button
+                                        class="px-4 py-2.5 rounded text-sm bg-sc-accent-bg text-stone-100 border border-sc-accent-border disabled:opacity-50"
+                                        prop:disabled=move || claiming.get()
+                                        on:click=want_to_watch.clone()
+                                    >{move || d().rec_want_to_watch}</button>
+                                }.into_any(),
+                                None => view! {
+                                    <a
+                                        href=format!("/signin?next=/r/{}", token())
+                                        class="inline-block px-4 py-2.5 rounded text-sm bg-sc-accent-bg text-stone-100 border border-sc-accent-border no-underline"
+                                    >{move || d().rec_landing_cta}</a>
+                                }.into_any(),
+                            }}
+                        </div>
+                    </div>
+                }.into_any()
+            } else {
+                view! { <div /> }.into_any()
             }}
         </div>
     }

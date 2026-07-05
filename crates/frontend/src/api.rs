@@ -289,12 +289,14 @@ pub async fn fetch_admin_status() -> Result<serde_json::Value, String> {
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
-/// `POST /api/auth/magic` — request a magic-link email.
-pub async fn send_magic_link(email: &str) -> Result<(), String> {
+/// `POST /api/auth/magic` — request a magic-link email. `next` is embedded in
+/// the emailed link itself (server-side, not stored against the token) so
+/// the browser that opens it lands back where the user started.
+pub async fn send_magic_link(email: &str, next: Option<&str>) -> Result<(), String> {
     let url = format!("{}/api/auth/magic", api_base());
     let resp = reqwest::Client::new()
         .post(&url)
-        .json(&serde_json::json!({ "email": email }))
+        .json(&serde_json::json!({ "email": email, "next": next }))
         .send()
         .await
         .map_err(|e| format!("Network error: {}", e))?;
@@ -374,6 +376,20 @@ pub async fn upsert_watchlist(
     user_rating: Option<i32>,
     token: &str,
 ) -> Result<(), String> {
+    upsert_watchlist_via_rec(movie_id, state, user_rating, None, token).await
+}
+
+/// Same as `upsert_watchlist`, but tags the entry with the rec that brought
+/// it in (Ethos C1 "de {username}"). Used by the `/r/{token}` landing page
+/// and the `/recs` inbox's "quero ver" quick-action — the two places a
+/// watchlist add actually originates from a recommendation.
+pub async fn upsert_watchlist_via_rec(
+    movie_id: i64,
+    state: WatchState,
+    user_rating: Option<i32>,
+    rec_token: Option<String>,
+    token: &str,
+) -> Result<(), String> {
     let url = format!("{}/api/watchlist", api_base());
     let resp = reqwest::Client::new()
         .post(&url)
@@ -382,7 +398,7 @@ pub async fn upsert_watchlist(
             movie_id,
             state,
             user_rating,
-            rec_token: None,
+            rec_token,
         })
         .send()
         .await

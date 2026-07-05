@@ -1284,6 +1284,17 @@ pub fn WildcardsPage() -> impl IntoView {
 pub fn SignInPage() -> impl IntoView {
     let auth = use_context::<RwSignal<Option<AuthState>>>().expect("auth context missing");
     let navigate = use_navigate();
+    let query = use_query_map();
+
+    // Where to land after auth (e.g. `/r/{token}` — a rec landing link). Read
+    // once: this page doesn't re-render on its own query changing mid-flow.
+    // Stored in a `StoredValue` (Copy regardless of inner type) so the
+    // `submit` closure below stays `Copy`/`Fn` for reuse across its two
+    // call sites (click + Enter key) — a captured `Option<String>` would
+    // otherwise make `submit` move-once-only.
+    let next: StoredValue<Option<String>> =
+        StoredValue::new(query.with_untracked(|q| q.get("next").filter(|v| !v.is_empty())));
+    let next_or_home = move || next.get_value().unwrap_or_else(|| "/".to_string());
 
     let (email, set_email) = signal(String::new());
     let (sent, set_sent) = signal(false);
@@ -1294,7 +1305,7 @@ pub fn SignInPage() -> impl IntoView {
 
     Effect::new(move |_| {
         if auth.get().is_some() {
-            navigate("/", NavigateOptions::default());
+            navigate(&next_or_home(), NavigateOptions::default());
         }
     });
 
@@ -1311,8 +1322,9 @@ pub fn SignInPage() -> impl IntoView {
         }
         set_loading.set(true);
         set_error.set(None);
+        let next_val = next.get_value();
         spawn_local(async move {
-            match api::send_magic_link(&e).await {
+            match api::send_magic_link(&e, next_val.as_deref()).await {
                 Ok(_) => set_sent.set(true),
                 Err(msg) => {
                     let clean = if msg.to_lowercase().contains("invalid email") {
@@ -2221,6 +2233,9 @@ pub fn VerifyPage() -> impl IntoView {
     let (failed, set_failed) = signal(false);
 
     let token_val = query.with_untracked(|q| q.get("token").unwrap_or_default().to_string());
+    // The emailed link carries `next` (see SignInPage); land back where the
+    // user started (e.g. a rec's `/r/{token}` page) instead of always "/".
+    let next_val = query.with_untracked(|q| q.get("next").filter(|v| !v.is_empty()));
 
     if token_val.is_empty() {
         set_status.set(d().verify_incomplete.to_string());
@@ -2238,7 +2253,7 @@ pub fn VerifyPage() -> impl IntoView {
                         username: None,
                         is_admin,
                     }));
-                    navigate("/", NavigateOptions::default());
+                    navigate(&next_val.unwrap_or_else(|| "/".to_string()), NavigateOptions::default());
                 }
                 Err(_) => {
                     set_status.set(d().verify_invalid.to_string());
