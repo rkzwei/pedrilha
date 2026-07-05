@@ -36,6 +36,10 @@ pub async fn run(conn: &Connection) -> Result<()> {
         migrate_v7(conn).await?;
         record_version(conn, 7).await?;
     }
+    if !applied.contains(&8) {
+        migrate_v8(conn).await?;
+        record_version(conn, 8).await?;
+    }
 
     Ok(())
 }
@@ -387,5 +391,78 @@ async fn migrate_v7(conn: &Connection) -> Result<()> {
     }
 
     tracing::info!("Applied migration v7: watch providers");
+    Ok(())
+}
+
+// ── Migration v8: friend recommendations (word-of-mouth, Ethos C1) ──────────
+
+async fn migrate_v8(conn: &Connection) -> Result<()> {
+    // recommendations – one row per "recommend" action. Addressed externally
+    // ONLY by `token` (128-bit random); the integer PK never leaves the API.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS recommendations (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            token      TEXT    NOT NULL UNIQUE,   -- uuid v4 simple (32 hex chars)
+            sender_id  TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            movie_id   INTEGER NOT NULL REFERENCES movies(id) ON DELETE CASCADE,
+            note       TEXT    CHECK(note IS NULL OR length(note) <= 140),
+            created_at TEXT DEFAULT (datetime('now'))
+        )",
+        turso::params![],
+    )
+    .await?;
+
+    // rec_receipts – who received/claimed a rec. One link can be claimed by
+    // several users (group-chat fan-out); UNIQUE makes re-claims idempotent.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS rec_receipts (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            rec_id       INTEGER NOT NULL REFERENCES recommendations(id) ON DELETE CASCADE,
+            recipient_id TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            read_at      TEXT,                    -- NULL = unread (nav badge)
+            created_at   TEXT DEFAULT (datetime('now')),
+            UNIQUE(rec_id, recipient_id)
+        )",
+        turso::params![],
+    )
+    .await?;
+
+    // friendships – formed ONLY by a claimed rec in v1. `origin='search'` is
+    // reserved for a future username-search flow (do not remove).
+    // Canonical ordering user_a < user_b makes the pair unique regardless of direction.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS friendships (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_a     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            user_b     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            origin     TEXT NOT NULL CHECK(origin IN ('rec','search')),
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(user_a, user_b),
+            CHECK(user_a < user_b)
+        )",
+        turso::params![],
+    )
+    .await?;
+
+    // Watchlist rows remember which rec brought them in ("de {username}" tag).
+    // Revocation explicitly NULLs this (we do not rely on FK actions — see
+    // revoke_rec), the REFERENCES clause is documentation.
+    conn.execute(
+        "ALTER TABLE watchlist ADD COLUMN via_rec_id INTEGER REFERENCES recommendations(id)",
+        turso::params![],
+    )
+    .await?;
+
+    for ddl in [
+        "CREATE INDEX IF NOT EXISTS idx_recs_sender       ON recommendations(sender_id)",
+        "CREATE INDEX IF NOT EXISTS idx_receipts_recipient ON rec_receipts(recipient_id, read_at)",
+        "CREATE INDEX IF NOT EXISTS idx_receipts_rec       ON rec_receipts(rec_id)",
+        "CREATE INDEX IF NOT EXISTS idx_friendships_a      ON friendships(user_a)",
+        "CREATE INDEX IF NOT EXISTS idx_friendships_b      ON friendships(user_b)",
+    ] {
+        conn.execute(ddl, turso::params![]).await?;
+    }
+
+    tracing::info!("Applied migration v8: friend recommendations");
     Ok(())
 }
