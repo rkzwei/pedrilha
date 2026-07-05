@@ -72,6 +72,7 @@ Turso/libSQL database layer:
 ### `api`
 Axum backend:
 - Routes: `/health`, `/api/gems`, `/api/acclaimed`, `/api/movies/{id}`, `/api/score`, `/api/admin/sync`, `/api/admin/enrich`, `/api/admin/score`, `/api/admin/logs`
+- Phase 10 (planned): `/api/providers?region=`, watch-availability filter params on the list endpoints (`region`, `providers`, `rentals`), `GET/PUT /api/user/providers`, `POST /api/admin/providers-sync`; new service `services/provider_sync.rs` (TMDB watch-providers, JustWatch data)
 - `AppState` carries `db: Arc<Database>`, `tmdb_api_key: String`, `omdb_api_key: String`
 - API keys read at startup from env; `tracing::warn!` if missing (server still starts)
 - Admin endpoints spawn `tokio::spawn` background tasks, return 202 immediately
@@ -83,6 +84,7 @@ Leptos WASM frontend:
 - `pages.rs` — `HomePage` (gem grid + pagination + filters), `MovieDetail`, `AcclaimedPage`, `AdminPage`, `AboutPage`
 - `api.rs` — HTTP client functions: `fetch_gems`, `fetch_movie`, `fetch_acclaimed`, `admin_sync`, `admin_enrich`, `admin_score`, `admin_logs`
 - `components.rs` — Shared components
+- Phase 10 (planned): "What can I watch?" filter panel on list pages (region toggle, provider checkboxes, rentals toggle), provider badges on cards, grouped provider display + Stremio deep link on `MovieDetail`; selections persist in localStorage (`gf_watch_region`, `gf_watch_providers_us`, `gf_watch_providers_br`, `gf_watch_rentals`) and sync to the account when signed in
 
 ## Database Schema
 
@@ -133,6 +135,40 @@ Films with IMDb ≥ 8.0 AND RT critic ≥ 80%. Populated by `classify_acclaimed_
 | `id` | INTEGER PK |
 | `movie_id` | FK → movies UNIQUE |
 | `created_at` | TEXT |
+
+### `movie_providers` (Phase 10 — planned)
+Per-movie streaming availability from the TMDB watch-providers API (JustWatch data), normalized for SQL filtering. Regions limited to `US` and `BR` initially.
+
+| Column | Type |
+|---|---|
+| `movie_id` | FK → movies |
+| `region` | TEXT — `US` \| `BR` |
+| `provider_id` | INTEGER — TMDB provider id |
+| `provider_name` | TEXT |
+| `logo_path` | TEXT |
+| `access` | TEXT — `flatrate` \| `free` \| `ads` \| `rent` \| `buy` |
+
+PK `(movie_id, region, provider_id, access)`; index on `(region, provider_id, access)` for the "What can I watch?" filter join.
+
+### `provider_sync` (Phase 10 — planned)
+Per-movie fetch bookkeeping for provider data (7-day refresh TTL).
+
+| Column | Type |
+|---|---|
+| `movie_id` | INTEGER PK, FK → movies |
+| `fetched_at` | TEXT |
+| `tmdb_link` | TEXT — TMDB watch page (deep links are not exposed by the API) |
+
+### `user_providers` (Phase 10 — planned)
+Signed-in sync of a user's selected streaming services (anonymous users use localStorage only).
+
+| Column | Type |
+|---|---|
+| `user_id` | FK → users |
+| `region` | TEXT |
+| `provider_id` | INTEGER — TMDB provider id |
+
+PK `(user_id, region, provider_id)`.
 
 ## Hidden Gem Algorithm
 
@@ -225,7 +261,7 @@ Docker always uses local SQLite. The named volume `gem-data` mounts to `/app` an
 
 See `.github/CODEOWNERS` for per-crate review assignments.
 
-**Branch strategy:** `main` → `develop` → `feature/*`
+**Branch strategy:** `main` ← `dev` ← feature work. Day-to-day work lands on `dev`; `main` only receives reviewed merges from `dev`.
 
 **Requirements to merge to main:**
 1. PR passes CI (build + clippy + test)
