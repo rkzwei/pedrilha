@@ -8,10 +8,13 @@ mod middleware;
 mod routes;
 mod services;
 use gem_finder_db::{migrations, models, Database};
-use gem_finder_shared::types::{HealthResponse, Movie, MovieSummary, PaginatedResponse};
+use gem_finder_shared::types::{
+    HealthResponse, Movie, MovieProvider, MovieSummary, PaginatedResponse, ProviderInfo,
+    WatchBadge, WatchTier,
+};
 use routes::auth::ChallengeStore;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{atomic::AtomicBool, Arc};
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
@@ -52,6 +55,10 @@ pub(crate) struct MovieCache {
     pub gems: Option<Cached<Vec<MovieSummary>>>,
     pub acclaimed: Option<Cached<Vec<MovieSummary>>>,
     pub wildcards: Option<Cached<Vec<MovieSummary>>>,
+    /// Provider rows keyed by movie_id, per region — shared by all three lists
+    /// for in-memory watch filtering. Loaded lazily on first filtered request.
+    pub providers_us: Option<Cached<HashMap<i64, Vec<MovieProvider>>>>,
+    pub providers_br: Option<Cached<HashMap<i64, Vec<MovieProvider>>>>,
 }
 
 impl MovieCache {
@@ -60,6 +67,8 @@ impl MovieCache {
         self.gems = None;
         self.acclaimed = None;
         self.wildcards = None;
+        self.providers_us = None;
+        self.providers_br = None;
     }
 }
 
@@ -101,6 +110,11 @@ struct GemsQuery {
     q: Option<String>,
     sort: Option<String>,
     sort_dir: Option<String>,
+    /// Watch filter (Phase 10): region ('US'|'BR'), csv of selected TMDB provider
+    /// ids, and whether to include rentals.
+    region: Option<String>,
+    providers: Option<String>,
+    rentals: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -112,6 +126,11 @@ struct AclaimedQuery {
     q: Option<String>,
     sort: Option<String>,
     sort_dir: Option<String>,
+    /// Watch filter (Phase 10): region ('US'|'BR'), csv of selected TMDB provider
+    /// ids, and whether to include rentals.
+    region: Option<String>,
+    providers: Option<String>,
+    rentals: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -123,6 +142,16 @@ struct WildcardsQuery {
     q: Option<String>,
     sort: Option<String>,
     sort_dir: Option<String>,
+    /// Watch filter (Phase 10): region ('US'|'BR'), csv of selected TMDB provider
+    /// ids, and whether to include rentals.
+    region: Option<String>,
+    providers: Option<String>,
+    rentals: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ProvidersQuery {
+    region: Option<String>,
 }
 
 /// Sort a filtered movie slice in place.
@@ -182,6 +211,151 @@ fn apply_sort(items: &mut Vec<&MovieSummary>, field: &str, dir: &str) {
                 o
             }
         }),
+    }
+}
+
+// ── Phase 10: watch-provider filter helpers ──────────────────────────────────
+
+/// Normalise a region param to one of the two supported codes.
+fn normalize_region(region: &str) -> &'static str {
+    if region.eq_ignore_ascii_case("BR") {
+        "BR"
+    } else {
+        "US"
+    }
+}
+
+/// Parse a csv of TMDB provider ids into a set.
+fn parse_provider_ids(csv: &Option<String>) -> HashSet<i32> {
+    csv.as_deref()
+        .unwrap_or("")
+        .split(',')
+        .filter_map(|s| s.trim().parse::<i32>().ok())
+        .collect()
+}
+
+/// Best watch badge for a movie under the active filter, or `None` if the movie
+/// is not watchable under it. Match rule: an included-tier offering on a selected
+/// provider (preferred), else — if rentals are enabled — any rent/buy offering.
+fn watch_badge_for(
+    rows: &[MovieProvider],
+    selected: &HashSet<i32>,
+    rentals: bool,
+) -> Option<WatchBadge> {
+    let is_included = |a: &str| matches!(a, "flatrate" | "free" | "ads");
+    if let Some(p) = rows
+        .iter()
+        .find(|p| is_included(&p.access) && selected.contains(&p.provider_id))
+    {
+        return Some(WatchBadge {
+            provider_id: p.provider_id,
+            provider_name: p.provider_name.clone(),
+            logo_path: p.logo_path.clone(),
+            tier: WatchTier::Included,
+        });
+    }
+    if rentals {
+        if let Some(p) = rows
+            .iter()
+            .find(|p| matches!(p.access.as_str(), "rent" | "buy"))
+        {
+            return Some(WatchBadge {
+                provider_id: p.provider_id,
+                provider_name: p.provider_name.clone(),
+                logo_path: p.logo_path.clone(),
+                tier: WatchTier::Rent,
+            });
+        }
+    }
+    None
+}
+
+/// Load the provider map for a region from cache, falling back to a DB read that
+/// then populates the cache. Cloned per request, matching the list-cache pattern.
+async fn provider_map_for(
+    state: &AppState,
+    region: &str,
+) -> Result<HashMap<i64, Vec<MovieProvider>>, StatusCode> {
+    {
+        let cache = state.movie_cache.read().await;
+        let slot = if region == "BR" {
+            &cache.providers_br
+        } else {
+            &cache.providers_us
+        };
+        if let Some(c) = slot {
+            if c.is_valid() {
+                return Ok(c.data.clone());
+            }
+        }
+    }
+    let conn = state
+        .db
+        .connect()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let map = models::get_providers_for_movies(&conn, region)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut cache = state.movie_cache.write().await;
+    if region == "BR" {
+        cache.providers_br = Some(Cached::new(map.clone()));
+    } else {
+        cache.providers_us = Some(Cached::new(map.clone()));
+    }
+    Ok(map)
+}
+
+/// Resolved watch filter for one request. `active` is false when the caller sent
+/// no region, or a region but neither selected providers nor the rentals toggle.
+struct WatchFilter {
+    active: bool,
+    selected: HashSet<i32>,
+    rentals: bool,
+    map: HashMap<i64, Vec<MovieProvider>>,
+}
+
+impl WatchFilter {
+    /// Build from raw query params, loading the region provider map when active.
+    async fn resolve(
+        state: &AppState,
+        region: &Option<String>,
+        providers: &Option<String>,
+        rentals: &Option<String>,
+    ) -> Result<Self, StatusCode> {
+        let selected = parse_provider_ids(providers);
+        let rentals = matches!(rentals.as_deref(), Some("1") | Some("true"));
+        let active = region.is_some() && (!selected.is_empty() || rentals);
+        let map = if active {
+            let region = normalize_region(region.as_deref().unwrap_or("US"));
+            provider_map_for(state, region).await?
+        } else {
+            HashMap::new()
+        };
+        Ok(Self {
+            active,
+            selected,
+            rentals,
+            map,
+        })
+    }
+
+    /// Whether a movie passes the filter (always true when inactive).
+    fn passes(&self, movie_id: i64) -> bool {
+        if !self.active {
+            return true;
+        }
+        let rows = self.map.get(&movie_id).map(|v| v.as_slice()).unwrap_or(&[]);
+        watch_badge_for(rows, &self.selected, self.rentals).is_some()
+    }
+
+    /// Badge for a movie when the filter is active, else `None`.
+    fn badge(&self, movie_id: i64) -> Option<WatchBadge> {
+        if !self.active {
+            return None;
+        }
+        let rows = self.map.get(&movie_id).map(|v| v.as_slice()).unwrap_or(&[]);
+        watch_badge_for(rows, &self.selected, self.rentals)
     }
 }
 
@@ -366,6 +540,7 @@ async fn main() {
         .route("/api/gems", get(get_gems))
         .route("/api/acclaimed", get(get_acclaimed))
         .route("/api/wildcards", get(get_wildcards))
+        .route("/api/providers", get(get_providers))
         .route("/api/movies/{id}", get(get_movie))
         // Auth
         .route("/api/auth/magic", post(routes::auth::magic_link_request))
@@ -910,6 +1085,7 @@ async fn get_gems(
     };
 
     // ── 3. Apply user-supplied filters in memory ─────────────────────────────
+    let wf = WatchFilter::resolve(&state, &query.region, &query.providers, &query.rentals).await?;
     let mut filtered: Vec<&MovieSummary> = full_list
         .iter()
         .filter(|m| {
@@ -944,6 +1120,9 @@ async fn get_gems(
                     return false;
                 }
             }
+            if !wf.passes(m.id) {
+                return false;
+            }
             true
         })
         .collect();
@@ -956,12 +1135,17 @@ async fn get_gems(
     // ── 5. Paginate ──────────────────────────────────────────────────────────
     let total = filtered.len() as i64;
     let start = ((page - 1) * per_page) as usize;
-    let data: Vec<MovieSummary> = filtered
+    let mut data: Vec<MovieSummary> = filtered
         .into_iter()
         .skip(start)
         .take(per_page as usize)
         .cloned()
         .collect();
+    if wf.active {
+        for m in &mut data {
+            m.watch_badge = wf.badge(m.id);
+        }
+    }
 
     Ok(Json(PaginatedResponse {
         data,
@@ -1007,6 +1191,7 @@ async fn get_acclaimed(
         full_list
     };
 
+    let wf = WatchFilter::resolve(&state, &query.region, &query.providers, &query.rentals).await?;
     let mut filtered: Vec<&MovieSummary> = full_list
         .iter()
         .filter(|m| {
@@ -1040,6 +1225,9 @@ async fn get_acclaimed(
                     return false;
                 }
             }
+            if !wf.passes(m.id) {
+                return false;
+            }
             true
         })
         .collect();
@@ -1050,12 +1238,17 @@ async fn get_acclaimed(
 
     let total = filtered.len() as i64;
     let start = ((page - 1) * per_page) as usize;
-    let data: Vec<MovieSummary> = filtered
+    let mut data: Vec<MovieSummary> = filtered
         .into_iter()
         .skip(start)
         .take(per_page as usize)
         .cloned()
         .collect();
+    if wf.active {
+        for m in &mut data {
+            m.watch_badge = wf.badge(m.id);
+        }
+    }
 
     Ok(Json(PaginatedResponse {
         data,
@@ -1101,6 +1294,7 @@ async fn get_wildcards(
         full_list
     };
 
+    let wf = WatchFilter::resolve(&state, &query.region, &query.providers, &query.rentals).await?;
     let mut filtered: Vec<&MovieSummary> = full_list
         .iter()
         .filter(|m| {
@@ -1134,6 +1328,9 @@ async fn get_wildcards(
                     return false;
                 }
             }
+            if !wf.passes(m.id) {
+                return false;
+            }
             true
         })
         .collect();
@@ -1144,12 +1341,17 @@ async fn get_wildcards(
 
     let total = filtered.len() as i64;
     let start = ((page - 1) * per_page) as usize;
-    let data: Vec<MovieSummary> = filtered
+    let mut data: Vec<MovieSummary> = filtered
         .into_iter()
         .skip(start)
         .take(per_page as usize)
         .cloned()
         .collect();
+    if wf.active {
+        for m in &mut data {
+            m.watch_badge = wf.badge(m.id);
+        }
+    }
 
     Ok(Json(PaginatedResponse {
         data,
@@ -1157,6 +1359,25 @@ async fn get_wildcards(
         page,
         per_page,
     }))
+}
+
+/// GET /api/providers?region= — distinct streaming providers present in the
+/// catalog for a region (included tiers only), with catalog counts. Powers the
+/// "What can I watch?" picker so only services that actually stream ≥1 title show.
+async fn get_providers(
+    State(state): State<AppState>,
+    Query(query): Query<ProvidersQuery>,
+) -> Result<Json<Vec<ProviderInfo>>, StatusCode> {
+    let region = normalize_region(query.region.as_deref().unwrap_or("US"));
+    let conn = state
+        .db
+        .connect()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let providers = models::get_distinct_providers(&conn, region)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(providers))
 }
 
 /// GET /api/movies/:id — single movie by mv+base36 encoded ID.
@@ -1176,11 +1397,19 @@ async fn get_movie(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let movie = models::get_movie_by_id(&conn, id)
+    let mut movie = models::get_movie_by_id(&conn, id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
 
-    movie.map(Json).ok_or(StatusCode::NOT_FOUND)
+    // Attach streaming availability grouped per region (Phase 10).
+    if let Ok(providers) = models::get_movie_providers(&conn, id, movie.tmdb_id).await {
+        if !providers.is_empty() {
+            movie.watch_providers = Some(providers);
+        }
+    }
+
+    Ok(Json(movie))
 }
 
 /// POST /api/score — run batch scoring synchronously (used from admin UI).
@@ -1200,4 +1429,77 @@ async fn run_scoring(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(serde_json::json!({ "scored": scored })))
+}
+
+#[cfg(test)]
+mod watch_filter_tests {
+    use super::{parse_provider_ids, watch_badge_for};
+    use gem_finder_shared::types::{MovieProvider, WatchTier};
+    use std::collections::HashSet;
+
+    fn prov(id: i32, access: &str) -> MovieProvider {
+        MovieProvider {
+            provider_id: id,
+            provider_name: format!("Provider {}", id),
+            logo_path: None,
+            access: access.to_string(),
+        }
+    }
+
+    fn selected(ids: &[i32]) -> HashSet<i32> {
+        ids.iter().copied().collect()
+    }
+
+    #[test]
+    fn selected_service_flatrate_matches_included() {
+        let rows = vec![prov(8, "flatrate")];
+        let badge = watch_badge_for(&rows, &selected(&[8]), false).expect("should match");
+        assert_eq!(badge.provider_id, 8);
+        assert_eq!(badge.tier, WatchTier::Included);
+    }
+
+    #[test]
+    fn unselected_service_flatrate_does_not_match() {
+        let rows = vec![prov(8, "flatrate")];
+        // Netflix (8) streams it, but the user only selected provider 9.
+        assert!(watch_badge_for(&rows, &selected(&[9]), false).is_none());
+    }
+
+    #[test]
+    fn rental_without_toggle_does_not_match() {
+        let rows = vec![prov(8, "rent")];
+        assert!(watch_badge_for(&rows, &selected(&[8]), false).is_none());
+    }
+
+    #[test]
+    fn rental_with_toggle_matches_any_provider() {
+        let rows = vec![prov(99, "buy")];
+        // Rentals need no subscription — any provider qualifies when the toggle is on.
+        let badge = watch_badge_for(&rows, &selected(&[]), true).expect("should match");
+        assert_eq!(badge.tier, WatchTier::Rent);
+    }
+
+    #[test]
+    fn included_preferred_over_rent() {
+        let rows = vec![prov(8, "rent"), prov(8, "flatrate")];
+        let badge = watch_badge_for(&rows, &selected(&[8]), true).expect("should match");
+        assert_eq!(badge.tier, WatchTier::Included);
+    }
+
+    #[test]
+    fn free_and_ads_count_as_included() {
+        for access in ["free", "ads"] {
+            let rows = vec![prov(7, access)];
+            let badge = watch_badge_for(&rows, &selected(&[7]), false)
+                .unwrap_or_else(|| panic!("{} should match", access));
+            assert_eq!(badge.tier, WatchTier::Included);
+        }
+    }
+
+    #[test]
+    fn parses_csv_provider_ids() {
+        let ids = parse_provider_ids(&Some("8, 9,x,337".to_string()));
+        assert_eq!(ids, selected(&[8, 9, 337]));
+        assert!(parse_provider_ids(&None).is_empty());
+    }
 }
