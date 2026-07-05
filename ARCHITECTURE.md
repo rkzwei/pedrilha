@@ -7,6 +7,14 @@ A Rust + Leptos web application for discovering hidden gem movies.
 Gem Finder helps you find incredible movies that sit at a mid-7 IMDb rating
 and get hidden under piles of blockbusters and wrongly-rated movies.
 
+## Ethos
+
+Every feature must derive from the founding sentence in [ETHOS.md](ETHOS.md) —
+the Sorcerer Test. Each phase in [PHASES.md](PHASES.md) cites the clauses
+(C1–C8) it derives from; a feature that cannot cite a clause does not get
+built. ETHOS.md is the single source of truth for the clauses and the
+component→clause map — it is not duplicated here.
+
 ## Tech Stack
 
 | Layer | Technology | Role |
