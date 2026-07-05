@@ -252,6 +252,18 @@ fn App() -> impl IntoView {
         save_watch_prefs(&p);
     });
 
+    // Keep the watch region locked to the UI language (PT→BR, EN→US) so displayed
+    // providers always match what the user can read. Overwrites the persisted
+    // region on every language change.
+    Effect::new(move |_| {
+        let region = if lang.get() == Lang::Pt { "BR" } else { "US" };
+        watch.update(|w| {
+            if w.region != region {
+                w.region = region.to_string();
+            }
+        });
+    });
+
     // Cross-device sync (Phase 10 Batch 6): when signed in, hydrate from the server
     // if local selections are empty, and push on every change. Last-write-wins.
     if let Some(a) = auth.get_untracked() {
