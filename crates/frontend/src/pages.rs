@@ -1563,7 +1563,6 @@ pub fn MovieDetail() -> impl IntoView {
                 };
                 // Streaming availability grouped per region (Phase 10).
                 let providers_data = m.watch_providers.clone().unwrap_or_default();
-                let jw_fallback = jw_url.clone();
 
                 view!{
                     <div class="mt-6 relative isolate">
@@ -1667,7 +1666,6 @@ pub fn MovieDetail() -> impl IntoView {
                                 // ── Streaming availability (Phase 10) ─────────────────────────────
                                 {
                                     let providers_data = providers_data.clone();
-                                    let jw_fallback = jw_fallback.clone();
                                     move || {
                                         let region = watch.with(|w| w.region.clone());
                                         let rp = providers_data.iter().find(|r| r.region == region).cloned();
@@ -1715,17 +1713,9 @@ pub fn MovieDetail() -> impl IntoView {
                                                 }.into_any()
                                             }
                                             _ => {
-                                                // No synced data for this region — fall back to a JustWatch search.
-                                                let jw = jw_fallback.clone();
-                                                view!{
-                                                    <div class="mt-6 pt-6 border-t border-sc-border">
-                                                        <a href=jw target="_blank" rel="noopener noreferrer"
-                                                            class="text-sm text-stone-300 hover:text-stone-100 border border-sc-border hover:border-stone-600 rounded px-3 py-1.5">
-                                                            {move || d().detail_where_watch}
-                                                        </a>
-                                                        <p class="text-[0.6rem] text-stone-600 mt-2">{move || d().providers_attribution}</p>
-                                                    </div>
-                                                }.into_any()
+                                                // No synced provider data for this region — hide the section
+                                                // entirely (the JustWatch link above already covers this case).
+                                                view!{ <div /> }.into_any()
                                             }
                                         }
                                     }
