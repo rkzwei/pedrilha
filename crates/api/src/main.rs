@@ -586,6 +586,18 @@ async fn main() {
             "/api/user/username/check",
             get(routes::auth::check_username),
         )
+        // Recommendations — Ethos C1 ("me manda aí o nome desse filme")
+        .route("/api/recs", post(routes::recs::create_rec))
+        .route(
+            "/api/rec/{token}",
+            get(routes::recs::get_rec).delete(routes::recs::revoke_rec),
+        )
+        .route("/api/rec/{token}/claim", post(routes::recs::claim_rec))
+        .route("/api/rec/{token}/read", post(routes::recs::mark_read))
+        .route("/api/recs/received", get(routes::recs::received))
+        .route("/api/recs/sent", get(routes::recs::sent))
+        .route("/api/recs/unread_count", get(routes::recs::unread_count))
+        .route("/api/friends", get(routes::recs::friends))
         // Admin
         .route("/api/event", post(routes::events::track_event))
         .route("/api/score", post(run_scoring))
