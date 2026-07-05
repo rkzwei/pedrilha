@@ -1547,19 +1547,11 @@ pub fn MovieDetail() -> impl IntoView {
                 let jw_url = format!("https://www.justwatch.com/us/search?q={}", urlenc(&title));
                 let imdb_id  = m.imdb_id.clone();
                 let movie_db_id = m.id.unwrap_or(0);
-                // Stremio deep links: IMDb ids are Stremio's movie ids via Cinemeta.
-                // Protocol links no-op silently when Stremio isn't installed, so a small
-                // web link is offered alongside as a detectable fallback.
+                // Stremio deep link: IMDb ids are Stremio's movie ids via Cinemeta.
                 let title_enc = urlenc(&title);
-                let (stremio_app, stremio_web) = match m.imdb_id.clone() {
-                    Some(id) if !id.is_empty() => (
-                        format!("stremio:///detail/movie/{}/{}", id, id),
-                        format!("https://web.stremio.com/#/detail/movie/{}/{}", id, id),
-                    ),
-                    _ => (
-                        format!("stremio:///search?search={}", title_enc),
-                        format!("https://web.stremio.com/#/search?search={}", title_enc),
-                    ),
+                let stremio_app = match m.imdb_id.clone() {
+                    Some(id) if !id.is_empty() => format!("stremio:///detail/movie/{}/{}", id, id),
+                    _ => format!("stremio:///search?search={}", title_enc),
                 };
                 // Streaming availability grouped per region (Phase 10).
                 let providers_data = m.watch_providers.clone().unwrap_or_default();
@@ -1655,11 +1647,6 @@ pub fn MovieDetail() -> impl IntoView {
                                     <a href=stremio_app
                                         class="text-sm text-purple-300 hover:text-purple-200 border border-purple-800 hover:border-purple-600 rounded px-3 py-1.5">
                                         {move || d().detail_open_stremio}
-                                    </a>
-                                    <a href=stremio_web
-                                        target="_blank" rel="noopener noreferrer"
-                                        class="text-sm text-stone-400 hover:text-stone-200 border border-sc-border hover:border-stone-600 rounded px-3 py-1.5">
-                                        {move || d().detail_stremio_web}
                                     </a>
                                 </div>
 
