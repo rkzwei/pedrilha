@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// A movie with all its metadata and calculated gem score.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -327,6 +328,39 @@ pub struct TmdbDiscoverResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TmdbFindResponse {
     pub movie_results: Vec<TmdbMovie>,
+}
+
+/// TMDB `/movie/{id}/watch/providers` response. `results` is keyed by region
+/// code (e.g. "US", "BR"); we keep only the regions we support.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TmdbWatchProvidersResponse {
+    #[serde(default)]
+    pub results: HashMap<String, TmdbRegionProviders>,
+}
+
+/// One region's provider offerings from TMDB, split by access tier.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct TmdbRegionProviders {
+    /// TMDB watch page for this title/region (ToS-compliant link target).
+    pub link: Option<String>,
+    #[serde(default)]
+    pub flatrate: Vec<TmdbProvider>,
+    #[serde(default)]
+    pub free: Vec<TmdbProvider>,
+    #[serde(default)]
+    pub ads: Vec<TmdbProvider>,
+    #[serde(default)]
+    pub rent: Vec<TmdbProvider>,
+    #[serde(default)]
+    pub buy: Vec<TmdbProvider>,
+}
+
+/// A single provider entry inside a TMDB watch-providers tier array.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TmdbProvider {
+    pub provider_id: i32,
+    pub provider_name: String,
+    pub logo_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

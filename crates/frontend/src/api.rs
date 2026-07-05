@@ -171,6 +171,16 @@ pub async fn admin_score(token: &str) -> Result<serde_json::Value, String> {
     admin_post("/api/admin/score", serde_json::json!({}), token).await
 }
 
+/// POST /api/admin/providers-sync — streaming provider sync in background.
+pub async fn admin_provider_sync(limit: i64, token: &str) -> Result<serde_json::Value, String> {
+    admin_post(
+        "/api/admin/providers-sync",
+        serde_json::json!({ "limit": limit }),
+        token,
+    )
+    .await
+}
+
 /// GET /api/admin/logs — recent run log entries.
 pub async fn admin_logs(token: &str) -> Result<serde_json::Value, String> {
     let url = format!("{}/api/admin/logs", api_base());

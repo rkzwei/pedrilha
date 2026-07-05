@@ -412,6 +412,10 @@ async fn main() {
         .route("/api/admin/sync", post(routes::admin::trigger_sync))
         .route("/api/admin/enrich", post(routes::admin::trigger_enrich))
         .route("/api/admin/score", post(routes::admin::trigger_score))
+        .route(
+            "/api/admin/providers-sync",
+            post(routes::admin::trigger_provider_sync),
+        )
         .route("/api/admin/seed", post(routes::admin::trigger_seed))
         .route("/api/admin/logs", get(routes::admin::get_run_logs))
         .route("/api/admin/status", get(routes::admin::get_status))
@@ -530,6 +534,13 @@ async fn main() {
                     }
                     if let Err(e) = gem_finder_db::models::classify_wildcards(&conn).await {
                         tracing::warn!("scheduled_sync: classify wildcards failed: {}", e);
+                    }
+
+                    // Refresh streaming availability for the (now re-scored) catalog.
+                    let providers =
+                        crate::services::provider_sync::ProviderSyncService::new(sched_tmdb.clone());
+                    if let Err(e) = providers.sync_providers(&conn, i64::MAX).await {
+                        tracing::warn!("scheduled_sync: provider sync failed: {}", e);
                     }
 
                     sched_cache.write().await.invalidate();
