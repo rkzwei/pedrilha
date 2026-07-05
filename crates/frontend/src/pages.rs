@@ -2598,6 +2598,7 @@ fn AdminStatus(state: Signal<ActionState>) -> impl IntoView {
 struct WatchlistItem {
     movie: Movie,
     state: WatchState,
+    recommended_by: Option<String>,
 }
 
 #[component]
@@ -2609,6 +2610,7 @@ pub fn WatchlistPage() -> impl IntoView {
     let (error, set_error) = signal(Option::<String>::None);
     let (show_want, set_show_want) = signal(true);
     let (show_watched, set_show_watched) = signal(false);
+    let (show_recommended, set_show_recommended) = signal(false);
     let lang = use_lang();
     let d = move || dict(lang.get());
 
@@ -2636,11 +2638,12 @@ pub fn WatchlistPage() -> impl IntoView {
                             .map(|entry| {
                                 let encoded = encode_movie_id(entry.movie_id);
                                 let state = entry.state.clone();
+                                let recommended_by = entry.recommended_by.clone();
                                 async move {
                                     api::fetch_movie(&encoded)
                                         .await
                                         .ok()
-                                        .map(|movie| WatchlistItem { movie, state })
+                                        .map(|movie| WatchlistItem { movie, state, recommended_by })
                                 }
                             })
                             .collect::<Vec<_>>();
@@ -2686,6 +2689,15 @@ pub fn WatchlistPage() -> impl IntoView {
                         />
                         <span class="text-sm text-stone-300">{move || d().watchlist_cb_watched}</span>
                     </label>
+                    <label class="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            prop:checked=move || show_recommended.get()
+                            on:change=move |_| set_show_recommended.update(|v| *v = !*v)
+                            class="accent-sc-accent w-4 h-4 cursor-pointer"
+                        />
+                        <span class="text-sm text-stone-300">{move || d().wl_filter_recommended}</span>
+                    </label>
                 </div>
             })}
 
@@ -2720,6 +2732,7 @@ pub fn WatchlistPage() -> impl IntoView {
                         WatchState::Watched => show_watched.get(),
                         WatchState::NotInterested => false,
                     })
+                    .filter(|item| !show_recommended.get() || item.recommended_by.is_some())
                     .collect();
                 if its.is_empty() {
                     return view! {
@@ -2754,6 +2767,7 @@ fn WatchlistCard(item: WatchlistItem) -> impl IntoView {
     let imdb = item.movie.imdb_rating.map(|r| format!("{:.1}", r));
     let gem_score = item.movie.gem_score.map(|s| format!("{:.0}", s * 100.0));
 
+    let recommended_by = item.recommended_by.clone();
     let state = item.state.clone();
     let badge_class = match &state {
         WatchState::WantToWatch => "bg-sc-accent-deep border-sc-accent text-sc-accent",
@@ -2801,6 +2815,11 @@ fn WatchlistCard(item: WatchlistItem) -> impl IntoView {
                 {if !director.is_empty() {
                     view!{ <p class="text-xs text-stone-500 mt-0.5 truncate">{director}</p> }.into_any()
                 } else { view!{ <span /> }.into_any() }}
+                {recommended_by.map(|u| view! {
+                    <p class="text-xs text-sc-accent mt-1 truncate">
+                        {move || d().rec_inbox_from.replace("{}", &u)}
+                    </p>
+                })}
             </div>
         </a>
     }

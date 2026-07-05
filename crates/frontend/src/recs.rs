@@ -1,10 +1,14 @@
 //! Friend-recommendation UI (Ethos C1). All rec components live here —
 //! pages.rs is already ~3k lines and must not grow with this feature.
 
+use std::collections::BTreeMap;
+
 use gem_finder_shared::id_encode::encode_movie_id;
-use gem_finder_shared::types::{FriendInfo, RecPublic, WatchState};
+use gem_finder_shared::types::{FriendInfo, ReceivedRec, RecPublic, SentRec, WatchState};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use leptos_meta::Title;
+use leptos_router::components::A;
 use leptos_router::hooks::{use_navigate, use_params_map};
 use leptos_router::NavigateOptions;
 use wasm_bindgen::prelude::*;
@@ -475,6 +479,258 @@ pub fn RecLandingPage() -> impl IntoView {
             } else {
                 view! { <div /> }.into_any()
             }}
+        </div>
+    }
+}
+
+// ── /recs inbox ──────────────────────────────────────────────────────────────
+
+#[derive(Clone, Copy, PartialEq)]
+enum RecsTab {
+    Received,
+    Sent,
+}
+
+/// Received + sent recommendations. Received is grouped per friend (a list
+/// is human-scale here — no pagination). Sent exists primarily as the
+/// revocation surface (Ethos: sender can retract at any time).
+#[component]
+pub fn RecsPage() -> impl IntoView {
+    let auth = use_context::<RwSignal<Option<AuthState>>>().unwrap_or_else(|| RwSignal::new(None));
+    let unread_recs = use_context::<RwSignal<i64>>().unwrap_or_else(|| RwSignal::new(0));
+    let lang = use_lang();
+    let d = move || dict(lang.get());
+    // `StoredValue`: see the identical comment in `RecLandingPage` — keeps
+    // every row-click closure `Fn`/reusable instead of FnOnce.
+    let navigate: StoredValue<_> = StoredValue::new(use_navigate());
+
+    let tab = RwSignal::new(RecsTab::Received);
+    let received = RwSignal::new(Vec::<ReceivedRec>::new());
+    let sent = RwSignal::new(Vec::<SentRec>::new());
+    let loading = RwSignal::new(false);
+
+    let reload = move || {
+        let Some(a) = auth.get_untracked() else {
+            return;
+        };
+        loading.set(true);
+        let t1 = a.token.clone();
+        spawn_local(async move {
+            if let Ok(list) = api::fetch_received_recs(&t1).await {
+                received.set(list);
+            }
+            loading.set(false);
+        });
+        let t2 = a.token.clone();
+        spawn_local(async move {
+            if let Ok(list) = api::fetch_sent_recs(&t2).await {
+                sent.set(list);
+            }
+        });
+    };
+
+    Effect::new(move |_| {
+        if auth.get().is_some() {
+            reload();
+        }
+    });
+
+    let open_and_read = move |token: String, movie_id: i64| {
+        let Some(a) = auth.get_untracked() else {
+            return;
+        };
+        received.update(|list| {
+            if let Some(r) = list.iter_mut().find(|r| r.token == token) {
+                if !r.read {
+                    r.read = true;
+                    unread_recs.update(|c| *c = (*c - 1).max(0));
+                }
+            }
+        });
+        spawn_local(async move {
+            let _ = api::mark_rec_read(&a.token, &token).await;
+        });
+        navigate.with_value(|nav| {
+            nav(&format!("/movie/{}", encode_movie_id(movie_id)), NavigateOptions::default())
+        });
+    };
+
+    let want_to_watch_row = move |token: String, movie_id: i64| {
+        let Some(a) = auth.get_untracked() else {
+            return;
+        };
+        received.update(|list| {
+            if let Some(r) = list.iter_mut().find(|r| r.token == token) {
+                if !r.read {
+                    r.read = true;
+                    unread_recs.update(|c| *c = (*c - 1).max(0));
+                }
+            }
+        });
+        spawn_local(async move {
+            let _ = api::mark_rec_read(&a.token, &token).await;
+            let _ = api::upsert_watchlist_via_rec(
+                movie_id,
+                WatchState::WantToWatch,
+                None,
+                Some(token),
+                &a.token,
+            )
+            .await;
+        });
+    };
+
+    let revoke = move |token: String| {
+        let Some(a) = auth.get_untracked() else {
+            return;
+        };
+        if !web_sys::window()
+            .map(|w| w.confirm_with_message(d().rec_revoke_confirm).unwrap_or(false))
+            .unwrap_or(false)
+        {
+            return;
+        }
+        spawn_local(async move {
+            if api::revoke_rec(&a.token, &token).await.is_ok() {
+                sent.update(|list| list.retain(|s| s.token != token));
+            }
+        });
+    };
+
+    view! {
+        <Title text=move || d().rec_inbox_title />
+        <div class="max-w-3xl mx-auto px-4 py-8">
+            <h1 class="text-4xl font-bold text-stone-100 mb-6">{move || d().rec_inbox_title}</h1>
+
+            {move || auth.get().is_none().then(|| view! {
+                <div class="py-16 text-center">
+                    <p class="text-stone-400 mb-4">{move || d().watchlist_signin_prompt}</p>
+                    <A href="/signin?next=/recs"
+                        attr:class="text-sc-accent hover:text-sc-accent-hover border border-sc-accent-border rounded px-4 py-2 text-sm">
+                        {move || d().watchlist_signin_btn}
+                    </A>
+                </div>
+            })}
+
+            {move || auth.get().is_some().then(|| view! {
+                <div>
+                    <div class="flex gap-2 mb-6 border-b border-sc-border">
+                        <button
+                            class=move || if tab.get() == RecsTab::Received {
+                                "px-3 py-2 text-sm text-sc-accent border-b-2 border-sc-accent"
+                            } else {
+                                "px-3 py-2 text-sm text-stone-500 hover:text-stone-300"
+                            }
+                            on:click=move |_| tab.set(RecsTab::Received)
+                        >{move || d().rec_tab_received}</button>
+                        <button
+                            class=move || if tab.get() == RecsTab::Sent {
+                                "px-3 py-2 text-sm text-sc-accent border-b-2 border-sc-accent"
+                            } else {
+                                "px-3 py-2 text-sm text-stone-500 hover:text-stone-300"
+                            }
+                            on:click=move |_| tab.set(RecsTab::Sent)
+                        >{move || d().rec_tab_sent}</button>
+                    </div>
+
+                    {move || match tab.get() {
+                        RecsTab::Received => {
+                            let list = received.get();
+                            if loading.get() && list.is_empty() {
+                                view! { <p class="text-stone-500 text-sm">"..."</p> }.into_any()
+                            } else if list.is_empty() {
+                                view! { <p class="text-stone-500 py-8 text-center">{move || d().rec_inbox_empty}</p> }.into_any()
+                            } else {
+                                let mut groups: BTreeMap<String, Vec<ReceivedRec>> = BTreeMap::new();
+                                for r in list {
+                                    groups.entry(r.sender_username.clone()).or_default().push(r);
+                                }
+                                view! {
+                                    <div class="space-y-6">
+                                        {groups.into_iter().map(|(sender, recs)| {
+                                            view! {
+                                                <div>
+                                                    <h2 class="text-xs uppercase tracking-widest text-stone-500 mb-2">
+                                                        {move || d().rec_inbox_from.replace("{}", &sender)}
+                                                    </h2>
+                                                    <div class="space-y-2">
+                                                        {recs.into_iter().map(|r| {
+                                                            let row_class = if r.read {
+                                                                "flex gap-3 p-3 rounded bg-sc-card border border-sc-border cursor-pointer"
+                                                            } else {
+                                                                "flex gap-3 p-3 rounded bg-sc-card border border-sc-accent-border cursor-pointer"
+                                                            };
+                                                            let tok1 = r.token.clone();
+                                                            let tok2 = r.token.clone();
+                                                            let mid = r.movie.id;
+                                                            let poster = r.movie.poster_url.clone();
+                                                            view! {
+                                                                <div class=row_class on:click=move |_| open_and_read(tok1.clone(), mid)>
+                                                                    {poster.map(|p| view! {
+                                                                        <img src=p alt=r.movie.title.clone() class="w-12 h-18 object-cover rounded flex-shrink-0" />
+                                                                    })}
+                                                                    <div class="flex-1 min-w-0">
+                                                                        <p class="text-stone-100 text-sm font-medium truncate">{r.movie.title.clone()}</p>
+                                                                        <p class="text-stone-500 text-xs">{r.movie.year.map(|y| y.to_string()).unwrap_or_default()}</p>
+                                                                        {r.note.clone().map(|n| view! {
+                                                                            <p class="text-stone-400 text-xs italic mt-1">{n}</p>
+                                                                        })}
+                                                                        <button
+                                                                            class="text-xs text-sc-accent hover:text-sc-accent-hover mt-1"
+                                                                            on:click=move |ev: web_sys::MouseEvent| {
+                                                                                ev.stop_propagation();
+                                                                                want_to_watch_row(tok2.clone(), mid);
+                                                                            }
+                                                                        >{move || d().rec_want_to_watch}</button>
+                                                                    </div>
+                                                                </div>
+                                                            }
+                                                        }).collect::<Vec<_>>()}
+                                                    </div>
+                                                </div>
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    </div>
+                                }.into_any()
+                            }
+                        }
+                        RecsTab::Sent => {
+                            let list = sent.get();
+                            if list.is_empty() {
+                                view! { <p class="text-stone-500 py-8 text-center">{move || d().rec_inbox_empty}</p> }.into_any()
+                            } else {
+                                view! {
+                                    <div class="space-y-2">
+                                        {list.into_iter().map(|s| {
+                                            let tok = s.token.clone();
+                                            view! {
+                                                <div class="flex gap-3 p-3 rounded bg-sc-card border border-sc-border">
+                                                    {s.movie.poster_url.clone().map(|p| view! {
+                                                        <img src=p alt=s.movie.title.clone() class="w-12 h-18 object-cover rounded flex-shrink-0" />
+                                                    })}
+                                                    <div class="flex-1 min-w-0">
+                                                        <p class="text-stone-100 text-sm font-medium truncate">{s.movie.title.clone()}</p>
+                                                        {s.note.clone().map(|n| view! {
+                                                            <p class="text-stone-400 text-xs italic mt-1">{n}</p>
+                                                        })}
+                                                        <p class="text-stone-500 text-xs mt-1">
+                                                            {move || d().rec_claims.replace("{}", &s.claim_count.to_string())}
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        class="text-xs text-red-400 hover:text-red-300 self-start"
+                                                        on:click=move |_| revoke(tok.clone())
+                                                    >{move || d().rec_revoke}</button>
+                                                </div>
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    </div>
+                                }.into_any()
+                            }
+                        }
+                    }}
+                </div>
+            })}
         </div>
     }
 }

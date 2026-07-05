@@ -294,6 +294,19 @@ fn App() -> impl IntoView {
     let smtp_ok: RwSignal<bool> = RwSignal::new(true);
     provide_context(smtp_ok);
 
+    // Nav badge for unread recommendations (Ethos C1). One fetch per app
+    // load when signed in — no polling, badge-only notification per spec.
+    // RecsPage decrements this directly via context after marking reads.
+    let unread_recs: RwSignal<i64> = RwSignal::new(0);
+    provide_context(unread_recs);
+    if let Some(a) = auth.get_untracked() {
+        spawn_local(async move {
+            if let Ok(count) = api::fetch_unread_count(&a.token).await {
+                unread_recs.set(count);
+            }
+        });
+    }
+
     spawn_local(async move {
         if let Ok(status) = api::fetch_admin_status().await {
             let configured = status
@@ -340,6 +353,14 @@ fn App() -> impl IntoView {
                                             a.email.split('@').next().unwrap_or("user").to_string()
                                         });
                                     view! {
+                                        <A href="/recs" attr:class="relative text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide aria-[current=page]:text-sc-accent aria-[current=page]:border-b-2 aria-[current=page]:border-sc-accent">
+                                            {move || d().nav_recs}
+                                            {move || (unread_recs.get() > 0).then(|| view! {
+                                                <span class="ml-1 px-1.5 rounded-full bg-sc-accent text-stone-900 text-[10px] font-bold align-top">
+                                                    {move || unread_recs.get()}
+                                                </span>
+                                            })}
+                                        </A>
                                         <A href="/watchlist" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide aria-[current=page]:text-sc-accent aria-[current=page]:border-b-2 aria-[current=page]:border-sc-accent">
                                             {move || d().nav_watchlist}
                                         </A>
@@ -385,6 +406,7 @@ fn App() -> impl IntoView {
                         <Route path=path!("/r/:token") view=recs::RecLandingPage />
                         <Route path=path!("/admin") view=pages::AdminPage />
                         <Route path=path!("/watchlist") view=pages::WatchlistPage />
+                        <Route path=path!("/recs") view=recs::RecsPage />
                         <Route path=path!("/signin") view=pages::SignInPage />
                         <Route path=path!("/auth/verify") view=pages::VerifyPage />
                         <Route path=path!("/privacy") view=pages::PrivacyPage />
