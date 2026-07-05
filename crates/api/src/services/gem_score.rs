@@ -755,11 +755,10 @@ mod tests {
 
     // -- Unit: vote ratio -- high rating + low votes scores higher --------------
     //
-    // NOTE: The population-level acceptance criteria from PHASES.md
-    // ("The Sorcerer scores in top 0.1%", "Dinner in America in top 0.5%",
-    //  "The Hurt Locker in top 1%") requires a real database with populated
-    //  data. Use `cargo run -- seed-test-data` to populate the database and
-    //  then query GET /api/gems to verify ranking manually.
+    // NOTE: Seeded-gem ranks are calibration diagnostics, never acceptance
+    // criteria (ETHOS.md: "Sorcerer's role: calibration only"). Population-
+    // level calibration runs in db_tests::test_known_gems_calibration_report
+    // against a real database; seed it with `cargo run -- seed-test-data`.
 
     #[test]
     fn test_vote_ratio_low_votes_score_higher() {
@@ -1075,15 +1074,17 @@ mod db_tests {
         eprintln!("{}", "-".repeat(91));
     }
 
-    /// Assert the three known gems are present in the DB and score above a
-    /// reasonable floor relative to the scored population.
+    /// Calibration report for the seeded gems (ETHOS.md — "Sorcerer's role:
+    /// calibration only").
     ///
-    /// Thresholds (intentionally lenient until FIX-17 normalization is done):
-    /// - Each known gem must have a gem score > 0.
-    /// - Each known gem must rank in the top 50% of scored movies.
-    /// - The highest-ranked known gem must rank in the top 25%.
+    /// Seeded-gem rank is NEVER a pass/fail condition: an algorithm told
+    /// where Sorcerer must land proves nothing. This test prints 🚩 RED FLAG
+    /// diagnostics instead of asserting, when:
+    /// - a seeded gem scores 0.0 (algorithm produced no signal), or
+    /// - no seeded gem ranks in the top 25% of the scored population.
+    /// A red flag means: investigate the algorithm or the data.
     #[tokio::test]
-    async fn test_known_gems_rank_in_top_tier() {
+    async fn test_known_gems_calibration_report() {
         let scored = match score_real_population().await {
             Some(s) => s,
             None => {
@@ -1094,18 +1095,19 @@ mod db_tests {
 
         let total = scored.len();
 
-        // With fewer than 10 movies, the ranking assertions are meaningless "
-        // the tier cutoffs collapse to rank 1 or 2, making any 3-way tie a failure.
-        // This happens when seed-test-data hasn't been run or the DB only has the
-        // 3 seeded gems. Print a diagnostic and skip rather than giving a false pass/fail.
+        // With fewer than 10 movies the tier cutoffs are meaningless.
         if total < 10 {
             eprintln!(
-                "  Only {} scored movies - tier ranking assertions require 10 for a meaningful test. Run seed-test-data to populate the DB.",
+                "  Only {} scored movies - calibration needs 10+ for meaningful ranks. Run seed-test-data to populate the DB.",
                 total
             );
-            // Still verify that known gems at least have a positive score.
             for m in &scored {
-                assert!(m.score > 0.0, "gem {} has score 0.0", m.title);
+                if m.score <= 0.0 {
+                    eprintln!(
+                        "🚩 RED FLAG: {} has gem score 0.0 - no signal. Investigate (ETHOS.md: calibration).",
+                        m.title
+                    );
+                }
             }
             return;
         }
@@ -1120,7 +1122,6 @@ mod db_tests {
         let mut best_known_rank: Option<usize> = None;
 
         for (label, imdb_id) in KNOWN_GEMS {
-            // Find this gem in the scored results
             let result = scored
                 .iter()
                 .enumerate()
@@ -1129,7 +1130,6 @@ mod db_tests {
             match result {
                 None => {
                     eprintln!("  {} (imdb:{}) NOT found in scored population - not in DB or below filter threshold", label, imdb_id);
-                    // Not a hard failure " movie may not be seeded yet
                 }
                 Some((rank_idx, m)) => {
                     let rank = rank_idx + 1;
@@ -1141,16 +1141,12 @@ mod db_tests {
                         m.score * 100.0
                     );
 
-                    assert!(
-                        m.score > 0.0,
-                        "{} has gem score 0.0 - scoring algorithm produced no signal",
-                        label
-                    );
-                    // Note: we do NOT assert every gem is in top 50%. A recently released
-                    // gem (e.g. Dinner in America, 2020) naturally scores lower than
-                    // classic forgotten films (e.g. Sorcerer, 1977) " that is correct
-                    // algorithm behaviour, not a failure. Only the best known gem needs
-                    // to rank in the top 25% as a sanity check.
+                    if m.score <= 0.0 {
+                        eprintln!(
+                            "🚩 RED FLAG: {} has gem score 0.0 - no signal. Investigate (ETHOS.md: calibration).",
+                            label
+                        );
+                    }
 
                     if best_known_rank.is_none_or(|best| rank < best) {
                         best_known_rank = Some(rank);
@@ -1159,18 +1155,25 @@ mod db_tests {
             }
         }
 
-        if let Some(best) = best_known_rank {
-            assert!(
-                best <= top_25_cutoff,
-                "Best known gem ranked {} - expected at least one gem in top 25% (rank {})",
-                best,
-                top_25_cutoff
-            );
-            eprintln!(
-                "Best known gem: rank {} (top {:.1}%)",
-                best,
-                (best as f64 / total as f64) * 100.0
-            );
+        match best_known_rank {
+            Some(best) if best <= top_25_cutoff => {
+                eprintln!(
+                    "Calibration OK: best known gem rank {} (top {:.1}%)",
+                    best,
+                    (best as f64 / total as f64) * 100.0
+                );
+            }
+            Some(best) => {
+                eprintln!(
+                    "🚩 RED FLAG: best known gem ranked {}/{} - outside top 25% (rank {}). The algorithm should *find* the seeded gems. Investigate (ETHOS.md: calibration).",
+                    best, total, top_25_cutoff
+                );
+            }
+            None => {
+                eprintln!(
+                    "🚩 RED FLAG: no seeded gems found in scored population. Run seed-test-data or check SEEDED_GEMS ingestion."
+                );
+            }
         }
     }
 }

@@ -9,6 +9,8 @@ Each phase has clear deliverables and acceptance criteria.
 
 **Goal:** Scaffold the entire project so it compiles and can be run.
 
+**Ethos:** C8 — there's a way to do it: the product exists, compiles, and runs.
+
 ### Deliverables
 - [x] Cargo workspace monorepo with 4 crates: `shared`, `db`, `api`, `frontend`
 - [x] `shared` — Domain types (`Movie`, `GemScore`, `BigHit`, `WatchlistEntry`, `PaginatedResponse`, `MovieSummary`, `HealthResponse`)
@@ -43,6 +45,8 @@ cargo check --package gem-finder-db    # Must pass
 ## Phase 2: TMDB Data Ingestion ✅ COMPLETE
 
 **Goal:** Populate the database with real movie data from TMDB.
+
+**Ethos:** C2, C5 — accurate data keeps the promise; a broad population is where obscurity gets found.
 
 ### Deliverables
 - [x] `api/src/services/tmdb_sync.rs` — TMDB API client & Ingestion service
@@ -83,6 +87,8 @@ cargo run --package gem-finder-api
 
 **Goal:** Implement the weighted scoring algorithm that identifies hidden gems.
 
+**Ethos:** C2, C4, C5, C6 — the algorithm is the sentence: somewhat old (C4), few watched (C5), critics loved (C6), and the pick must hold up (C2).
+
 ### Deliverables
 - [x] `api/src/services/gem_score.rs` — `GemScoreCalculator`, batch scoring, RT hard gate
 - [x] `api/src/services/tmdb_sync.rs` — era-windowed sync, blockbuster sync, acclaimed candidates sync
@@ -118,18 +124,25 @@ GemScore = weighted_sum(
 - **Sync**: `sync_acclaimed_candidates` (TMDB vote_avg ≥ 7.5, vote_count ≥ 10k) → OMDb enrichment → `classify_acclaimed_films`
 
 ### Acceptance Criteria ✅ Verified
+- Known blockbusters excluded from pool (big_hits table)
+- Bad films (RT < 65%) filtered — To Catch a Killer, Whitney Houston biopic excluded
+
+### Calibration Snapshot (observed, never asserted — see ETHOS.md)
+Seeded-gem ranks are calibration diagnostics, not pass/fail conditions. If a
+seeded gem stops ranking highly, that is a red flag to investigate — not a
+test to make pass. Observed at phase completion:
 - Sorcerer (1977): rank 1, ~85%
 - The Hurt Locker (2008): rank 2, ~71%
 - Dinner in America (2020): rank ~40, ~39%
-- Known blockbusters excluded from pool (big_hits table)
-- Bad films (RT < 65%) filtered — To Catch a Killer, Whitney Houston biopic excluded
-- Teachers' Lounge (2023, Oscar-nominated) ≥ rank 10 ✓ (valid recent gem)
+- Teachers' Lounge (2023, Oscar-nominated): ≥ rank 10 (valid recent gem)
 
 ---
 
 ## Phase 4: Full Frontend UI ✅ COMPLETE
 
 **Goal:** Complete the Leptos frontend with all views.
+
+**Ethos:** C3, C7 — one named movie, presented so discovery feels like finding a gem.
 
 ### Deliverables
 - [x] Movie grid with pagination (20 per page, prev/next controls)
@@ -155,6 +168,8 @@ GemScore = weighted_sum(
 ## Phase 5: Docker Deployment ✅ COMPLETE (core)
 
 **Goal:** Single-command local and production deployment via Docker.
+
+**Ethos:** C1, C8 — passing it on just happens: one command puts it where a friend can reach it.
 
 ### Deliverables
 - [x] Multi-stage `docker/Dockerfile` — frontend-builder + api-builder + debian:bookworm-slim runtime
@@ -199,6 +214,8 @@ docker compose build && docker compose up
 
 **Goal:** Improve scoring accuracy and surface divisive films separately.
 
+**Ethos:** C2, C5, C6 — sharper obscurity signal and quality gates so the recommendation never disappoints.
+
 ### Deliverables
 - [x] RT as **credibility multiplier** on vote_ratio (not additive): rt≥70→1.0, rt∈[40,70)→linear, rt<40→0.0, None→0.8
 - [x] Removed `CRITIC_DISPARITY` weight; `VOTE_RATIO` raised from 0.20 → 0.25 (total stays 1.00)
@@ -220,6 +237,8 @@ Low RT + low votes = audiences heeded critics = wildcard, not gem.
 
 **Goal:** Move away from the default dark-blue/emerald "AI aesthetic" toward something with character.
 
+**Ethos:** C7 — it felt like a hidden gem: character over spreadsheet.
+
 ### Deliverables
 - [x] **Palette C — Red Latitude**: warm brown-dark backgrounds (`#0d0906`, `#17100a`, `#201610`), rust-orange accent (`#c2410c` / orange-700). No green tint — avoids Steam-era aesthetic.
 - [x] **Bebas Neue** for display headings (h1, nav brand) — condensed, uncompromising, 70s poster energy
@@ -239,6 +258,8 @@ William Friedkin's *Sorcerer* (1977) — warm amber headlights in rain, 35mm gra
 ## Phase 8: User Features ✅ COMPLETE (except style picker)
 
 **Goal:** Add authenticated user accounts with personal watchlists, public ratings, and theme switching.
+
+**Ethos:** C1, C7 — word of mouth mechanics (public ratings, sharing-ready accounts) and delight (style picker).
 
 > **Status (2026-07-05):** Auth (magic link + JWT + WebAuthn passkeys), `users`/
 > `magic_tokens`/`watchlist` tables, watchlist CRUD + UI all shipped. The only
@@ -340,6 +361,8 @@ Until a second source is actually needed, keep the concrete implementations — 
 
 **Goal:** Harden for public deployment.
 
+**Ethos:** C2, C8 — trust holds under load: the site stays great when a friend's friend shows up.
+
 > **Status (2026-07-05):** Rate limiting, CORS, log rotation, JWT CVE patch, GitHub
 > Actions deploy workflow + self-hosted Docker runners, and the Docker build fix all
 > shipped. Remaining: structured error responses, `/api/v1` versioning, health-check
@@ -367,6 +390,8 @@ Until a second source is actually needed, keep the concrete implementations — 
 
 
 **Goal:** Answer the user's real question — *which of these gems can I actually watch tonight?* A region-aware (US/BR) filter where users tick the streaming services they subscribe to and lists narrow to titles available to them, distinguishing "included with subscription / free with ads" from "available to rent."
+
+**Ethos:** C8, C2 — "and I watched it" made literal: the recommendation is actionable tonight, and showing only what's truly available keeps the promise.
 
 **Data source:** TMDB watch-providers API (JustWatch data). Free with the existing `TMDB_API_KEY`. Two hard constraints: visible **"Streaming data by JustWatch"** attribution wherever the data renders (ToS — access revoked otherwise), and no per-title deep links (link to the TMDB watch page).
 
