@@ -236,9 +236,14 @@ William Friedkin's *Sorcerer* (1977) — warm amber headlights in rain, 35mm gra
 
 ---
 
-## Phase 8: User Features 🔨 IN PROGRESS
+## Phase 8: User Features ✅ COMPLETE (except style picker)
 
 **Goal:** Add authenticated user accounts with personal watchlists, public ratings, and theme switching.
+
+> **Status (2026-07-05):** Auth (magic link + JWT + WebAuthn passkeys), `users`/
+> `magic_tokens`/`watchlist` tables, watchlist CRUD + UI all shipped. The only
+> unshipped item is the **CSS-var style picker (8d)** — deferred in favour of the
+> Pedrilha rebrand + PT/EN bilingual work. The CSS-var refactor prerequisite is done.
 
 ### Architectural Decisions (confirmed 2026-06-23)
 
@@ -302,6 +307,7 @@ Format: `/movie/mv16` — `mv` prefix + base36 integer (e.g. ID 42 → `mv16`).
 |---|---|---|
 | TMDB API | Movie data source | `MovieDataSource` trait (see below) |
 | OMDb API | RT scores + IMDb ratings | Same trait |
+| TMDB watch-providers (JustWatch data) | Streaming availability source (Phase 10) | Same trait-style boundary. **JustWatch attribution is a hard ToS requirement** — visible "Streaming data by JustWatch" wherever the data renders, or API access is revoked. No per-title deep links available; link to the TMDB watch page. |
 | Hostinger SMTP | Email sending | `SMTP_HOST/PORT/USER/PASS` in env — any provider works |
 | Turso/libSQL | Database | Intentional — accepted |
 | Leptos 0.7 | Frontend framework | No abstraction needed — it's Rust, not a SaaS |
@@ -330,9 +336,14 @@ Until a second source is actually needed, keep the concrete implementations — 
 
 ---
 
-## Phase 9: Production Hardening 📋 PLANNED
+## Phase 9: Production Hardening 🔨 MOSTLY DONE
 
 **Goal:** Harden for public deployment.
+
+> **Status (2026-07-05):** Rate limiting, CORS, log rotation, JWT CVE patch, GitHub
+> Actions deploy workflow + self-hosted Docker runners, and the Docker build fix all
+> shipped. Remaining: structured error responses, `/api/v1` versioning, health-check
+> DB probe, HTTPS/reverse-proxy docs, and a multi-arch (amd64+arm64) build.
 
 ### Deliverables
 - [ ] Rate limiting on API endpoints (tower middleware)
@@ -344,6 +355,87 @@ Until a second source is actually needed, keep the concrete implementations — 
 - [ ] API versioning (`/api/v1/...`)
 - [ ] Health check improvements (DB connectivity probe)
 - [ ] HTTPS termination guidance for reverse-proxy setup (nginx/Caddy)
+
+---
+
+## Phase 10: What Can I Watch? ✅ COMPLETE
+
+> **Status (2026-07-05):** All 6 batches implemented, compiling, and unit-tested.
+> End-to-end provider data requires running `POST /api/admin/providers-sync` (or the
+> 24h scheduled sync) against a live DB with a valid `TMDB_API_KEY` — the picker is
+> empty until the first sync populates `movie_providers`.
+
+
+**Goal:** Answer the user's real question — *which of these gems can I actually watch tonight?* A region-aware (US/BR) filter where users tick the streaming services they subscribe to and lists narrow to titles available to them, distinguishing "included with subscription / free with ads" from "available to rent."
+
+**Data source:** TMDB watch-providers API (JustWatch data). Free with the existing `TMDB_API_KEY`. Two hard constraints: visible **"Streaming data by JustWatch"** attribution wherever the data renders (ToS — access revoked otherwise), and no per-title deep links (link to the TMDB watch page).
+
+### Product Decisions (confirmed 2026-07-05)
+
+- **Hybrid, anonymous-first persistence** — provider checkboxes work instantly via localStorage for everyone; sign-in is never required or prompted. Signed-in users additionally sync selections to their account for cross-device persistence (last-write-wins, no merge prompts).
+- **Rentals behind a toggle, default off** — the default answers "watchable at no extra cost" (flatrate/free/ads on selected services). A "+ include rentals" toggle adds rent/buy titles from ANY provider (renting needs no subscription), badged distinctly.
+- **Provider badges on cards** while the filter is active — logo + tier ("Included" vs "Rent"), so the list answers "where?" without a click.
+- **Picker derives from pulled data** — `GET /api/providers?region=` lists distinct providers present in `movie_providers` with catalog counts, so only services that actually stream ≥1 catalog title appear (no dead checkboxes). Consequence: the picker is empty until the first provider sync runs — **Batch 2 must land and run before Batch 4 is testable.**
+- **User first** — filtered content is filtered because the user asked: an always-visible active-filter chip (count + clear) explains why the list shrank; empty states suggest fixes (include rentals / more services / clear). Nothing is ever hidden silently.
+
+### Batches (for agent-driven execution — recommended model per batch)
+
+#### Batch 1 — Schema + types · model: **Sonnet 5** ✅ DONE
+Mechanical, pattern-following (existing migrations/models are templates), but schema-final — review the DDL before merging.
+- [ ] Migration (next version in `crates/db/src/migrations.rs`):
+```sql
+CREATE TABLE movie_providers (
+    movie_id INTEGER NOT NULL REFERENCES movies(id),
+    region TEXT NOT NULL,             -- 'US' | 'BR'
+    provider_id INTEGER NOT NULL,     -- TMDB provider id
+    provider_name TEXT NOT NULL,
+    logo_path TEXT,
+    access TEXT NOT NULL,             -- 'flatrate' | 'free' | 'ads' | 'rent' | 'buy'
+    PRIMARY KEY (movie_id, region, provider_id, access)
+);
+CREATE INDEX idx_mp_filter ON movie_providers(region, provider_id, access);
+CREATE TABLE provider_sync (movie_id INTEGER PRIMARY KEY REFERENCES movies(id), fetched_at TEXT NOT NULL, tmdb_link TEXT);
+CREATE TABLE user_providers (user_id INTEGER NOT NULL REFERENCES users(id), region TEXT NOT NULL, provider_id INTEGER NOT NULL, PRIMARY KEY (user_id, region, provider_id));
+```
+- [ ] CRUD in `crates/db/src/models.rs`: replace-per-movie provider insert, distinct-providers query, filter join helper
+- [ ] `WatchBadge` + provider types in `crates/shared/src/types.rs`
+- **Acceptance:** `cargo test --workspace` passes; migration idempotent on an existing DB.
+
+#### Batch 2 — Provider sync service · model: **Sonnet 5** ✅ DONE
+Close copy of `OmdbEnrichmentService` (chunking, progress logs) + `tmdb_sync.rs` client/rate-limit patterns.
+- [ ] `crates/api/src/services/provider_sync.rs` — `GET /movie/{tmdb_id}/watch/providers`, keep `results.US`/`results.BR`, replace that movie's rows, upsert `provider_sync.fetched_at`; skip movies fetched < 7 days ago
+- [ ] Hook into the 24h scheduled sync + `POST /api/admin/providers-sync` (202, `tokio::spawn`, `admin_busy`/`BusyGuard`, run_logs) + admin page button
+- **Acceptance:** run against live DB; `movie_providers` populated for both regions; spot-check 2 movies against themoviedb.org watch pages.
+
+#### Batch 3 — Filter API · model: **Opus 4.8 (or Fable 5)** ✅ DONE (in-memory, not SQL — see note)
+Correctness-critical: SQL filter semantics across three endpoints + response shape change.
+- [ ] `GET /api/providers?region=` — distinct providers with `access IN ('flatrate','free','ads')`, name/logo/count, ordered by count desc
+- [ ] Extend `/api/gems`, `/api/acclaimed`, `/api/wildcards` (shared query layer) with `region`, `providers=` (csv TMDB ids), `rentals=1`. Match rule: (`access IN ('flatrate','free','ads')` AND provider selected) OR (`rentals=1` AND `access IN ('rent','buy')`, any provider)
+- [ ] Filter active ⇒ each `MovieSummary` carries `watch_badge` (best match, included preferred over rent)
+- [ ] Extend `GET /api/movies/{id}` with both regions' providers grouped by tier + `tmdb_link`
+- **Acceptance:** integration test per semantics rule — selected-service flatrate ✓, unselected flatrate ✗, rental without toggle ✗, rental with toggle ✓ regardless of selection; pagination counts correct under filter.
+
+#### Batch 4 — Filter UI · model: **Opus 4.8 (or Fable 5)** ✅ DONE
+Leptos reactivity is fiddly (see FIX-46/47 above) — strongest model here. **Depends on Batch 2 having run** (picker data).
+- [ ] "What can I watch?" panel on list pages: region toggle (default PT→BR, EN→US), provider logo grid from `/api/providers` (`https://image.tmdb.org/t/p/w45{logo_path}`), "+ include rentals" toggle with explainer, clear-all, JustWatch attribution line
+- [ ] localStorage persistence (`gf_watch_region`, `gf_watch_providers_us`, `gf_watch_providers_br`, `gf_watch_rentals`), following the `gf_lang` pattern
+- [ ] Card badges from `watch_badge`; always-visible active-filter chip (count + clear); helpful empty state
+- [ ] i18n (Dict + EN + PT): `filter_watchable`, `filter_region`, `filter_include_rentals`, `filter_rentals_hint`, `filter_clear`, `filter_active_chip` (`{}` count), `filter_empty_hint`, `badge_included`, `badge_rent`, `providers_attribution`
+- **Acceptance:** anonymous flow works end-to-end; selections survive reload; language switch flips region default and labels.
+
+#### Batch 5 — Detail page + Stremio · model: **Sonnet 5** ✅ DONE
+- [ ] Detail page: providers grouped "Included with" / "Free with ads" / "Rent or buy" for the active region, linking to `tmdb_link`; JustWatch attribution; fallback to the existing JustWatch search link when no data
+- [ ] "Open in Stremio" button in the external-links row (frontend-only):
+  - with `imdb_id`: `stremio:///detail/movie/{imdb_id}/{imdb_id}` (Stremio's movie ids are IMDb ids via Cinemeta)
+  - without `imdb_id`: `stremio:///search?search={title}`
+  - protocol links no-op silently when Stremio isn't installed (handlers undetectable from JS) — small secondary "web" link to `https://web.stremio.com/#/detail/movie/{imdb_id}` (or `#/search?search={title}`)
+- [ ] i18n: `providers_included_with`, `providers_free_ads`, `providers_rent_buy`, `detail_open_stremio` ("Open in Stremio" / "Abrir no Stremio"), `detail_stremio_web`
+- **Acceptance:** a title flatrate on one service and rentable on another appears in both groups; attribution visible; Stremio deep link opens the correct title in the installed app; search fallback used when `imdb_id` is missing.
+
+#### Batch 6 — Signed-in sync · model: **Sonnet 5** ✅ DONE
+- [ ] `GET/PUT /api/user/providers` (JWT middleware, same as watchlist; PUT replaces)
+- [ ] Frontend: push on change when signed in; hydrate from server when localStorage is empty; last-write-wins; zero sign-in nudges for anonymous users
+- **Acceptance:** two-browser test — selections made signed-in on one browser hydrate on the other.
 
 ---
 

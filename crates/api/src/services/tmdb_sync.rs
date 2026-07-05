@@ -236,6 +236,7 @@ impl TmdbSyncService {
                             keywords: None,
                             created_at: None,
                             updated_at: None,
+                            watch_providers: None,
                         };
                         match models::upsert_movie(conn, &stub).await {
                             Ok(id) => id,
@@ -703,6 +704,7 @@ impl TmdbSyncService {
             },
             created_at: None,
             updated_at: None,
+            watch_providers: None,
         };
 
         let db_id = models::upsert_movie(conn, &movie).await?;

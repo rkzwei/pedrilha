@@ -1,5 +1,6 @@
 use crate::middleware::auth::verify_jwt;
 use crate::services::omdb_sync::OmdbEnrichmentService;
+use crate::services::provider_sync::ProviderSyncService;
 use crate::services::tmdb_sync::TmdbSyncService;
 use crate::AppState;
 use axum::{
@@ -339,6 +340,88 @@ pub async fn trigger_score(
     Ok(Json(serde_json::json!({
         "status": "started",
         "message": "Scoring started in background — watch logs for progress",
+    })))
+}
+
+/// POST /api/admin/providers-sync
+///
+/// Fetches streaming availability (TMDB watch-providers / JustWatch) for scored
+/// movies whose data is missing or stale. Spawns a background task, returns 202.
+pub async fn trigger_provider_sync(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<EnrichQuery>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    check_admin_token(&headers, &state.jwt_secret)?;
+
+    if state.tmdb_api_key.is_empty() {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    let guard = acquire_busy(&state.admin_busy)?;
+    let db = state.db.clone();
+    let tmdb_key = state.tmdb_api_key.clone();
+    let cache = state.movie_cache.clone();
+    let limit = payload.limit.unwrap_or(i64::MAX);
+    let limit_display = if limit == i64::MAX {
+        "unlimited".to_string()
+    } else {
+        limit.to_string()
+    };
+    let limit_display_inner = limit_display.clone();
+
+    tokio::spawn(async move {
+        let _guard = guard;
+        let conn = match db.connect().await {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("provider-sync: db connect failed: {}", e);
+                return;
+            }
+        };
+
+        let _ = models::insert_run_log(
+            &conn,
+            "info",
+            "provider_sync_started",
+            &format!("Provider sync starting (limit: {})", limit_display_inner),
+        )
+        .await;
+
+        let svc = ProviderSyncService::new(tmdb_key);
+        let t = std::time::Instant::now();
+        match svc.sync_providers(&conn, limit).await {
+            Ok((synced, total, errors)) => {
+                let msg = format!(
+                    "{}/{} synced, {} errors in {:?}",
+                    synced,
+                    total,
+                    errors.len(),
+                    t.elapsed()
+                );
+                let _ = models::insert_run_log(&conn, "info", "provider_sync_complete", &msg).await;
+            }
+            Err(e) => {
+                tracing::error!("provider sync failed: {}", e);
+                let _ = models::insert_run_log(
+                    &conn,
+                    "error",
+                    "provider_sync_failed",
+                    &format!("{}", e),
+                )
+                .await;
+            }
+        }
+
+        // New availability data — movie list cache is stale.
+        cache.write().await.invalidate();
+        tracing::info!("movie list cache invalidated after provider sync");
+    });
+
+    Ok(Json(serde_json::json!({
+        "status": "started",
+        "limit": limit_display,
+        "message": "Provider sync started in background — watch logs for progress",
     })))
 }
 
