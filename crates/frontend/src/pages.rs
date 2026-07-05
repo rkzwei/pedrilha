@@ -1538,11 +1538,6 @@ pub fn MovieDetail() -> impl IntoView {
                 let gem_rank = m.gem_rank.filter(|r| *r >= 1);
                 let audience_str = m.rt_audience_score.map(|r| format!("{}%", r));
                 let release_day = m.release_date.as_deref().and_then(fmt_release_day);
-                let keywords: Vec<String> = m.keywords.clone().unwrap_or_default()
-                    .split(',')
-                    .map(|k| k.trim().to_string())
-                    .filter(|k| !k.is_empty())
-                    .collect();
                 let first_genre = genre.split(", ").next().unwrap_or("").to_string();
                 let decade = m.year.map(|y| (y / 10) * 10).filter(|d| *d >= 1900);
                 let poster_bg = poster.clone();
@@ -1632,14 +1627,10 @@ pub fn MovieDetail() -> impl IntoView {
                                         let g = g.to_string();
                                         view!{ <span class="px-2 py-1 bg-sc-card border border-sc-border rounded text-xs text-stone-300">{g}</span> }.into_any()
                                     }).collect();
-                                    let ktags: Vec<_> = keywords.iter().map(|k| {
-                                        view!{ <span class="px-2 py-1 border border-sc-border rounded text-xs text-stone-500">{k.clone()}</span> }.into_any()
-                                    }).collect();
-                                    let all: Vec<_> = gtags.into_iter().chain(ktags).collect();
-                                    if all.is_empty() {
+                                    if gtags.is_empty() {
                                         view!{ <div /> }.into_any()
                                     } else {
-                                        view!{ <div class="flex flex-wrap gap-2 mb-4">{all}</div> }.into_any()
+                                        view!{ <div class="flex flex-wrap gap-2 mb-4">{gtags}</div> }.into_any()
                                     }
                                 }}
                                 {if !overview.is_empty() {
