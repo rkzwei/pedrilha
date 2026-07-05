@@ -65,7 +65,10 @@ impl ProviderSyncService {
             match self.sync_single_movie(conn, *movie_id, *tmdb_id).await {
                 Ok(()) => synced += 1,
                 Err(e) => {
-                    let msg = format!("Failed providers for movie {} (tmdb {}): {}", movie_id, tmdb_id, e);
+                    let msg = format!(
+                        "Failed providers for movie {} (tmdb {}): {}",
+                        movie_id, tmdb_id, e
+                    );
                     tracing::warn!("{}", msg);
                     errors.push(msg);
                 }
@@ -146,9 +149,7 @@ impl ProviderSyncService {
 
         for region in REGIONS {
             let region_data = response.results.get(region);
-            let rows = region_data
-                .map(build_rows)
-                .unwrap_or_default();
+            let rows = region_data.map(build_rows).unwrap_or_default();
             if stored_link.is_none() {
                 if let Some(link) = region_data.and_then(|r| r.link.clone()) {
                     stored_link = Some(link);

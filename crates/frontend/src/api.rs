@@ -179,10 +179,7 @@ pub async fn get_user_providers(token: &str) -> Result<UserProvidersPayload, Str
 }
 
 /// PUT /api/user/providers — replace the user's provider selections (last-write-wins).
-pub async fn put_user_providers(
-    payload: UserProvidersPayload,
-    token: &str,
-) -> Result<(), String> {
+pub async fn put_user_providers(payload: UserProvidersPayload, token: &str) -> Result<(), String> {
     let url = format!("{}/api/user/providers", api_base());
     let resp = reqwest::Client::new()
         .put(&url)

@@ -403,9 +403,13 @@ pub async fn trigger_provider_sync(
             }
             Err(e) => {
                 tracing::error!("provider sync failed: {}", e);
-                let _ =
-                    models::insert_run_log(&conn, "error", "provider_sync_failed", &format!("{}", e))
-                        .await;
+                let _ = models::insert_run_log(
+                    &conn,
+                    "error",
+                    "provider_sync_failed",
+                    &format!("{}", e),
+                )
+                .await;
             }
         }
 

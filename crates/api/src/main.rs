@@ -717,8 +717,9 @@ async fn main() {
                     }
 
                     // Refresh streaming availability for the (now re-scored) catalog.
-                    let providers =
-                        crate::services::provider_sync::ProviderSyncService::new(sched_tmdb.clone());
+                    let providers = crate::services::provider_sync::ProviderSyncService::new(
+                        sched_tmdb.clone(),
+                    );
                     if let Err(e) = providers.sync_providers(&conn, i64::MAX).await {
                         tracing::warn!("scheduled_sync: provider sync failed: {}", e);
                     }

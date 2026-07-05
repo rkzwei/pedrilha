@@ -119,7 +119,9 @@ impl WatchPrefs {
 }
 
 fn parse_ids_csv(s: &str) -> Vec<i32> {
-    s.split(',').filter_map(|x| x.trim().parse::<i32>().ok()).collect()
+    s.split(',')
+        .filter_map(|x| x.trim().parse::<i32>().ok())
+        .collect()
 }
 
 /// Load watch prefs from localStorage, defaulting the region by language when unset.
@@ -130,8 +132,12 @@ pub fn load_watch_prefs(default_region: &str) -> WatchPrefs {
     let region = if region == "BR" { "BR" } else { "US" }.to_string();
     WatchPrefs {
         region,
-        providers_us: get(LS_WATCH_PROVIDERS_US).map(|s| parse_ids_csv(&s)).unwrap_or_default(),
-        providers_br: get(LS_WATCH_PROVIDERS_BR).map(|s| parse_ids_csv(&s)).unwrap_or_default(),
+        providers_us: get(LS_WATCH_PROVIDERS_US)
+            .map(|s| parse_ids_csv(&s))
+            .unwrap_or_default(),
+        providers_br: get(LS_WATCH_PROVIDERS_BR)
+            .map(|s| parse_ids_csv(&s))
+            .unwrap_or_default(),
         rentals: get(LS_WATCH_RENTALS).as_deref() == Some("1"),
     }
 }
@@ -144,7 +150,12 @@ pub fn use_watch() -> RwSignal<WatchPrefs> {
 /// Persist watch prefs to localStorage.
 pub fn save_watch_prefs(p: &WatchPrefs) {
     if let Some(ls) = local_storage() {
-        let csv = |v: &[i32]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",");
+        let csv = |v: &[i32]| {
+            v.iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        };
         let _ = ls.set_item(LS_WATCH_REGION, &p.region);
         let _ = ls.set_item(LS_WATCH_PROVIDERS_US, &csv(&p.providers_us));
         let _ = ls.set_item(LS_WATCH_PROVIDERS_BR, &csv(&p.providers_br));
@@ -244,8 +255,9 @@ fn App() -> impl IntoView {
     // Cross-device sync (Phase 10 Batch 6): when signed in, hydrate from the server
     // if local selections are empty, and push on every change. Last-write-wins.
     if let Some(a) = auth.get_untracked() {
-        let local_empty = watch
-            .with_untracked(|w| w.providers_us.is_empty() && w.providers_br.is_empty() && !w.rentals);
+        let local_empty = watch.with_untracked(|w| {
+            w.providers_us.is_empty() && w.providers_br.is_empty() && !w.rentals
+        });
         if local_empty {
             let token = a.token.clone();
             spawn_local(async move {
@@ -262,8 +274,8 @@ fn App() -> impl IntoView {
     }
     Effect::new(move |prev: Option<()>| {
         let p = watch.get(); // track changes
-        // Skip the initial run so we don't overwrite the server with the local
-        // default before hydration has a chance to run.
+                             // Skip the initial run so we don't overwrite the server with the local
+                             // default before hydration has a chance to run.
         if prev.is_some() {
             if let Some(a) = auth.get_untracked() {
                 let token = a.token.clone();
