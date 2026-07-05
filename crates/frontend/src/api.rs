@@ -38,6 +38,7 @@ fn api_base() -> String {
 }
 
 /// Fetch a paginated list of hidden gems.
+#[allow(clippy::too_many_arguments)]
 pub async fn fetch_gems(
     page: i32,
     per_page: i32,
@@ -79,6 +80,7 @@ pub async fn fetch_gems(
 }
 
 /// Fetch a paginated list of acclaimed films (IMDb ≥ 8.0, RT ≥ 80%).
+#[allow(clippy::too_many_arguments)]
 pub async fn fetch_acclaimed(
     page: i32,
     per_page: i32,
@@ -120,6 +122,7 @@ pub async fn fetch_acclaimed(
 }
 
 /// Fetch a paginated list of wildcard films.
+#[allow(clippy::too_many_arguments)]
 pub async fn fetch_wildcards(
     page: i32,
     per_page: i32,

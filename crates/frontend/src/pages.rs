@@ -3,13 +3,12 @@ use crate::i18n::{dict, genre_label, sort_label, use_lang};
 use crate::{jwt_is_admin, save_auth_to_storage, use_watch, AuthState, WatchPrefs};
 use gem_finder_shared::id_encode::encode_movie_id;
 use gem_finder_shared::types::{Movie, MovieSummary, ProviderInfo, WatchState, WatchTier};
-use js_sys;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_meta::Title;
 use leptos_router::{
     components::A,
-    hooks::{use_navigate, use_params_map, use_query_map},
+    hooks::{use_location, use_navigate, use_params_map, use_query_map},
     NavigateOptions,
 };
 use wasm_bindgen::prelude::*;
@@ -53,7 +52,7 @@ fn fmt_thousands(n: i64) -> String {
     let s = n.abs().to_string();
     let mut out = String::new();
     for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i) % 3 == 0 {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(c);
@@ -539,7 +538,7 @@ pub fn HomePage() -> impl IntoView {
                 .unwrap_or_default()
         })
     };
-    let search = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let search = move || query.with(|q| q.get("q").filter(|v| !v.is_empty()));
     let sort = move || query.with(|q| q.get("sort").unwrap_or_else(|| "score".to_string()));
     let sort_dir = move || query.with(|q| q.get("sort_dir").unwrap_or_else(|| "desc".to_string()));
     let gstr = move || {
@@ -782,7 +781,7 @@ pub fn AcclaimedPage() -> impl IntoView {
                 .unwrap_or_default()
         })
     };
-    let search = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let search = move || query.with(|q| q.get("q").filter(|v| !v.is_empty()));
     let sort = move || query.with(|q| q.get("sort").unwrap_or_else(|| "rating".to_string()));
     let sort_dir = move || query.with(|q| q.get("sort_dir").unwrap_or_else(|| "desc".to_string()));
     let gstr = move || {
@@ -1041,7 +1040,7 @@ pub fn WildcardsPage() -> impl IntoView {
                 .unwrap_or_default()
         })
     };
-    let search = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let search = move || query.with(|q| q.get("q").filter(|v| !v.is_empty()));
     let sort = move || query.with(|q| q.get("sort").unwrap_or_else(|| "score".to_string()));
     let sort_dir = move || query.with(|q| q.get("sort_dir").unwrap_or_else(|| "desc".to_string()));
     let gstr = move || {
@@ -1917,6 +1916,29 @@ fn WatchFilterPanel() -> impl IntoView {
         move || watch.with(|w| w.selected().len() as i32 + if w.rentals { 1 } else { 0 });
     let rentals_on = move || watch.with(|w| w.rentals);
 
+    // Changing the watch filter resets to page 1 (mirrors genre/year/search) so a
+    // shrunk result set never strands the user on a now-empty page.
+    let navigate = use_navigate();
+    let query = use_query_map();
+    let location = use_location();
+    let reset_page = Callback::new(move |_: ()| {
+        let path = location.pathname.get_untracked();
+        let params = query.get_untracked();
+        let mut url = format!("{}?page=1", path);
+        for k in ["genres", "year", "q", "sort", "sort_dir"] {
+            if let Some(v) = params.get(k).filter(|v| !v.is_empty()) {
+                url.push_str(&format!("&{}={}", k, v));
+            }
+        }
+        navigate(
+            &url,
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        );
+    });
+
     let btn_class = move || {
         let base = "flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border transition-colors cursor-pointer";
         if open.get() || active_count() > 0 {
@@ -1951,7 +1973,7 @@ fn WatchFilterPanel() -> impl IntoView {
                     view! {
                         <span class="flex items-center gap-1.5 px-2 py-1 text-xs rounded-full bg-sc-accent-deep text-sc-accent border border-sc-accent">
                             <span>{chip}</span>
-                            <button class="hover:text-stone-100 font-bold" on:click=move |_| watch.update(|w| w.clear())>"×"</button>
+                            <button class="hover:text-stone-100 font-bold" on:click=move |_| { watch.update(|w| w.clear()); reset_page.run(()); }>"×"</button>
                         </span>
                     }
                 })}
@@ -1961,8 +1983,8 @@ fn WatchFilterPanel() -> impl IntoView {
                 <div style="position:absolute;top:calc(100% + 6px);left:0;min-width:300px;max-width:360px;background-color:var(--sc-panel,#17100a);border:1px solid var(--sc-border);border-radius:10px;box-shadow:0 24px 48px rgba(0,0,0,0.7);padding:14px;z-index:200">
                     <p class="text-[0.65rem] uppercase tracking-wide text-sc-accent-border font-semibold mb-2">{move || d().filter_region}</p>
                     <div class="flex gap-2 mb-3">
-                        <button class=move || seg(watch.with(|w| w.region == "US")) on:click=move |_| watch.update(|w| w.region = "US".to_string())>"US"</button>
-                        <button class=move || seg(watch.with(|w| w.region == "BR")) on:click=move |_| watch.update(|w| w.region = "BR".to_string())>"BR"</button>
+                        <button class=move || seg(watch.with(|w| w.region == "US")) on:click=move |_| { watch.update(|w| w.region = "US".to_string()); reset_page.run(()); }>"US"</button>
+                        <button class=move || seg(watch.with(|w| w.region == "BR")) on:click=move |_| { watch.update(|w| w.region = "BR".to_string()); reset_page.run(()); }>"BR"</button>
                     </div>
 
                     <div class="grid grid-cols-2 gap-1.5 max-h-60 overflow-y-auto mb-3">
@@ -1982,7 +2004,7 @@ fn WatchFilterPanel() -> impl IntoView {
                                     "flex items-center gap-1.5 px-2 py-1 text-xs rounded border border-sc-border text-stone-300 bg-sc-card hover:border-stone-600 cursor-pointer"
                                 };
                                 view! {
-                                    <button class=cls on:click=move |_| watch.update(|w| w.toggle(id))>
+                                    <button class=cls on:click=move |_| { watch.update(|w| w.toggle(id)); reset_page.run(()); }>
                                         {has_logo.then(|| view! { <img src=logo alt=name.clone() loading="lazy" class="w-4 h-4 rounded-sm flex-shrink-0" /> })}
                                         <span class="truncate">{p.name.clone()}</span>
                                     </button>
@@ -1996,14 +2018,14 @@ fn WatchFilterPanel() -> impl IntoView {
 
                     <label class="flex items-start gap-2 mb-3 cursor-pointer">
                         <input type="checkbox" class="mt-0.5" prop:checked=rentals_on
-                            on:change=move |_| watch.update(|w| w.rentals = !w.rentals) />
+                            on:change=move |_| { watch.update(|w| w.rentals = !w.rentals); reset_page.run(()); } />
                         <span>
                             <span class="text-xs text-stone-200 block">{move || d().filter_include_rentals}</span>
                             <span class="text-[0.65rem] text-stone-500 block">{move || d().filter_rentals_hint}</span>
                         </span>
                     </label>
 
-                    <button class="text-xs text-stone-400 hover:text-stone-200" on:click=move |_| watch.update(|w| w.clear())>{move || d().filter_clear}</button>
+                    <button class="text-xs text-stone-400 hover:text-stone-200" on:click=move |_| { watch.update(|w| w.clear()); reset_page.run(()); }>{move || d().filter_clear}</button>
                     <p class="text-[0.6rem] text-stone-600 mt-3 pt-2 border-t border-sc-border">{move || d().providers_attribution}</p>
                 </div>
             })}
@@ -2035,13 +2057,26 @@ fn render_movie_grid(
             >{move || d().grid_try_again}</button>
         </div> }.into_any()
     } else if movies.is_empty() {
-        view! { <div class="py-16 text-center">
-            <p class="text-stone-500 mb-6">{move || d().grid_no_gems}</p>
-            <button
-                class="text-sm text-stone-300 hover:text-stone-100 border border-sc-border hover:border-stone-600 rounded px-4 py-2"
-                on:click=move |_| on_clear.run(())
-            >{move || d().grid_clear_filters}</button>
-        </div> }.into_any()
+        // When a watch filter is what emptied the list, explain that and offer to
+        // clear it directly (the generic "clear filters" only clears URL filters).
+        let watch = use_watch();
+        if watch.with(|w| w.active()) {
+            view! { <div class="py-16 text-center">
+                <p class="text-stone-500 mb-6">{move || d().grid_no_watch_matches}</p>
+                <button
+                    class="text-sm text-stone-300 hover:text-stone-100 border border-sc-border hover:border-stone-600 rounded px-4 py-2"
+                    on:click=move |_| watch.update(|w| w.clear())
+                >{move || d().filter_clear}</button>
+            </div> }.into_any()
+        } else {
+            view! { <div class="py-16 text-center">
+                <p class="text-stone-500 mb-6">{move || d().grid_no_gems}</p>
+                <button
+                    class="text-sm text-stone-300 hover:text-stone-100 border border-sc-border hover:border-stone-600 rounded px-4 py-2"
+                    on:click=move |_| on_clear.run(())
+                >{move || d().grid_clear_filters}</button>
+            </div> }.into_any()
+        }
     } else {
         view! { <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4" style="isolation:isolate">
             {movies.into_iter().map(|m| view!{ <MovieCard movie=m /> }).collect::<Vec<_>>()}
@@ -2230,7 +2265,7 @@ pub fn AdminPage() -> impl IntoView {
 
     // Redirect non-admins immediately
     Effect::new(move |_| {
-        if auth.get().map_or(true, |a| !a.is_admin) {
+        if auth.get().is_none_or(|a| !a.is_admin) {
             navigate("/", NavigateOptions::default());
         }
     });
@@ -2919,18 +2954,18 @@ pub fn ChangelogPage() -> impl IntoView {
     let nodes: Vec<_> = RAW
         .lines()
         .map(|line| {
-            if line.starts_with("## ") {
-                let text = changelog_clean_header(&line[3..]);
+            if let Some(rest) = line.strip_prefix("## ") {
+                let text = changelog_clean_header(rest);
                 view! {
                     <h2 class="text-lg font-bold text-stone-100 mt-8 mb-2 border-b border-sc-border pb-1">
                         {text}
                     </h2>
                 }
                 .into_any()
-            } else if line.starts_with("### ") {
+            } else if let Some(rest) = line.strip_prefix("### ") {
                 view! {
                     <h3 class="text-xs font-semibold text-sc-accent uppercase tracking-widest mt-4 mb-1">
-                        {line[4..].to_string()}
+                        {rest.to_string()}
                     </h3>
                 }
                 .into_any()

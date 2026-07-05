@@ -122,6 +122,7 @@ pub struct Dict {
     pub grid_err_load: &'static str,
     pub grid_try_again: &'static str,
     pub grid_no_gems: &'static str,
+    pub grid_no_watch_matches: &'static str,
     pub grid_clear_filters: &'static str,
 
     // ── Sign-in ───────────────────────────────────────────────────────────────
@@ -353,6 +354,7 @@ pub const EN: Dict = Dict {
     grid_err_load: "Couldn't load films — the server may be waking up.",
     grid_try_again: "Try again",
     grid_no_gems: "No gems match those filters.",
+    grid_no_watch_matches: "Nothing here streams on your selected services. Try adding services, including rentals, or clearing the filter.",
     grid_clear_filters: "Clear filters",
 
     signin_check_email: "Check your email",
@@ -571,6 +573,7 @@ pub const PT: Dict = Dict {
     grid_err_load: "Não foi possível carregar os filmes — o servidor pode estar acordando.",
     grid_try_again: "Tentar de novo",
     grid_no_gems: "Nenhuma pedrinha corresponde a esses filtros.",
+    grid_no_watch_matches: "Nada aqui está nos serviços selecionados. Adicione serviços, inclua aluguéis ou limpe o filtro.",
     grid_clear_filters: "Limpar filtros",
 
     signin_check_email: "Verifique seu e-mail",
