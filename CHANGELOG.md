@@ -5,6 +5,35 @@ Versions follow semver. Pre-1.0, features and fixes bump the **patch** (`0.3.0` 
 the **minor** (`0.4.0`) is reserved for milestones and breaking changes. Cut a milestone
 with a `Release-As: 0.X.0` commit footer.
 
+## [0.4.3](https://github.com/rkzwei/gem-finder/compare/v0.4.2...v0.4.3) (2026-07-05)
+
+
+### Features
+
+* **providers:** 'What can I watch?' filter UI (Phase 10 Batch 4) ([7e65676](https://github.com/rkzwei/gem-finder/commit/7e6567655421a6b203dddb5fde03c55dabe88a6d))
+* **providers:** detail page availability + Stremio links (Phase 10 Batch 5) ([e37f65c](https://github.com/rkzwei/gem-finder/commit/e37f65c9c1dc5706b0de251296a7ef50dc4515a9))
+* **providers:** in-memory watch filter API (Phase 10 Batch 3) ([34788d4](https://github.com/rkzwei/gem-finder/commit/34788d4c74fa8bd8d96ea4db73e05db436a39714))
+* **providers:** schema + shared types (Phase 10 Batch 1) ([cbc1dad](https://github.com/rkzwei/gem-finder/commit/cbc1dad8af548ddf104e4d761ec696a4298feb75))
+* **providers:** signed-in cross-device sync (Phase 10 Batch 6) ([1fd245b](https://github.com/rkzwei/gem-finder/commit/1fd245bc39e43747efd7c61e119657e87b5ce31b))
+* **providers:** TMDB watch-providers sync service (Phase 10 Batch 2) ([f37a5d6](https://github.com/rkzwei/gem-finder/commit/f37a5d6c1b97e1d5b7d680e1ed7d46379b0e75c8))
+
+
+### Bug Fixes
+
+* clean frontend clippy + reset page and empty-state on watch filter ([db00182](https://github.com/rkzwei/gem-finder/commit/db00182b9043eb1a35083564cf4f4b20d82dc834))
+* email origin correction ([1f7f9e0](https://github.com/rkzwei/gem-finder/commit/1f7f9e091a4e54050217589d8ca1b97733fbe637))
+
+
+### Refactors
+
+* **detail:** remove keyword sub-tags from movie detail page ([76c6daa](https://github.com/rkzwei/gem-finder/commit/76c6daa482dfe23891a44928a0d79e385befec4a))
+
+
+### Documentation
+
+* mark Phase 10 complete; correct Phase 8/9 + FIX-19 status ([6dd4ad0](https://github.com/rkzwei/gem-finder/commit/6dd4ad06f97be3cd4c53c1d85b6d99d03c6c5e98))
+* plan Phase 10 'What can I watch?' provider filter ([1d10fb2](https://github.com/rkzwei/gem-finder/commit/1d10fb2c12af22151bba4581f1cbb94040b7575f))
+
 ## [0.4.2](https://github.com/rkzwei/gem-finder/compare/v0.4.1...v0.4.2) (2026-07-02)
 
 
