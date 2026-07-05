@@ -235,3 +235,27 @@ async fn username_lookups() {
         None
     );
 }
+
+#[tokio::test]
+async fn watchlist_via_rec_token_exposes_recommended_by() {
+    let (db, conn) = setup().await;
+    let mid = movie_id(&conn).await;
+    models::create_share_rec(&conn, "user-bbb", mid, None, "tok8").await.unwrap();
+    let mut c = db.connect().await.unwrap();
+    models::claim_rec(&mut c, "tok8", "user-aaa").await.unwrap();
+
+    models::upsert_watchlist_entry(&conn, "user-aaa", mid, "want_to_watch", None, Some("tok8"))
+        .await
+        .unwrap();
+
+    let list = models::get_user_watchlist(&conn, "user-aaa").await.unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].recommended_by.as_deref(), Some("bob"));
+
+    // Bogus token: entry still lands, just untagged (recommendation must not block intent)
+    models::upsert_watchlist_entry(&conn, "user-ccc", mid, "want_to_watch", None, Some("nope"))
+        .await
+        .unwrap();
+    let list = models::get_user_watchlist(&conn, "user-ccc").await.unwrap();
+    assert_eq!(list[0].recommended_by, None);
+}

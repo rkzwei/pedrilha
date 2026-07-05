@@ -1031,8 +1031,12 @@ pub async fn get_watchlist_entry(
 ) -> Result<Option<WatchlistEntry>> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, user_id, movie_id, state, user_rating, created_at, updated_at
-             FROM watchlist WHERE user_id = ?1 AND movie_id = ?2",
+            "SELECT w.id, w.user_id, w.movie_id, w.state, w.user_rating, w.created_at, w.updated_at,
+                    su.username
+             FROM watchlist w
+             LEFT JOIN recommendations r ON r.id = w.via_rec_id
+             LEFT JOIN users su ON su.id = r.sender_id
+             WHERE w.user_id = ?1 AND w.movie_id = ?2",
         )
         .await?;
     let mut rows = stmt.query(params![user_id, movie_id]).await?;
@@ -1046,8 +1050,12 @@ pub async fn get_watchlist_entry(
 pub async fn get_user_watchlist(conn: &Connection, user_id: &str) -> Result<Vec<WatchlistEntry>> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, user_id, movie_id, state, user_rating, created_at, updated_at
-             FROM watchlist WHERE user_id = ?1 ORDER BY updated_at DESC",
+            "SELECT w.id, w.user_id, w.movie_id, w.state, w.user_rating, w.created_at, w.updated_at,
+                    su.username
+             FROM watchlist w
+             LEFT JOIN recommendations r ON r.id = w.via_rec_id
+             LEFT JOIN users su ON su.id = r.sender_id
+             WHERE w.user_id = ?1 ORDER BY w.updated_at DESC",
         )
         .await?;
     let mut rows = stmt.query(params![user_id]).await?;
@@ -1059,21 +1067,43 @@ pub async fn get_user_watchlist(conn: &Connection, user_id: &str) -> Result<Vec<
 }
 
 /// Insert or update a watchlist entry. Uses UPSERT on the (user_id, movie_id) unique constraint.
+/// `rec_token`, when it resolves to a live rec, tags the row with `via_rec_id` so it
+/// surfaces as "recommended by" (Ethos C1). Unknown/bogus tokens are silently
+/// ignored — a dead or mistyped token must never block adding the movie. An
+/// upsert without a token (`None`) preserves any existing tag (COALESCE) so
+/// re-saving state/rating doesn't erase "recommended by".
 pub async fn upsert_watchlist_entry(
     conn: &Connection,
     user_id: &str,
     movie_id: i64,
     state: &str,
     user_rating: Option<i32>,
+    rec_token: Option<&str>,
 ) -> Result<()> {
+    let via_rec_id: Option<i64> = match rec_token {
+        None => None,
+        Some(t) => {
+            let mut rows = conn
+                .query(
+                    "SELECT id FROM recommendations WHERE token = ?1",
+                    params![t],
+                )
+                .await?;
+            match rows.next().await? {
+                Some(row) => value_to_opt_i64(row.get_value(0)?),
+                None => None,
+            }
+        }
+    };
     conn.execute(
-        "INSERT INTO watchlist (user_id, movie_id, state, user_rating, updated_at)
-         VALUES (?1, ?2, ?3, ?4, datetime('now'))
+        "INSERT INTO watchlist (user_id, movie_id, state, user_rating, via_rec_id, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))
          ON CONFLICT(user_id, movie_id) DO UPDATE SET
              state       = excluded.state,
              user_rating = excluded.user_rating,
+             via_rec_id  = COALESCE(excluded.via_rec_id, watchlist.via_rec_id),
              updated_at  = datetime('now')",
-        params![user_id, movie_id, state, user_rating],
+        params![user_id, movie_id, state, user_rating, via_rec_id],
     )
     .await?;
     Ok(())
@@ -1097,6 +1127,7 @@ fn row_to_watchlist_entry(row: &turso::Row) -> Result<WatchlistEntry> {
     let user_rating = value_to_opt_i32(row.get_value(4)?);
     let created_at = value_to_opt_string(row.get_value(5)?);
     let updated_at = value_to_opt_string(row.get_value(6)?);
+    let recommended_by = value_to_opt_string(row.get_value(7)?);
 
     let state = WatchState::try_from(state_str.as_str())?;
 
@@ -1108,7 +1139,7 @@ fn row_to_watchlist_entry(row: &turso::Row) -> Result<WatchlistEntry> {
         user_rating,
         created_at,
         updated_at,
-        recommended_by: None,
+        recommended_by,
     })
 }
 

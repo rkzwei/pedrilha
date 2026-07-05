@@ -85,6 +85,7 @@ pub async fn upsert_watchlist(
         body.movie_id,
         body.state.as_str(),
         body.user_rating,
+        body.rec_token.as_deref(),
     )
     .await
     .map(|_| StatusCode::NO_CONTENT)
