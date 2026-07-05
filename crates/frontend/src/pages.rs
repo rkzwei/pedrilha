@@ -1,8 +1,8 @@
 use crate::api;
 use crate::i18n::{dict, genre_label, sort_label, use_lang};
-use crate::{jwt_is_admin, save_auth_to_storage, AuthState};
+use crate::{jwt_is_admin, save_auth_to_storage, use_watch, AuthState, WatchPrefs};
 use gem_finder_shared::id_encode::encode_movie_id;
-use gem_finder_shared::types::{Movie, MovieSummary, WatchState};
+use gem_finder_shared::types::{Movie, MovieSummary, ProviderInfo, WatchState, WatchTier};
 use js_sys;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -523,6 +523,7 @@ fn PaginationBar(
 pub fn HomePage() -> impl IntoView {
     let query = use_query_map();
     let navigate = use_navigate();
+    let watch = use_watch();
 
     let page = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
     let year = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
@@ -583,10 +584,11 @@ pub fn HomePage() -> impl IntoView {
         let s = search();
         let sf = sort();
         let sd = sort_dir();
+        let wq = watch.with(watch_query);
         set_loading.set(true);
         set_error.set(None);
         spawn_local(async move {
-            match api::fetch_gems(p, PER_PAGE, y, g, s, Some(sf), Some(sd)).await {
+            match api::fetch_gems(p, PER_PAGE, y, g, s, Some(sf), Some(sd), wq).await {
                 Ok(r) => {
                     set_movies.set(r.data);
                     set_total.set(r.total);
@@ -724,6 +726,7 @@ pub fn HomePage() -> impl IntoView {
                 on_genres=on_genres_cb on_year=on_year_cb on_search=on_search_cb
                 sort=Signal::derive(sort) sort_dir=Signal::derive(sort_dir) on_sort=on_sort_cb
             />
+            <WatchFilterPanel />
             {move || render_movie_grid(loading.get(), error.get(), movies.get(), on_clear_cb, on_retry_cb)}
             {move || {
                 let tp = total_pages(); let p = page();
@@ -763,6 +766,7 @@ pub fn HomePage() -> impl IntoView {
 pub fn AcclaimedPage() -> impl IntoView {
     let query = use_query_map();
     let navigate = use_navigate();
+    let watch = use_watch();
 
     let page = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
     let year = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
@@ -823,10 +827,11 @@ pub fn AcclaimedPage() -> impl IntoView {
         let s = search();
         let sf = sort();
         let sd = sort_dir();
+        let wq = watch.with(watch_query);
         set_loading.set(true);
         set_error.set(None);
         spawn_local(async move {
-            match api::fetch_acclaimed(p, PER_PAGE, y, g, s, Some(sf), Some(sd)).await {
+            match api::fetch_acclaimed(p, PER_PAGE, y, g, s, Some(sf), Some(sd), wq).await {
                 Ok(r) => {
                     set_movies.set(r.data);
                     set_total.set(r.total);
@@ -980,6 +985,7 @@ pub fn AcclaimedPage() -> impl IntoView {
                 on_genres=on_genres_cb on_year=on_year_cb on_search=on_search_cb
                 sort=Signal::derive(sort) sort_dir=Signal::derive(sort_dir) on_sort=on_sort_cb
             />
+            <WatchFilterPanel />
             {move || render_movie_grid(loading.get(), error.get(), movies.get(), on_clear_cb, on_retry_cb)}
             {move || {
                 let tp = total_pages(); let p = page();
@@ -1019,6 +1025,7 @@ pub fn AcclaimedPage() -> impl IntoView {
 pub fn WildcardsPage() -> impl IntoView {
     let query = use_query_map();
     let navigate = use_navigate();
+    let watch = use_watch();
 
     let page = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
     let year = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
@@ -1079,10 +1086,11 @@ pub fn WildcardsPage() -> impl IntoView {
         let s = search();
         let sf = sort();
         let sd = sort_dir();
+        let wq = watch.with(watch_query);
         set_loading.set(true);
         set_error.set(None);
         spawn_local(async move {
-            match api::fetch_wildcards(p, PER_PAGE, y, g, s, Some(sf), Some(sd)).await {
+            match api::fetch_wildcards(p, PER_PAGE, y, g, s, Some(sf), Some(sd), wq).await {
                 Ok(r) => {
                     set_movies.set(r.data);
                     set_total.set(r.total);
@@ -1237,6 +1245,7 @@ pub fn WildcardsPage() -> impl IntoView {
                 on_genres=on_genres_cb on_year=on_year_cb on_search=on_search_cb
                 sort=Signal::derive(sort) sort_dir=Signal::derive(sort_dir) on_sort=on_sort_cb
             />
+            <WatchFilterPanel />
             {move || render_movie_grid(loading.get(), error.get(), movies.get(), on_clear_cb, on_retry_cb)}
             {move || {
                 let tp = total_pages(); let p = page();
@@ -1783,6 +1792,140 @@ pub fn MovieDetail() -> impl IntoView {
 }
 
 // ── Shared movie grid renderer ────────────────────────────────────────────────
+/// Build the active `WatchQuery` from prefs, or `None` when no filter is applied.
+fn watch_query(w: &WatchPrefs) -> Option<api::WatchQuery> {
+    if w.active() {
+        Some(api::WatchQuery {
+            region: w.region.clone(),
+            providers: w.selected_csv(),
+            rentals: w.rentals,
+        })
+    } else {
+        None
+    }
+}
+
+// ── "What can I watch?" filter panel (Phase 10) ─────────────────────────────
+/// Self-contained provider picker. Reads/writes the app-wide `WatchPrefs`
+/// context; list pages refetch reactively when it changes.
+#[component]
+fn WatchFilterPanel() -> impl IntoView {
+    let watch = use_watch();
+    let lang = use_lang();
+    let d = move || dict(lang.get());
+    let (open, set_open) = signal(false);
+    let (providers, set_providers) = signal(Vec::<ProviderInfo>::new());
+
+    // Refetch the picker whenever the region changes (only — not on every toggle).
+    let region = Memo::new(move |_| watch.with(|w| w.region.clone()));
+    Effect::new(move |_| {
+        let r = region.get();
+        spawn_local(async move {
+            match api::fetch_providers(&r).await {
+                Ok(list) => set_providers.set(list),
+                Err(_) => set_providers.set(Vec::new()),
+            }
+        });
+    });
+
+    let active_count =
+        move || watch.with(|w| w.selected().len() as i32 + if w.rentals { 1 } else { 0 });
+    let rentals_on = move || watch.with(|w| w.rentals);
+
+    let btn_class = move || {
+        let base = "flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border transition-colors cursor-pointer";
+        if open.get() || active_count() > 0 {
+            format!("{} border-sc-accent text-sc-accent bg-sc-accent-deep", base)
+        } else {
+            format!("{} border-sc-border text-stone-400 bg-sc-card hover:border-stone-600 hover:text-stone-200", base)
+        }
+    };
+    let seg = |active: bool| -> &'static str {
+        if active {
+            "px-3 py-1 text-xs rounded border border-sc-accent text-sc-accent bg-sc-accent-deep font-medium cursor-pointer"
+        } else {
+            "px-3 py-1 text-xs rounded border border-sc-border text-stone-400 bg-sc-card hover:border-stone-600 hover:text-stone-200 cursor-pointer"
+        }
+    };
+
+    view! {
+        <div class="relative mb-4">
+            {move || open.get().then(|| view! {
+                <div style="position:fixed;inset:0;z-index:40" on:click=move |_| set_open.set(false) />
+            })}
+
+            <div class="flex items-center gap-2 flex-wrap">
+                <button class=btn_class on:click=move |_| set_open.update(|v| *v = !*v)>
+                    <span>{move || d().filter_watchable}</span>
+                    {move || (active_count() > 0).then(|| view! {
+                        <span class="ml-1 px-1.5 rounded-full bg-sc-accent text-stone-900 text-[10px] font-bold">{move || active_count()}</span>
+                    })}
+                </button>
+                {move || (active_count() > 0).then(|| {
+                    let chip = d().filter_active_chip.replace("{}", &active_count().to_string());
+                    view! {
+                        <span class="flex items-center gap-1.5 px-2 py-1 text-xs rounded-full bg-sc-accent-deep text-sc-accent border border-sc-accent">
+                            <span>{chip}</span>
+                            <button class="hover:text-stone-100 font-bold" on:click=move |_| watch.update(|w| w.clear())>"×"</button>
+                        </span>
+                    }
+                })}
+            </div>
+
+            {move || open.get().then(|| view! {
+                <div style="position:absolute;top:calc(100% + 6px);left:0;min-width:300px;max-width:360px;background-color:var(--sc-panel,#17100a);border:1px solid var(--sc-border);border-radius:10px;box-shadow:0 24px 48px rgba(0,0,0,0.7);padding:14px;z-index:200">
+                    <p class="text-[0.65rem] uppercase tracking-wide text-sc-accent-border font-semibold mb-2">{move || d().filter_region}</p>
+                    <div class="flex gap-2 mb-3">
+                        <button class=move || seg(watch.with(|w| w.region == "US")) on:click=move |_| watch.update(|w| w.region = "US".to_string())>"US"</button>
+                        <button class=move || seg(watch.with(|w| w.region == "BR")) on:click=move |_| watch.update(|w| w.region = "BR".to_string())>"BR"</button>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-1.5 max-h-60 overflow-y-auto mb-3">
+                        {move || {
+                            let sel: Vec<i32> = watch.with(|w| w.selected().clone());
+                            providers.get().into_iter().map(|p| {
+                                let id = p.provider_id;
+                                let is_sel = sel.contains(&id);
+                                let logo = p.logo_path.as_deref()
+                                    .map(|x| format!("https://image.tmdb.org/t/p/w45{}", x))
+                                    .unwrap_or_default();
+                                let has_logo = !logo.is_empty();
+                                let name = p.name.clone();
+                                let cls = if is_sel {
+                                    "flex items-center gap-1.5 px-2 py-1 text-xs rounded border border-sc-accent text-sc-accent bg-sc-accent-deep cursor-pointer"
+                                } else {
+                                    "flex items-center gap-1.5 px-2 py-1 text-xs rounded border border-sc-border text-stone-300 bg-sc-card hover:border-stone-600 cursor-pointer"
+                                };
+                                view! {
+                                    <button class=cls on:click=move |_| watch.update(|w| w.toggle(id))>
+                                        {has_logo.then(|| view! { <img src=logo alt=name.clone() loading="lazy" class="w-4 h-4 rounded-sm flex-shrink-0" /> })}
+                                        <span class="truncate">{p.name.clone()}</span>
+                                    </button>
+                                }
+                            }).collect::<Vec<_>>()
+                        }}
+                    </div>
+                    {move || providers.get().is_empty().then(|| view! {
+                        <p class="text-xs text-stone-500 mb-3">{move || d().filter_empty_hint}</p>
+                    })}
+
+                    <label class="flex items-start gap-2 mb-3 cursor-pointer">
+                        <input type="checkbox" class="mt-0.5" prop:checked=rentals_on
+                            on:change=move |_| watch.update(|w| w.rentals = !w.rentals) />
+                        <span>
+                            <span class="text-xs text-stone-200 block">{move || d().filter_include_rentals}</span>
+                            <span class="text-[0.65rem] text-stone-500 block">{move || d().filter_rentals_hint}</span>
+                        </span>
+                    </label>
+
+                    <button class="text-xs text-stone-400 hover:text-stone-200" on:click=move |_| watch.update(|w| w.clear())>{move || d().filter_clear}</button>
+                    <p class="text-[0.6rem] text-stone-600 mt-3 pt-2 border-t border-sc-border">{move || d().providers_attribution}</p>
+                </div>
+            })}
+        </div>
+    }
+}
+
 fn render_movie_grid(
     loading: bool,
     error: Option<String>,
@@ -1856,6 +1999,7 @@ fn MovieCard(movie: MovieSummary) -> impl IntoView {
     let director = movie.director.clone().unwrap_or_default();
     let imdb = movie.imdb_rating.map(|r| format!("{:.1}", r));
     let rt = movie.rt_critic_score.map(|r| r.to_string());
+    let watch_badge = movie.watch_badge.clone();
 
     view! {
         <a
@@ -1899,6 +2043,33 @@ fn MovieCard(movie: MovieSummary) -> impl IntoView {
                 {if !director.is_empty() {
                     view!{ <p class="text-xs text-stone-500 mt-0.5 truncate">{director}</p> }.into_any()
                 } else { view!{ <span /> }.into_any() }}
+                {watch_badge.map(|b| {
+                    let logo = b.logo_path.as_deref()
+                        .map(|p| format!("https://image.tmdb.org/t/p/w45{}", p))
+                        .unwrap_or_default();
+                    let has_logo = !logo.is_empty();
+                    let included = b.tier == WatchTier::Included;
+                    let name = b.provider_name.clone();
+                    let name_title = name.clone();
+                    view!{
+                        <div class="flex items-center gap-1 mt-1.5">
+                            {has_logo.then(|| view!{
+                                <img src=logo alt=name.clone() loading="lazy"
+                                    class="w-4 h-4 rounded-sm flex-shrink-0" />
+                            })}
+                            <span
+                                class=if included {
+                                    "text-[10px] font-medium truncate text-emerald-400"
+                                } else {
+                                    "text-[10px] font-medium truncate text-stone-400"
+                                }
+                                title=name_title
+                            >
+                                {move || if included { d().badge_included } else { d().badge_rent }}
+                            </span>
+                        </div>
+                    }
+                })}
             </div>
         </a>
     }

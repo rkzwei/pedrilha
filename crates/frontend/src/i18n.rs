@@ -102,6 +102,17 @@ pub struct Dict {
     pub filter_no_matches: &'static str,
     pub filter_clear: &'static str,
 
+    // ── What can I watch? (Phase 10) ──────────────────────────────────────────
+    pub filter_watchable: &'static str,
+    pub filter_region: &'static str,
+    pub filter_include_rentals: &'static str,
+    pub filter_rentals_hint: &'static str,
+    pub filter_active_chip: &'static str, // "{} services"
+    pub filter_empty_hint: &'static str,
+    pub badge_included: &'static str,
+    pub badge_rent: &'static str,
+    pub providers_attribution: &'static str,
+
     // ── Pagination ────────────────────────────────────────────────────────────
     pub page_label: &'static str,
     pub page_prev: &'static str,
@@ -320,6 +331,16 @@ pub const EN: Dict = Dict {
     filter_no_matches: "No matches",
     filter_clear: "✕ clear",
 
+    filter_watchable: "What can I watch?",
+    filter_region: "Region",
+    filter_include_rentals: "Include rentals",
+    filter_rentals_hint: "Also show titles to rent or buy (no subscription needed).",
+    filter_active_chip: "{} watch filters",
+    filter_empty_hint: "No providers synced yet for this region.",
+    badge_included: "Included",
+    badge_rent: "Rent",
+    providers_attribution: "Streaming data by JustWatch",
+
     page_label: "Page",
     page_prev: "← Prev",
     page_next: "Next →",
@@ -522,6 +543,16 @@ pub const PT: Dict = Dict {
     filter_films_count: "{} filmes",
     filter_no_matches: "Nenhum resultado",
     filter_clear: "✕ limpar",
+
+    filter_watchable: "O que posso assistir?",
+    filter_region: "Região",
+    filter_include_rentals: "Incluir aluguéis",
+    filter_rentals_hint: "Também mostrar títulos para alugar ou comprar (sem assinatura).",
+    filter_active_chip: "{} filtros de streaming",
+    filter_empty_hint: "Nenhum serviço sincronizado ainda para esta região.",
+    badge_included: "Incluído",
+    badge_rent: "Alugar",
+    providers_attribution: "Dados de streaming por JustWatch",
 
     page_label: "Página",
     page_prev: "← Anterior",

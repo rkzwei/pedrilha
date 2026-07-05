@@ -1,8 +1,32 @@
 use gem_finder_shared::types::{
-    AuthResponse, Movie, MovieSummary, PaginatedResponse, WatchState, WatchlistEntry,
+    AuthResponse, Movie, MovieSummary, PaginatedResponse, ProviderInfo, WatchState, WatchlistEntry,
     WatchlistUpsert,
 };
 use serde::Serialize;
+
+/// The active "What can I watch?" filter for a list request: region, csv of
+/// selected TMDB provider ids, and whether rentals are included. `None` = no filter.
+#[derive(Clone, Default)]
+pub struct WatchQuery {
+    pub region: String,
+    pub providers: String,
+    pub rentals: bool,
+}
+
+/// Append watch-filter query params to a list URL when a filter is active.
+fn append_watch(url: &mut String, watch: &Option<WatchQuery>) {
+    if let Some(w) = watch {
+        if !w.providers.is_empty() || w.rentals {
+            url.push_str(&format!("&region={}", w.region));
+            if !w.providers.is_empty() {
+                url.push_str(&format!("&providers={}", w.providers));
+            }
+            if w.rentals {
+                url.push_str("&rentals=1");
+            }
+        }
+    }
+}
 
 /// Returns the current page origin (e.g. `https://example.com`) at runtime.
 /// Reqwest in WASM requires absolute URLs; reading the origin from the browser
@@ -22,6 +46,7 @@ pub async fn fetch_gems(
     q: Option<String>,
     sort: Option<String>,
     sort_dir: Option<String>,
+    watch: Option<WatchQuery>,
 ) -> Result<PaginatedResponse<MovieSummary>, String> {
     let mut url = format!(
         "{}/api/gems?page={}&per_page={}",
@@ -44,6 +69,7 @@ pub async fn fetch_gems(
     if let Some(d) = sort_dir {
         url.push_str(&format!("&sort_dir={}", d));
     }
+    append_watch(&mut url, &watch);
     reqwest::get(&url)
         .await
         .map_err(|e| format!("Network error: {}", e))?
@@ -61,6 +87,7 @@ pub async fn fetch_acclaimed(
     q: Option<String>,
     sort: Option<String>,
     sort_dir: Option<String>,
+    watch: Option<WatchQuery>,
 ) -> Result<PaginatedResponse<MovieSummary>, String> {
     let mut url = format!(
         "{}/api/acclaimed?page={}&per_page={}",
@@ -83,6 +110,7 @@ pub async fn fetch_acclaimed(
     if let Some(d) = sort_dir {
         url.push_str(&format!("&sort_dir={}", d));
     }
+    append_watch(&mut url, &watch);
     reqwest::get(&url)
         .await
         .map_err(|e| format!("Network error: {}", e))?
@@ -100,6 +128,7 @@ pub async fn fetch_wildcards(
     q: Option<String>,
     sort: Option<String>,
     sort_dir: Option<String>,
+    watch: Option<WatchQuery>,
 ) -> Result<PaginatedResponse<MovieSummary>, String> {
     let mut url = format!(
         "{}/api/wildcards?page={}&per_page={}",
@@ -122,10 +151,22 @@ pub async fn fetch_wildcards(
     if let Some(d) = sort_dir {
         url.push_str(&format!("&sort_dir={}", d));
     }
+    append_watch(&mut url, &watch);
     reqwest::get(&url)
         .await
         .map_err(|e| format!("Network error: {}", e))?
         .json::<PaginatedResponse<MovieSummary>>()
+        .await
+        .map_err(|e| format!("Parse error: {}", e))
+}
+
+/// Fetch the streaming providers available in a region (for the picker).
+pub async fn fetch_providers(region: &str) -> Result<Vec<ProviderInfo>, String> {
+    let url = format!("{}/api/providers?region={}", api_base(), region);
+    reqwest::get(&url)
+        .await
+        .map_err(|e| format!("Network error: {}", e))?
+        .json::<Vec<ProviderInfo>>()
         .await
         .map_err(|e| format!("Parse error: {}", e))
 }
