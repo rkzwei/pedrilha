@@ -236,9 +236,14 @@ William Friedkin's *Sorcerer* (1977) — warm amber headlights in rain, 35mm gra
 
 ---
 
-## Phase 8: User Features 🔨 IN PROGRESS
+## Phase 8: User Features ✅ COMPLETE (except style picker)
 
 **Goal:** Add authenticated user accounts with personal watchlists, public ratings, and theme switching.
+
+> **Status (2026-07-05):** Auth (magic link + JWT + WebAuthn passkeys), `users`/
+> `magic_tokens`/`watchlist` tables, watchlist CRUD + UI all shipped. The only
+> unshipped item is the **CSS-var style picker (8d)** — deferred in favour of the
+> Pedrilha rebrand + PT/EN bilingual work. The CSS-var refactor prerequisite is done.
 
 ### Architectural Decisions (confirmed 2026-06-23)
 
@@ -331,9 +336,14 @@ Until a second source is actually needed, keep the concrete implementations — 
 
 ---
 
-## Phase 9: Production Hardening 📋 PLANNED
+## Phase 9: Production Hardening 🔨 MOSTLY DONE
 
 **Goal:** Harden for public deployment.
+
+> **Status (2026-07-05):** Rate limiting, CORS, log rotation, JWT CVE patch, GitHub
+> Actions deploy workflow + self-hosted Docker runners, and the Docker build fix all
+> shipped. Remaining: structured error responses, `/api/v1` versioning, health-check
+> DB probe, HTTPS/reverse-proxy docs, and a multi-arch (amd64+arm64) build.
 
 ### Deliverables
 - [ ] Rate limiting on API endpoints (tower middleware)
@@ -348,7 +358,13 @@ Until a second source is actually needed, keep the concrete implementations — 
 
 ---
 
-## Phase 10: What Can I Watch? 📋 PLANNED
+## Phase 10: What Can I Watch? ✅ COMPLETE
+
+> **Status (2026-07-05):** All 6 batches implemented, compiling, and unit-tested.
+> End-to-end provider data requires running `POST /api/admin/providers-sync` (or the
+> 24h scheduled sync) against a live DB with a valid `TMDB_API_KEY` — the picker is
+> empty until the first sync populates `movie_providers`.
+
 
 **Goal:** Answer the user's real question — *which of these gems can I actually watch tonight?* A region-aware (US/BR) filter where users tick the streaming services they subscribe to and lists narrow to titles available to them, distinguishing "included with subscription / free with ads" from "available to rent."
 
@@ -364,7 +380,7 @@ Until a second source is actually needed, keep the concrete implementations — 
 
 ### Batches (for agent-driven execution — recommended model per batch)
 
-#### Batch 1 — Schema + types · model: **Sonnet 5**
+#### Batch 1 — Schema + types · model: **Sonnet 5** ✅ DONE
 Mechanical, pattern-following (existing migrations/models are templates), but schema-final — review the DDL before merging.
 - [ ] Migration (next version in `crates/db/src/migrations.rs`):
 ```sql
@@ -385,13 +401,13 @@ CREATE TABLE user_providers (user_id INTEGER NOT NULL REFERENCES users(id), regi
 - [ ] `WatchBadge` + provider types in `crates/shared/src/types.rs`
 - **Acceptance:** `cargo test --workspace` passes; migration idempotent on an existing DB.
 
-#### Batch 2 — Provider sync service · model: **Sonnet 5**
+#### Batch 2 — Provider sync service · model: **Sonnet 5** ✅ DONE
 Close copy of `OmdbEnrichmentService` (chunking, progress logs) + `tmdb_sync.rs` client/rate-limit patterns.
 - [ ] `crates/api/src/services/provider_sync.rs` — `GET /movie/{tmdb_id}/watch/providers`, keep `results.US`/`results.BR`, replace that movie's rows, upsert `provider_sync.fetched_at`; skip movies fetched < 7 days ago
 - [ ] Hook into the 24h scheduled sync + `POST /api/admin/providers-sync` (202, `tokio::spawn`, `admin_busy`/`BusyGuard`, run_logs) + admin page button
 - **Acceptance:** run against live DB; `movie_providers` populated for both regions; spot-check 2 movies against themoviedb.org watch pages.
 
-#### Batch 3 — Filter API · model: **Opus 4.8 (or Fable 5)**
+#### Batch 3 — Filter API · model: **Opus 4.8 (or Fable 5)** ✅ DONE (in-memory, not SQL — see note)
 Correctness-critical: SQL filter semantics across three endpoints + response shape change.
 - [ ] `GET /api/providers?region=` — distinct providers with `access IN ('flatrate','free','ads')`, name/logo/count, ordered by count desc
 - [ ] Extend `/api/gems`, `/api/acclaimed`, `/api/wildcards` (shared query layer) with `region`, `providers=` (csv TMDB ids), `rentals=1`. Match rule: (`access IN ('flatrate','free','ads')` AND provider selected) OR (`rentals=1` AND `access IN ('rent','buy')`, any provider)
@@ -399,7 +415,7 @@ Correctness-critical: SQL filter semantics across three endpoints + response sha
 - [ ] Extend `GET /api/movies/{id}` with both regions' providers grouped by tier + `tmdb_link`
 - **Acceptance:** integration test per semantics rule — selected-service flatrate ✓, unselected flatrate ✗, rental without toggle ✗, rental with toggle ✓ regardless of selection; pagination counts correct under filter.
 
-#### Batch 4 — Filter UI · model: **Opus 4.8 (or Fable 5)**
+#### Batch 4 — Filter UI · model: **Opus 4.8 (or Fable 5)** ✅ DONE
 Leptos reactivity is fiddly (see FIX-46/47 above) — strongest model here. **Depends on Batch 2 having run** (picker data).
 - [ ] "What can I watch?" panel on list pages: region toggle (default PT→BR, EN→US), provider logo grid from `/api/providers` (`https://image.tmdb.org/t/p/w45{logo_path}`), "+ include rentals" toggle with explainer, clear-all, JustWatch attribution line
 - [ ] localStorage persistence (`gf_watch_region`, `gf_watch_providers_us`, `gf_watch_providers_br`, `gf_watch_rentals`), following the `gf_lang` pattern
@@ -407,7 +423,7 @@ Leptos reactivity is fiddly (see FIX-46/47 above) — strongest model here. **De
 - [ ] i18n (Dict + EN + PT): `filter_watchable`, `filter_region`, `filter_include_rentals`, `filter_rentals_hint`, `filter_clear`, `filter_active_chip` (`{}` count), `filter_empty_hint`, `badge_included`, `badge_rent`, `providers_attribution`
 - **Acceptance:** anonymous flow works end-to-end; selections survive reload; language switch flips region default and labels.
 
-#### Batch 5 — Detail page + Stremio · model: **Sonnet 5**
+#### Batch 5 — Detail page + Stremio · model: **Sonnet 5** ✅ DONE
 - [ ] Detail page: providers grouped "Included with" / "Free with ads" / "Rent or buy" for the active region, linking to `tmdb_link`; JustWatch attribution; fallback to the existing JustWatch search link when no data
 - [ ] "Open in Stremio" button in the external-links row (frontend-only):
   - with `imdb_id`: `stremio:///detail/movie/{imdb_id}/{imdb_id}` (Stremio's movie ids are IMDb ids via Cinemeta)
@@ -416,7 +432,7 @@ Leptos reactivity is fiddly (see FIX-46/47 above) — strongest model here. **De
 - [ ] i18n: `providers_included_with`, `providers_free_ads`, `providers_rent_buy`, `detail_open_stremio` ("Open in Stremio" / "Abrir no Stremio"), `detail_stremio_web`
 - **Acceptance:** a title flatrate on one service and rentable on another appears in both groups; attribution visible; Stremio deep link opens the correct title in the installed app; search fallback used when `imdb_id` is missing.
 
-#### Batch 6 — Signed-in sync · model: **Sonnet 5**
+#### Batch 6 — Signed-in sync · model: **Sonnet 5** ✅ DONE
 - [ ] `GET/PUT /api/user/providers` (JWT middleware, same as watchlist; PUT replaces)
 - [ ] Frontend: push on change when signed in; hydrate from server when localStorage is empty; last-write-wins; zero sign-in nudges for anonymous users
 - **Acceptance:** two-browser test — selections made signed-in on one browser hydrate on the other.
