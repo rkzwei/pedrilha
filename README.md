@@ -2,6 +2,13 @@
 
 Discover hidden gem movies — incredible films buried under blockbusters and wrongly-rated movies.
 
+## Ethos
+
+Built from one sentence: *"My friend recommended me a movie another friend
+showed him, said it was great, and I watched it… It felt like a hidden gem."*
+Every feature must derive from a clause of that sentence — the
+[Sorcerer Test](ETHOS.md). No clause, no feature.
+
 ## How It Works
 
 Gem Finder surfaces films sitting in the 6.5–7.9 community rating sweet spot that most people never see. The scoring algorithm weighs:
