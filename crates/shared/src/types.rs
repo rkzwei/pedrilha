@@ -104,6 +104,9 @@ pub struct WatchlistEntry {
     pub user_rating: Option<i32>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
+    /// Username of the friend whose rec brought this movie in, if any.
+    #[serde(default)]
+    pub recommended_by: Option<String>,
 }
 
 /// State of a movie in a user's watchlist.
@@ -217,6 +220,10 @@ pub struct WatchlistUpsert {
     pub movie_id: i64,
     pub state: WatchState,
     pub user_rating: Option<i32>,
+    /// When adding from a received rec: the rec's token. Server resolves to
+    /// the internal via_rec_id — the integer id never crosses the API.
+    #[serde(default)]
+    pub rec_token: Option<String>,
 }
 
 /// API response wrapper for paginated results.
@@ -513,4 +520,81 @@ pub struct TmdbKeywordsResponse {
 pub struct TmdbKeyword {
     pub id: i64,
     pub name: String,
+}
+
+// ──────────────────────────────────────────────
+// Phase 11: Friend recommendations (Ethos C1)
+// ──────────────────────────────────────────────
+
+/// Request body for `POST /api/recs`.
+/// `movie_id` is the raw integer id — same contract as `WatchlistUpsert`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecCreate {
+    pub movie_id: i64,
+    #[serde(default)]
+    pub note: Option<String>,
+    /// When set, deliver in-app to this existing friend instead of minting a share link.
+    #[serde(default)]
+    pub to_username: Option<String>,
+}
+
+/// Response for a created share-link rec. Frontend builds `{origin}/r/{token}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecCreated {
+    pub token: String,
+}
+
+/// Public payload for `GET /api/rec/{token}` — what a non-signed-in recipient sees.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecPublic {
+    pub movie: MovieSummary,
+    pub sender_username: String,
+    pub note: Option<String>,
+}
+
+/// One received rec in the inbox (`GET /api/recs/received`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReceivedRec {
+    pub token: String,
+    pub movie: MovieSummary,
+    pub sender_username: String,
+    pub note: Option<String>,
+    pub read: bool,
+    pub created_at: String,
+}
+
+/// One sent rec (`GET /api/recs/sent`) — exists as the revocation surface.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SentRec {
+    pub token: String,
+    pub movie: MovieSummary,
+    pub note: Option<String>,
+    pub claim_count: i64,
+    pub created_at: String,
+}
+
+/// A friend (`GET /api/friends`). Referenced by username only — never by row id.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendInfo {
+    pub username: String,
+    pub since: String,
+}
+
+/// Validate a recommendation note: ≤140 chars, no control characters.
+/// Callers should trim before validating and store `None` for empty strings.
+///
+/// ```
+/// use gem_finder_shared::types::validate_rec_note;
+/// assert!(validate_rec_note("said it was great").is_ok());
+/// assert!(validate_rec_note(&"x".repeat(141)).is_err());
+/// assert!(validate_rec_note("has\ncontrol").is_err());
+/// ```
+pub fn validate_rec_note(note: &str) -> Result<(), &'static str> {
+    if note.chars().count() > 140 {
+        return Err("Note must be 140 characters or fewer");
+    }
+    if note.chars().any(|c| c.is_control()) {
+        return Err("Note contains invalid characters");
+    }
+    Ok(())
 }

@@ -381,6 +381,7 @@ pub async fn upsert_watchlist(
             movie_id,
             state,
             user_rating,
+            rec_token: None,
         })
         .send()
         .await

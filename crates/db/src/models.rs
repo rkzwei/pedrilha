@@ -1107,6 +1107,7 @@ fn row_to_watchlist_entry(row: &turso::Row) -> Result<WatchlistEntry> {
         user_rating,
         created_at,
         updated_at,
+        recommended_by: None,
     })
 }
 
