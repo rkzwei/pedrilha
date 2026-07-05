@@ -1839,13 +1839,18 @@ pub fn MovieDetail() -> impl IntoView {
                                                             <A href="/watchlist" attr:class="underline hover:text-sc-accent-hover">{move || d().detail_saved_link}</A>
                                                         </p>
                                                     })}
-                                                    {move || wl_error.get().map(|e| view! {
+                                    {move || wl_error.get().map(|e| view! {
                                                         <p class="text-red-400 text-xs mt-2">{e}</p>
                                                     })}
                                                 </div>
                                             }.into_any()
                                         }
                                     }}
+                                </div>
+
+                                // ── Recommend to a friend (Ethos C1) ──────────────────
+                                <div class="mt-4">
+                                    <crate::recs::RecommendButton movie_id=movie_db_id />
                                 </div>
 
                                 // ── More like this — pure filter links ────────────────

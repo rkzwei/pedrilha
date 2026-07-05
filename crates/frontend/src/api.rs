@@ -457,7 +457,7 @@ pub async fn check_username(username: &str) -> Result<UsernameAvailability, Stri
     let url = format!(
         "{}/api/user/username/check?username={}",
         api_base(),
-        urlencoding_encode(username)
+        js_sys::encode_uri_component(username)
     );
     reqwest::get(&url)
         .await
@@ -484,21 +484,6 @@ pub async fn set_username(username: &str, token: &str) -> Result<(), String> {
         let body: serde_json::Value = resp.json().await.unwrap_or_default();
         Err(body["error"].as_str().unwrap_or("error").to_string())
     }
-}
-
-/// Minimal query-string escaping for the one param we send. Avoids pulling in
-/// a whole URL crate for a single username value (already alphanumeric+`_`
-/// per `UsernameUpdate::validate`, but escape defensively).
-fn urlencoding_encode(s: &str) -> String {
-    s.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
-                c.to_string()
-            } else {
-                format!("%{:02X}", c as u32)
-            }
-        })
-        .collect()
 }
 
 // ── Friend recommendations (Ethos C1) ───────────────────────────────────────

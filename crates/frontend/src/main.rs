@@ -9,6 +9,7 @@ use leptos_router::{
 mod api;
 mod i18n;
 mod pages;
+mod recs;
 
 use i18n::{dict, Lang};
 
