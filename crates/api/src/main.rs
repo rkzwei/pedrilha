@@ -572,6 +572,11 @@ async fn main() {
                 .delete(routes::watchlist::delete_watchlist_movie),
         )
         // User — JWT protected
+        .route(
+            "/api/user/providers",
+            get(routes::user_providers::get_user_providers)
+                .put(routes::user_providers::put_user_providers),
+        )
         .route("/api/user/me", get(routes::auth::get_me))
         .route(
             "/api/user/username",

@@ -1,6 +1,6 @@
 use gem_finder_shared::types::{
-    AuthResponse, Movie, MovieSummary, PaginatedResponse, ProviderInfo, WatchState, WatchlistEntry,
-    WatchlistUpsert,
+    AuthResponse, Movie, MovieSummary, PaginatedResponse, ProviderInfo, UserProvidersPayload,
+    WatchState, WatchlistEntry, WatchlistUpsert,
 };
 use serde::Serialize;
 
@@ -158,6 +158,44 @@ pub async fn fetch_wildcards(
         .json::<PaginatedResponse<MovieSummary>>()
         .await
         .map_err(|e| format!("Parse error: {}", e))
+}
+
+/// GET /api/user/providers — the signed-in user's saved provider selections.
+pub async fn get_user_providers(token: &str) -> Result<UserProvidersPayload, String> {
+    let url = format!("{}/api/user/providers", api_base());
+    let resp = reqwest::Client::new()
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    if resp.status().is_success() {
+        resp.json::<UserProvidersPayload>()
+            .await
+            .map_err(|e| format!("Parse error: {}", e))
+    } else {
+        Err(format!("Server error: {}", resp.status()))
+    }
+}
+
+/// PUT /api/user/providers — replace the user's provider selections (last-write-wins).
+pub async fn put_user_providers(
+    payload: UserProvidersPayload,
+    token: &str,
+) -> Result<(), String> {
+    let url = format!("{}/api/user/providers", api_base());
+    let resp = reqwest::Client::new()
+        .put(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        Err(format!("Server error: {}", resp.status()))
+    }
 }
 
 /// Fetch the streaming providers available in a region (for the picker).

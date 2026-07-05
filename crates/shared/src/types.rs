@@ -330,6 +330,16 @@ pub struct TmdbFindResponse {
     pub movie_results: Vec<TmdbMovie>,
 }
 
+/// Signed-in user's selected providers per region (Phase 10 cross-device sync).
+/// PUT replaces the whole set (last-write-wins, no merge).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct UserProvidersPayload {
+    #[serde(default)]
+    pub us: Vec<i32>,
+    #[serde(default)]
+    pub br: Vec<i32>,
+}
+
 /// TMDB `/movie/{id}/watch/providers` response. `results` is keyed by region
 /// code (e.g. "US", "BR"); we keep only the regions we support.
 #[derive(Debug, Clone, Deserialize)]

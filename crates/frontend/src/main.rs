@@ -241,6 +241,43 @@ fn App() -> impl IntoView {
         save_watch_prefs(&p);
     });
 
+    // Cross-device sync (Phase 10 Batch 6): when signed in, hydrate from the server
+    // if local selections are empty, and push on every change. Last-write-wins.
+    if let Some(a) = auth.get_untracked() {
+        let local_empty = watch
+            .with_untracked(|w| w.providers_us.is_empty() && w.providers_br.is_empty() && !w.rentals);
+        if local_empty {
+            let token = a.token.clone();
+            spawn_local(async move {
+                if let Ok(p) = api::get_user_providers(&token).await {
+                    if !p.us.is_empty() || !p.br.is_empty() {
+                        watch.update(|w| {
+                            w.providers_us = p.us;
+                            w.providers_br = p.br;
+                        });
+                    }
+                }
+            });
+        }
+    }
+    Effect::new(move |prev: Option<()>| {
+        let p = watch.get(); // track changes
+        // Skip the initial run so we don't overwrite the server with the local
+        // default before hydration has a chance to run.
+        if prev.is_some() {
+            if let Some(a) = auth.get_untracked() {
+                let token = a.token.clone();
+                let payload = gem_finder_shared::types::UserProvidersPayload {
+                    us: p.providers_us.clone(),
+                    br: p.providers_br.clone(),
+                };
+                spawn_local(async move {
+                    let _ = api::put_user_providers(payload, &token).await;
+                });
+            }
+        }
+    });
+
     let smtp_ok: RwSignal<bool> = RwSignal::new(true);
     provide_context(smtp_ok);
 
