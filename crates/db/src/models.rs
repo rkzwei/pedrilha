@@ -1166,7 +1166,7 @@ pub async fn upsert_provider_sync(
     Ok(())
 }
 
-/// Scored movies whose providers have never been fetched, or were fetched > 7 days ago.
+/// Sync providers for scored, acclaimed, and wildcard movies whose data is missing or > 7 days stale.
 /// Returns `(movie_id, tmdb_id)` pairs.
 pub async fn get_movies_needing_provider_sync(
     conn: &Connection,
@@ -1177,9 +1177,11 @@ pub async fn get_movies_needing_provider_sync(
             "SELECT m.id, m.tmdb_id
              FROM movies m
              LEFT JOIN provider_sync ps ON ps.movie_id = m.id
-             WHERE m.gem_score IS NOT NULL
+             WHERE (m.gem_score IS NOT NULL
+                    OR m.id IN (SELECT movie_id FROM acclaimed)
+                    OR m.id IN (SELECT movie_id FROM wildcards))
                AND (ps.fetched_at IS NULL OR ps.fetched_at < datetime('now','-7 days'))
-             ORDER BY m.gem_score DESC
+             ORDER BY (m.gem_score IS NOT NULL) DESC, m.gem_score DESC
              LIMIT ?1",
         )
         .await?;
