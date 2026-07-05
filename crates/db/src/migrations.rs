@@ -32,6 +32,10 @@ pub async fn run(conn: &Connection) -> Result<()> {
         migrate_v6(conn).await?;
         record_version(conn, 6).await?;
     }
+    if !applied.contains(&7) {
+        migrate_v7(conn).await?;
+        record_version(conn, 7).await?;
+    }
 
     Ok(())
 }
@@ -329,5 +333,59 @@ async fn migrate_v6(conn: &Connection) -> Result<()> {
     }
 
     tracing::info!("Applied migration v6: events table");
+    Ok(())
+}
+
+// ── Migration v7: watch providers (phase 10) ────────────────────────────────
+
+async fn migrate_v7(conn: &Connection) -> Result<()> {
+    // movie_providers – one row per (movie, region, provider, access-tier).
+    // access: 'flatrate'|'free'|'ads' = included; 'rent'|'buy' = paid rental.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS movie_providers (
+            movie_id      INTEGER NOT NULL REFERENCES movies(id) ON DELETE CASCADE,
+            region        TEXT    NOT NULL,        -- 'US' | 'BR'
+            provider_id   INTEGER NOT NULL,        -- TMDB provider id
+            provider_name TEXT    NOT NULL,
+            logo_path     TEXT,
+            access        TEXT    NOT NULL CHECK(access IN ('flatrate','free','ads','rent','buy')),
+            PRIMARY KEY (movie_id, region, provider_id, access)
+        )",
+        turso::params![],
+    )
+    .await?;
+
+    // provider_sync – per-movie fetch bookkeeping (skip if fetched < 7 days ago).
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS provider_sync (
+            movie_id   INTEGER PRIMARY KEY REFERENCES movies(id) ON DELETE CASCADE,
+            fetched_at TEXT NOT NULL,
+            tmdb_link  TEXT
+        )",
+        turso::params![],
+    )
+    .await?;
+
+    // user_providers – signed-in users' selected services, per region.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS user_providers (
+            user_id     TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            region      TEXT    NOT NULL,
+            provider_id INTEGER NOT NULL,
+            PRIMARY KEY (user_id, region, provider_id)
+        )",
+        turso::params![],
+    )
+    .await?;
+
+    for ddl in [
+        "CREATE INDEX IF NOT EXISTS idx_mp_filter    ON movie_providers(region, provider_id, access)",
+        "CREATE INDEX IF NOT EXISTS idx_mp_movie     ON movie_providers(movie_id)",
+        "CREATE INDEX IF NOT EXISTS idx_up_user      ON user_providers(user_id)",
+    ] {
+        conn.execute(ddl, turso::params![]).await?;
+    }
+
+    tracing::info!("Applied migration v7: watch providers");
     Ok(())
 }

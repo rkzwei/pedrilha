@@ -401,6 +401,7 @@ mod tests {
             keywords: None,
             created_at: None,
             updated_at: None,
+            watch_providers: None,
         }
     }
 

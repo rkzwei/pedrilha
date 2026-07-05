@@ -1,7 +1,9 @@
 use anyhow::Result;
 use gem_finder_shared::types::{
-    Movie, MovieSummary, RunLogEntry, User, WatchState, WatchlistEntry,
+    Movie, MovieProvider, MovieSummary, ProviderInfo, RegionProviders, RunLogEntry, User,
+    WatchState, WatchlistEntry,
 };
+use std::collections::HashMap;
 use turso::{params, Connection, Value};
 
 /// Helper to extract an Option<String> from a Value.
@@ -146,6 +148,7 @@ pub async fn get_top_gems(
             gem_score: value_to_opt_f64(row.get_value(8)?),
             gem_rank: value_to_opt_i64(row.get_value(9)?),
             keywords: value_to_opt_string(row.get_value(10)?),
+            watch_badge: None,
         });
     }
     Ok(results)
@@ -181,6 +184,7 @@ pub async fn get_movie_by_id(conn: &Connection, id: i64) -> Result<Option<Movie>
             revenue: value_to_opt_i64(row.get_value(20)?),
             collection_id: value_to_opt_i64(row.get_value(21)?),
             keywords: value_to_opt_string(row.get_value(22)?),
+            watch_providers: None,
         }))
     } else {
         Ok(None)
@@ -228,6 +232,7 @@ pub async fn get_all_movies_for_scoring(conn: &Connection) -> Result<Vec<Movie>>
             revenue: value_to_opt_i64(row.get_value(20)?),
             collection_id: value_to_opt_i64(row.get_value(21)?),
             keywords: value_to_opt_string(row.get_value(22)?),
+            watch_providers: None,
         });
     }
     Ok(results)
@@ -548,6 +553,7 @@ pub async fn get_acclaimed_films(
             gem_score: value_to_opt_f64(row.get_value(8)?),
             gem_rank: value_to_opt_i64(row.get_value(9)?),
             keywords: value_to_opt_string(row.get_value(10)?),
+            watch_badge: None,
         });
     }
     Ok(results)
@@ -637,6 +643,7 @@ pub async fn get_wildcards(
             gem_score: value_to_opt_f64(row.get_value(8)?),
             gem_rank: value_to_opt_i64(row.get_value(9)?),
             keywords: value_to_opt_string(row.get_value(10)?),
+            watch_badge: None,
         });
     }
     Ok(results)
@@ -688,6 +695,7 @@ pub async fn get_all_gems_for_cache(conn: &Connection) -> Result<Vec<MovieSummar
             gem_score: value_to_opt_f64(row.get_value(8)?),
             gem_rank: value_to_opt_i64(row.get_value(9)?),
             keywords: value_to_opt_string(row.get_value(10)?),
+            watch_badge: None,
         });
     }
     Ok(results)
@@ -721,6 +729,7 @@ pub async fn get_all_acclaimed_for_cache(conn: &Connection) -> Result<Vec<MovieS
             gem_score: value_to_opt_f64(row.get_value(8)?),
             gem_rank: value_to_opt_i64(row.get_value(9)?),
             keywords: value_to_opt_string(row.get_value(10)?),
+            watch_badge: None,
         });
     }
     Ok(results)
@@ -754,6 +763,7 @@ pub async fn get_all_wildcards_for_cache(conn: &Connection) -> Result<Vec<MovieS
             gem_score: value_to_opt_f64(row.get_value(8)?),
             gem_rank: value_to_opt_i64(row.get_value(9)?),
             keywords: value_to_opt_string(row.get_value(10)?),
+            watch_badge: None,
         });
     }
     Ok(results)
@@ -1098,4 +1108,225 @@ fn row_to_watchlist_entry(row: &turso::Row) -> Result<WatchlistEntry> {
         created_at,
         updated_at,
     })
+}
+
+// ── Phase 10: Watch providers ─────────────────────────────────────────────────
+
+/// Access tiers that count as "watchable at no extra cost" on a subscribed service.
+pub const INCLUDED_ACCESS: [&str; 3] = ["flatrate", "free", "ads"];
+
+/// Replace all provider rows for one movie × region with a fresh set.
+/// `rows` are `(provider_id, provider_name, logo_path, access)` tuples.
+pub async fn replace_movie_providers(
+    conn: &Connection,
+    movie_id: i64,
+    region: &str,
+    rows: &[(i32, String, Option<String>, String)],
+) -> Result<()> {
+    conn.execute(
+        "DELETE FROM movie_providers WHERE movie_id = ?1 AND region = ?2",
+        params![movie_id, region],
+    )
+    .await?;
+    for (provider_id, provider_name, logo_path, access) in rows {
+        conn.execute(
+            "INSERT OR IGNORE INTO movie_providers
+                (movie_id, region, provider_id, provider_name, logo_path, access)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                movie_id,
+                region,
+                *provider_id,
+                provider_name.as_str(),
+                logo_path.clone(),
+                access.as_str()
+            ],
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Record that a movie's providers were just fetched (drives the 7-day skip window).
+pub async fn upsert_provider_sync(
+    conn: &Connection,
+    movie_id: i64,
+    fetched_at: &str,
+    tmdb_link: Option<&str>,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO provider_sync (movie_id, fetched_at, tmdb_link)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(movie_id) DO UPDATE SET
+             fetched_at = excluded.fetched_at,
+             tmdb_link  = excluded.tmdb_link",
+        params![movie_id, fetched_at, tmdb_link],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Scored movies whose providers have never been fetched, or were fetched > 7 days ago.
+/// Returns `(movie_id, tmdb_id)` pairs.
+pub async fn get_movies_needing_provider_sync(
+    conn: &Connection,
+    limit: i64,
+) -> Result<Vec<(i64, i64)>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT m.id, m.tmdb_id
+             FROM movies m
+             LEFT JOIN provider_sync ps ON ps.movie_id = m.id
+             WHERE m.gem_score IS NOT NULL
+               AND (ps.fetched_at IS NULL OR ps.fetched_at < datetime('now','-7 days'))
+             ORDER BY m.gem_score DESC
+             LIMIT ?1",
+        )
+        .await?;
+    let mut rows = stmt.query(params![limit]).await?;
+    let mut result = Vec::new();
+    while let Some(row) = rows.next().await? {
+        let movie_id = value_to_opt_i64(row.get_value(0)?).unwrap_or(0);
+        let tmdb_id = value_to_opt_i64(row.get_value(1)?).unwrap_or(0);
+        result.push((movie_id, tmdb_id));
+    }
+    Ok(result)
+}
+
+/// Bulk-load provider rows for every movie in a region, keyed by movie_id.
+/// Used to enrich the in-memory list cache for filtering.
+pub async fn get_providers_for_movies(
+    conn: &Connection,
+    region: &str,
+) -> Result<HashMap<i64, Vec<MovieProvider>>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT movie_id, provider_id, provider_name, logo_path, access
+             FROM movie_providers WHERE region = ?1",
+        )
+        .await?;
+    let mut rows = stmt.query(params![region]).await?;
+    let mut map: HashMap<i64, Vec<MovieProvider>> = HashMap::new();
+    while let Some(row) = rows.next().await? {
+        let movie_id = value_to_opt_i64(row.get_value(0)?).unwrap_or(0);
+        let provider = MovieProvider {
+            provider_id: value_to_opt_i32(row.get_value(1)?).unwrap_or(0),
+            provider_name: value_to_opt_string(row.get_value(2)?).unwrap_or_default(),
+            logo_path: value_to_opt_string(row.get_value(3)?),
+            access: value_to_opt_string(row.get_value(4)?).unwrap_or_default(),
+        };
+        map.entry(movie_id).or_default().push(provider);
+    }
+    Ok(map)
+}
+
+/// Distinct providers that stream ≥1 catalog title (included tiers only) in a
+/// region, with catalog counts. Powers the picker so no dead checkboxes appear.
+pub async fn get_distinct_providers(conn: &Connection, region: &str) -> Result<Vec<ProviderInfo>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT provider_id, provider_name, logo_path, COUNT(DISTINCT movie_id) AS cnt
+             FROM movie_providers
+             WHERE region = ?1 AND access IN ('flatrate','free','ads')
+             GROUP BY provider_id
+             ORDER BY cnt DESC, provider_name ASC",
+        )
+        .await?;
+    let mut rows = stmt.query(params![region]).await?;
+    let mut result = Vec::new();
+    while let Some(row) = rows.next().await? {
+        result.push(ProviderInfo {
+            provider_id: value_to_opt_i32(row.get_value(0)?).unwrap_or(0),
+            name: value_to_opt_string(row.get_value(1)?).unwrap_or_default(),
+            logo_path: value_to_opt_string(row.get_value(2)?),
+            count: value_to_opt_i64(row.get_value(3)?).unwrap_or(0),
+        });
+    }
+    Ok(result)
+}
+
+/// All providers for one movie, grouped per region, with a TMDB watch-page link
+/// (ToS: no per-title deep links — link to the aggregated TMDB page).
+pub async fn get_movie_providers(
+    conn: &Connection,
+    movie_id: i64,
+    tmdb_id: i64,
+) -> Result<Vec<RegionProviders>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT region, provider_id, provider_name, logo_path, access
+             FROM movie_providers WHERE movie_id = ?1
+             ORDER BY region ASC, access ASC, provider_name ASC",
+        )
+        .await?;
+    let mut rows = stmt.query(params![movie_id]).await?;
+    // Preserve region insertion order (US then BR, per ORDER BY).
+    let mut order: Vec<String> = Vec::new();
+    let mut by_region: HashMap<String, Vec<MovieProvider>> = HashMap::new();
+    while let Some(row) = rows.next().await? {
+        let region = value_to_opt_string(row.get_value(0)?).unwrap_or_default();
+        let provider = MovieProvider {
+            provider_id: value_to_opt_i32(row.get_value(1)?).unwrap_or(0),
+            provider_name: value_to_opt_string(row.get_value(2)?).unwrap_or_default(),
+            logo_path: value_to_opt_string(row.get_value(3)?),
+            access: value_to_opt_string(row.get_value(4)?).unwrap_or_default(),
+        };
+        if !by_region.contains_key(&region) {
+            order.push(region.clone());
+        }
+        by_region.entry(region).or_default().push(provider);
+    }
+    let result = order
+        .into_iter()
+        .map(|region| {
+            let tmdb_link = Some(format!(
+                "https://www.themoviedb.org/movie/{}/watch?locale={}",
+                tmdb_id, region
+            ));
+            let providers = by_region.remove(&region).unwrap_or_default();
+            RegionProviders {
+                region,
+                providers,
+                tmdb_link,
+            }
+        })
+        .collect();
+    Ok(result)
+}
+
+/// A signed-in user's selected services, as `(region, provider_id)` pairs.
+pub async fn get_user_providers(conn: &Connection, user_id: &str) -> Result<Vec<(String, i32)>> {
+    let mut stmt = conn
+        .prepare("SELECT region, provider_id FROM user_providers WHERE user_id = ?1")
+        .await?;
+    let mut rows = stmt.query(params![user_id]).await?;
+    let mut result = Vec::new();
+    while let Some(row) = rows.next().await? {
+        let region = value_to_opt_string(row.get_value(0)?).unwrap_or_default();
+        let provider_id = value_to_opt_i32(row.get_value(1)?).unwrap_or(0);
+        result.push((region, provider_id));
+    }
+    Ok(result)
+}
+
+/// Replace a user's entire provider selection (last-write-wins, no merge).
+pub async fn replace_user_providers(
+    conn: &Connection,
+    user_id: &str,
+    entries: &[(String, i32)],
+) -> Result<()> {
+    conn.execute(
+        "DELETE FROM user_providers WHERE user_id = ?1",
+        params![user_id],
+    )
+    .await?;
+    for (region, provider_id) in entries {
+        conn.execute(
+            "INSERT OR IGNORE INTO user_providers (user_id, region, provider_id)
+             VALUES (?1, ?2, ?3)",
+            params![user_id, region.as_str(), *provider_id],
+        )
+        .await?;
+    }
+    Ok(())
 }

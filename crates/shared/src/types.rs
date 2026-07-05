@@ -26,6 +26,10 @@ pub struct Movie {
     pub keywords: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
+    /// Streaming availability per region (Phase 10). Populated only by the
+    /// movie-detail endpoint; omitted from other responses / DB reads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watch_providers: Option<Vec<RegionProviders>>,
 }
 
 /// The result of the hidden gem scoring algorithm for a movie.
@@ -238,6 +242,64 @@ pub struct MovieSummary {
     pub gem_rank: Option<i64>,
     /// Comma-separated TMDB keywords (e.g. "musical,road trip"). Used for genre filtering.
     pub keywords: Option<String>,
+    /// Best streaming match for the active provider filter. Only present when a
+    /// provider filter is applied; omitted from the response otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watch_badge: Option<WatchBadge>,
+}
+
+// ──────────────────────────────────────────────
+// Phase 10: Watch providers ("What can I watch?")
+// ──────────────────────────────────────────────
+
+/// Access tier for a streaming provider, collapsed to what the user cares about:
+/// is it included with a subscription (or free), or does it cost extra to rent/buy?
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WatchTier {
+    /// flatrate / free / ads — watchable at no extra cost on that service.
+    Included,
+    /// rent / buy — costs extra, no subscription required.
+    Rent,
+}
+
+/// A provider offered in the picker: one distinct streaming service present in
+/// the catalog for a region, with how many catalog titles it carries.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderInfo {
+    pub provider_id: i32,
+    pub name: String,
+    pub logo_path: Option<String>,
+    /// Number of catalog titles available on this provider (included tiers only).
+    pub count: i64,
+}
+
+/// The best streaming match shown as a badge on a movie card while filtering.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchBadge {
+    pub provider_id: i32,
+    pub provider_name: String,
+    pub logo_path: Option<String>,
+    pub tier: WatchTier,
+}
+
+/// A single provider offering for a movie in one region (used on the detail page).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MovieProvider {
+    pub provider_id: i32,
+    pub provider_name: String,
+    pub logo_path: Option<String>,
+    /// Raw TMDB access tier: 'flatrate' | 'free' | 'ads' | 'rent' | 'buy'.
+    pub access: String,
+}
+
+/// Providers for a movie in one region, plus the TMDB watch-page link (ToS: no
+/// per-title deep links — we link to the aggregated TMDB page instead).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegionProviders {
+    pub region: String,
+    pub providers: Vec<MovieProvider>,
+    pub tmdb_link: Option<String>,
 }
 
 /// TMDB API response for movie search (used during ingestion).
