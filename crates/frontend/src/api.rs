@@ -1,6 +1,7 @@
 use gem_finder_shared::types::{
-    AuthResponse, Movie, MovieSummary, PaginatedResponse, ProviderInfo, UserProvidersPayload,
-    WatchState, WatchlistEntry, WatchlistUpsert,
+    AuthResponse, FriendInfo, Movie, MovieSummary, PaginatedResponse, ProviderInfo, RecCreate,
+    RecCreated, RecPublic, ReceivedRec, SentRec, UsernameAvailability, UsernameUpdate,
+    UserProvidersPayload, WatchState, WatchlistEntry, WatchlistUpsert,
 };
 use serde::Serialize;
 
@@ -447,6 +448,169 @@ pub fn track_umami(event_name: &str, props_json: &str) {
         event_name, props_json
     );
     let _ = js_sys::eval(&script);
+}
+
+// ── Username (Ethos C1: a rec carries the sender's name) ────────────────────
+
+/// `GET /api/user/username/check?username=` — no auth required.
+pub async fn check_username(username: &str) -> Result<UsernameAvailability, String> {
+    let url = format!(
+        "{}/api/user/username/check?username={}",
+        api_base(),
+        urlencoding_encode(username)
+    );
+    reqwest::get(&url)
+        .await
+        .map_err(|e| format!("Network error: {}", e))?
+        .json::<UsernameAvailability>()
+        .await
+        .map_err(|e| format!("Parse error: {}", e))
+}
+
+/// `PATCH /api/user/username` — set the caller's username.
+pub async fn set_username(username: &str, token: &str) -> Result<(), String> {
+    let resp = reqwest::Client::new()
+        .patch(format!("{}/api/user/username", api_base()))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&UsernameUpdate {
+            username: username.to_string(),
+        })
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        let body: serde_json::Value = resp.json().await.unwrap_or_default();
+        Err(body["error"].as_str().unwrap_or("error").to_string())
+    }
+}
+
+/// Minimal query-string escaping for the one param we send. Avoids pulling in
+/// a whole URL crate for a single username value (already alphanumeric+`_`
+/// per `UsernameUpdate::validate`, but escape defensively).
+fn urlencoding_encode(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c.to_string()
+            } else {
+                format!("%{:02X}", c as u32)
+            }
+        })
+        .collect()
+}
+
+// ── Friend recommendations (Ethos C1) ───────────────────────────────────────
+
+pub async fn create_rec(
+    token: &str,
+    movie_id: i64,
+    note: Option<String>,
+    to_username: Option<String>,
+) -> Result<RecCreated, String> {
+    let resp = reqwest::Client::new()
+        .post(format!("{}/api/recs", api_base()))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&RecCreate {
+            movie_id,
+            note,
+            to_username,
+        })
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    match resp.status().as_u16() {
+        403 => {
+            // Distinguish username_required from not_friends for the modal.
+            let body: serde_json::Value = resp.json().await.unwrap_or_default();
+            Err(body["error"].as_str().unwrap_or("forbidden").to_string())
+        }
+        429 => Err("rate_limited".to_string()),
+        s if s >= 400 => Err(format!("Error {}", s)),
+        _ => resp
+            .json::<RecCreated>()
+            .await
+            .map_err(|e| format!("Parse error: {}", e)),
+    }
+}
+
+pub async fn fetch_rec_public(rec_token: &str) -> Result<RecPublic, String> {
+    let resp = reqwest::get(format!("{}/api/rec/{}", api_base(), rec_token))
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    if resp.status().as_u16() == 404 {
+        return Err("rec_not_found".to_string());
+    }
+    resp.json::<RecPublic>()
+        .await
+        .map_err(|e| format!("Parse error: {}", e))
+}
+
+async fn post_empty(token: &str, path: String) -> Result<(), String> {
+    let resp = reqwest::Client::new()
+        .post(path)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        Err(format!("Error {}", resp.status().as_u16()))
+    }
+}
+
+pub async fn claim_rec(token: &str, rec_token: &str) -> Result<(), String> {
+    post_empty(token, format!("{}/api/rec/{}/claim", api_base(), rec_token)).await
+}
+
+pub async fn mark_rec_read(token: &str, rec_token: &str) -> Result<(), String> {
+    post_empty(token, format!("{}/api/rec/{}/read", api_base(), rec_token)).await
+}
+
+pub async fn revoke_rec(token: &str, rec_token: &str) -> Result<(), String> {
+    let resp = reqwest::Client::new()
+        .delete(format!("{}/api/rec/{}", api_base(), rec_token))
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        Err(format!("Error {}", resp.status().as_u16()))
+    }
+}
+
+async fn get_authed<T: serde::de::DeserializeOwned>(token: &str, path: String) -> Result<T, String> {
+    reqwest::Client::new()
+        .get(path)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?
+        .json::<T>()
+        .await
+        .map_err(|e| format!("Parse error: {}", e))
+}
+
+pub async fn fetch_received_recs(token: &str) -> Result<Vec<ReceivedRec>, String> {
+    get_authed(token, format!("{}/api/recs/received", api_base())).await
+}
+
+pub async fn fetch_sent_recs(token: &str) -> Result<Vec<SentRec>, String> {
+    get_authed(token, format!("{}/api/recs/sent", api_base())).await
+}
+
+pub async fn fetch_friends(token: &str) -> Result<Vec<FriendInfo>, String> {
+    get_authed(token, format!("{}/api/friends", api_base())).await
+}
+
+pub async fn fetch_unread_count(token: &str) -> Result<i64, String> {
+    let v: serde_json::Value =
+        get_authed(token, format!("{}/api/recs/unread_count", api_base())).await?;
+    Ok(v["count"].as_i64().unwrap_or(0))
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

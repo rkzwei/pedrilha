@@ -281,6 +281,33 @@ pub struct Dict {
     // ── Changelog ─────────────────────────────────────────────────────────────
     pub changelog_h1: &'static str,
     pub changelog_desc: &'static str,
+
+    // ── Recommendations (Ethos C1) ─────────────────────────────────────────
+    pub nav_recs: &'static str,
+    pub rec_button: &'static str,
+    pub rec_modal_title: &'static str,
+    pub rec_note_placeholder: &'static str,
+    pub rec_copy_link: &'static str,
+    pub rec_link_copied: &'static str,
+    pub rec_whatsapp: &'static str,
+    pub rec_send_to_friend: &'static str,
+    pub rec_sent: &'static str,
+    pub rec_username_title: &'static str,
+    pub rec_username_body: &'static str,
+    pub rec_username_taken: &'static str,
+    pub rec_username_save: &'static str,
+    pub rec_landing_recommended_you: &'static str, // "{} te recomendou" / "{} recommended you"
+    pub rec_landing_cta: &'static str,
+    pub rec_inbox_title: &'static str,
+    pub rec_inbox_empty: &'static str,
+    pub rec_inbox_from: &'static str, // "de {}" / "from {}"
+    pub rec_tab_received: &'static str,
+    pub rec_tab_sent: &'static str,
+    pub rec_claims: &'static str, // "{} pessoas abriram" / "{} people opened"
+    pub rec_revoke: &'static str,
+    pub rec_revoke_confirm: &'static str,
+    pub rec_want_to_watch: &'static str,
+    pub wl_filter_recommended: &'static str,
 }
 
 pub const EN: Dict = Dict {
@@ -500,6 +527,32 @@ pub const EN: Dict = Dict {
 
     changelog_h1: "Changelog",
     changelog_desc: "Notable changes to Pedrilha.",
+
+    nav_recs: "Recommendations",
+    rec_button: "Recommend to a friend",
+    rec_modal_title: "Recommend this movie",
+    rec_note_placeholder: "Add a note (optional) — \"you have to see this\"",
+    rec_copy_link: "Copy link",
+    rec_link_copied: "Link copied!",
+    rec_whatsapp: "Share on WhatsApp",
+    rec_send_to_friend: "Send to a friend",
+    rec_sent: "Sent!",
+    rec_username_title: "Pick your username",
+    rec_username_body: "Your recommendation carries your name — that's the whole point.",
+    rec_username_taken: "Already taken",
+    rec_username_save: "Save",
+    rec_landing_recommended_you: "{} recommends you this movie",
+    rec_landing_cta: "Sign in to save it",
+    rec_inbox_title: "Recommended to you",
+    rec_inbox_empty: "Nothing yet — recommendations from friends land here.",
+    rec_inbox_from: "from {}",
+    rec_tab_received: "Received",
+    rec_tab_sent: "Sent",
+    rec_claims: "{} opened",
+    rec_revoke: "Revoke",
+    rec_revoke_confirm: "Revoke this recommendation? The link stops working and it disappears from inboxes.",
+    rec_want_to_watch: "Want to watch",
+    wl_filter_recommended: "Recommended",
 };
 
 pub const PT: Dict = Dict {
@@ -719,6 +772,32 @@ pub const PT: Dict = Dict {
 
     changelog_h1: "Novidades",
     changelog_desc: "Mudanças importantes no Pedrilha.",
+
+    nav_recs: "Recomendações",
+    rec_button: "Recomendar para um amigo",
+    rec_modal_title: "Recomendar esse filme",
+    rec_note_placeholder: "Deixe um recado (opcional) — \"você precisa ver isso\"",
+    rec_copy_link: "Copiar link",
+    rec_link_copied: "Link copiado!",
+    rec_whatsapp: "Enviar no WhatsApp",
+    rec_send_to_friend: "Mandar para um amigo",
+    rec_sent: "Enviado!",
+    rec_username_title: "Escolha seu nome de usuário",
+    rec_username_body: "Sua recomendação leva o seu nome — essa é a graça.",
+    rec_username_taken: "Já está em uso",
+    rec_username_save: "Salvar",
+    rec_landing_recommended_you: "{} te recomendou esse filme",
+    rec_landing_cta: "Entre para salvar",
+    rec_inbox_title: "Recomendados para você",
+    rec_inbox_empty: "Nada ainda — recomendações de amigos chegam aqui.",
+    rec_inbox_from: "de {}",
+    rec_tab_received: "Recebidas",
+    rec_tab_sent: "Enviadas",
+    rec_claims: "{} abriram",
+    rec_revoke: "Revogar",
+    rec_revoke_confirm: "Revogar essa recomendação? O link para de funcionar e ela some das caixas de entrada.",
+    rec_want_to_watch: "Quero ver",
+    wl_filter_recommended: "Recomendados",
 };
 
 /// The dictionary for a given language.
