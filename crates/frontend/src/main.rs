@@ -48,10 +48,119 @@ const LS_USER_ID: &str = "gf_user_id";
 const LS_EMAIL: &str = "gf_email";
 const LS_USERNAME: &str = "gf_username";
 
+const LS_WATCH_REGION: &str = "gf_watch_region";
+const LS_WATCH_PROVIDERS_US: &str = "gf_watch_providers_us";
+const LS_WATCH_PROVIDERS_BR: &str = "gf_watch_providers_br";
+const LS_WATCH_RENTALS: &str = "gf_watch_rentals";
+
 pub fn local_storage() -> Option<web_sys::Storage> {
     web_sys::window()
         .and_then(|w| w.local_storage().ok())
         .and_then(|s| s)
+}
+
+/// Anonymous-first "What can I watch?" preferences, persisted to localStorage.
+/// `region` is "US" or "BR"; provider ids are TMDB ids per region.
+#[derive(Clone, PartialEq, Debug)]
+pub struct WatchPrefs {
+    pub region: String,
+    pub providers_us: Vec<i32>,
+    pub providers_br: Vec<i32>,
+    pub rentals: bool,
+}
+
+impl WatchPrefs {
+    /// Provider ids selected for the active region.
+    pub fn selected(&self) -> &Vec<i32> {
+        if self.region == "BR" {
+            &self.providers_br
+        } else {
+            &self.providers_us
+        }
+    }
+
+    /// Comma-separated selected ids for the active region (for query params).
+    pub fn selected_csv(&self) -> String {
+        self.selected()
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    /// Is any filtering active (a service selected, or rentals toggled on)?
+    pub fn active(&self) -> bool {
+        !self.selected().is_empty() || self.rentals
+    }
+
+    /// Toggle a provider id for the active region.
+    pub fn toggle(&mut self, provider_id: i32) {
+        let list = if self.region == "BR" {
+            &mut self.providers_br
+        } else {
+            &mut self.providers_us
+        };
+        if let Some(pos) = list.iter().position(|x| *x == provider_id) {
+            list.remove(pos);
+        } else {
+            list.push(provider_id);
+        }
+    }
+
+    /// Clear all selections and the rentals toggle for the active region.
+    pub fn clear(&mut self) {
+        if self.region == "BR" {
+            self.providers_br.clear();
+        } else {
+            self.providers_us.clear();
+        }
+        self.rentals = false;
+    }
+}
+
+fn parse_ids_csv(s: &str) -> Vec<i32> {
+    s.split(',')
+        .filter_map(|x| x.trim().parse::<i32>().ok())
+        .collect()
+}
+
+/// Load watch prefs from localStorage, defaulting the region by language when unset.
+pub fn load_watch_prefs(default_region: &str) -> WatchPrefs {
+    let ls = local_storage();
+    let get = |k: &str| ls.as_ref().and_then(|s| s.get_item(k).ok().flatten());
+    let region = get(LS_WATCH_REGION).unwrap_or_else(|| default_region.to_string());
+    let region = if region == "BR" { "BR" } else { "US" }.to_string();
+    WatchPrefs {
+        region,
+        providers_us: get(LS_WATCH_PROVIDERS_US)
+            .map(|s| parse_ids_csv(&s))
+            .unwrap_or_default(),
+        providers_br: get(LS_WATCH_PROVIDERS_BR)
+            .map(|s| parse_ids_csv(&s))
+            .unwrap_or_default(),
+        rentals: get(LS_WATCH_RENTALS).as_deref() == Some("1"),
+    }
+}
+
+/// Access the app-wide watch-prefs signal from context.
+pub fn use_watch() -> RwSignal<WatchPrefs> {
+    use_context::<RwSignal<WatchPrefs>>().expect("WatchPrefs context missing — provide it in App")
+}
+
+/// Persist watch prefs to localStorage.
+pub fn save_watch_prefs(p: &WatchPrefs) {
+    if let Some(ls) = local_storage() {
+        let csv = |v: &[i32]| {
+            v.iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        let _ = ls.set_item(LS_WATCH_REGION, &p.region);
+        let _ = ls.set_item(LS_WATCH_PROVIDERS_US, &csv(&p.providers_us));
+        let _ = ls.set_item(LS_WATCH_PROVIDERS_BR, &csv(&p.providers_br));
+        let _ = ls.set_item(LS_WATCH_RENTALS, if p.rentals { "1" } else { "0" });
+    }
 }
 
 pub fn save_auth_to_storage(token: &str, user_id: &str, email: &str, username: Option<&str>) {
@@ -125,6 +234,59 @@ fn App() -> impl IntoView {
             .and_then(|d| d.document_element())
         {
             let _ = el.set_attribute("lang", l.html_tag());
+        }
+    });
+
+    // "What can I watch?" prefs: anonymous-first, region default follows language
+    // (PT→BR, EN→US), persisted to localStorage on change. List pages read this
+    // context so they refetch when the user changes providers/region/rentals.
+    let default_region = if lang.get_untracked() == Lang::Pt {
+        "BR"
+    } else {
+        "US"
+    };
+    let watch: RwSignal<WatchPrefs> = RwSignal::new(load_watch_prefs(default_region));
+    provide_context(watch);
+    Effect::new(move |_| {
+        let p = watch.get();
+        save_watch_prefs(&p);
+    });
+
+    // Cross-device sync (Phase 10 Batch 6): when signed in, hydrate from the server
+    // if local selections are empty, and push on every change. Last-write-wins.
+    if let Some(a) = auth.get_untracked() {
+        let local_empty = watch.with_untracked(|w| {
+            w.providers_us.is_empty() && w.providers_br.is_empty() && !w.rentals
+        });
+        if local_empty {
+            let token = a.token.clone();
+            spawn_local(async move {
+                if let Ok(p) = api::get_user_providers(&token).await {
+                    if !p.us.is_empty() || !p.br.is_empty() {
+                        watch.update(|w| {
+                            w.providers_us = p.us;
+                            w.providers_br = p.br;
+                        });
+                    }
+                }
+            });
+        }
+    }
+    Effect::new(move |prev: Option<()>| {
+        let p = watch.get(); // track changes
+                             // Skip the initial run so we don't overwrite the server with the local
+                             // default before hydration has a chance to run.
+        if prev.is_some() {
+            if let Some(a) = auth.get_untracked() {
+                let token = a.token.clone();
+                let payload = gem_finder_shared::types::UserProvidersPayload {
+                    us: p.providers_us.clone(),
+                    br: p.providers_br.clone(),
+                };
+                spawn_local(async move {
+                    let _ = api::put_user_providers(payload, &token).await;
+                });
+            }
         }
     });
 

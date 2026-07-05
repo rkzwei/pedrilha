@@ -1,15 +1,14 @@
 use crate::api;
 use crate::i18n::{dict, genre_label, sort_label, use_lang};
-use crate::{jwt_is_admin, save_auth_to_storage, AuthState};
+use crate::{jwt_is_admin, save_auth_to_storage, use_watch, AuthState, WatchPrefs};
 use gem_finder_shared::id_encode::encode_movie_id;
-use gem_finder_shared::types::{Movie, MovieSummary, WatchState};
-use js_sys;
+use gem_finder_shared::types::{Movie, MovieSummary, ProviderInfo, WatchState, WatchTier};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_meta::Title;
 use leptos_router::{
     components::A,
-    hooks::{use_navigate, use_params_map, use_query_map},
+    hooks::{use_location, use_navigate, use_params_map, use_query_map},
     NavigateOptions,
 };
 use wasm_bindgen::prelude::*;
@@ -53,7 +52,7 @@ fn fmt_thousands(n: i64) -> String {
     let s = n.abs().to_string();
     let mut out = String::new();
     for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i) % 3 == 0 {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(c);
@@ -523,6 +522,7 @@ fn PaginationBar(
 pub fn HomePage() -> impl IntoView {
     let query = use_query_map();
     let navigate = use_navigate();
+    let watch = use_watch();
 
     let page = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
     let year = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
@@ -538,7 +538,7 @@ pub fn HomePage() -> impl IntoView {
                 .unwrap_or_default()
         })
     };
-    let search = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let search = move || query.with(|q| q.get("q").filter(|v| !v.is_empty()));
     let sort = move || query.with(|q| q.get("sort").unwrap_or_else(|| "score".to_string()));
     let sort_dir = move || query.with(|q| q.get("sort_dir").unwrap_or_else(|| "desc".to_string()));
     let gstr = move || {
@@ -583,10 +583,11 @@ pub fn HomePage() -> impl IntoView {
         let s = search();
         let sf = sort();
         let sd = sort_dir();
+        let wq = watch.with(watch_query);
         set_loading.set(true);
         set_error.set(None);
         spawn_local(async move {
-            match api::fetch_gems(p, PER_PAGE, y, g, s, Some(sf), Some(sd)).await {
+            match api::fetch_gems(p, PER_PAGE, y, g, s, Some(sf), Some(sd), wq).await {
                 Ok(r) => {
                     set_movies.set(r.data);
                     set_total.set(r.total);
@@ -724,6 +725,7 @@ pub fn HomePage() -> impl IntoView {
                 on_genres=on_genres_cb on_year=on_year_cb on_search=on_search_cb
                 sort=Signal::derive(sort) sort_dir=Signal::derive(sort_dir) on_sort=on_sort_cb
             />
+            <WatchFilterPanel />
             {move || render_movie_grid(loading.get(), error.get(), movies.get(), on_clear_cb, on_retry_cb)}
             {move || {
                 let tp = total_pages(); let p = page();
@@ -763,6 +765,7 @@ pub fn HomePage() -> impl IntoView {
 pub fn AcclaimedPage() -> impl IntoView {
     let query = use_query_map();
     let navigate = use_navigate();
+    let watch = use_watch();
 
     let page = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
     let year = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
@@ -778,7 +781,7 @@ pub fn AcclaimedPage() -> impl IntoView {
                 .unwrap_or_default()
         })
     };
-    let search = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let search = move || query.with(|q| q.get("q").filter(|v| !v.is_empty()));
     let sort = move || query.with(|q| q.get("sort").unwrap_or_else(|| "rating".to_string()));
     let sort_dir = move || query.with(|q| q.get("sort_dir").unwrap_or_else(|| "desc".to_string()));
     let gstr = move || {
@@ -823,10 +826,11 @@ pub fn AcclaimedPage() -> impl IntoView {
         let s = search();
         let sf = sort();
         let sd = sort_dir();
+        let wq = watch.with(watch_query);
         set_loading.set(true);
         set_error.set(None);
         spawn_local(async move {
-            match api::fetch_acclaimed(p, PER_PAGE, y, g, s, Some(sf), Some(sd)).await {
+            match api::fetch_acclaimed(p, PER_PAGE, y, g, s, Some(sf), Some(sd), wq).await {
                 Ok(r) => {
                     set_movies.set(r.data);
                     set_total.set(r.total);
@@ -980,6 +984,7 @@ pub fn AcclaimedPage() -> impl IntoView {
                 on_genres=on_genres_cb on_year=on_year_cb on_search=on_search_cb
                 sort=Signal::derive(sort) sort_dir=Signal::derive(sort_dir) on_sort=on_sort_cb
             />
+            <WatchFilterPanel />
             {move || render_movie_grid(loading.get(), error.get(), movies.get(), on_clear_cb, on_retry_cb)}
             {move || {
                 let tp = total_pages(); let p = page();
@@ -1019,6 +1024,7 @@ pub fn AcclaimedPage() -> impl IntoView {
 pub fn WildcardsPage() -> impl IntoView {
     let query = use_query_map();
     let navigate = use_navigate();
+    let watch = use_watch();
 
     let page = move || query.with(|q| q.get("page").and_then(|v| v.parse().ok()).unwrap_or(1i32));
     let year = move || query.with(|q| q.get("year").and_then(|v| v.parse().ok()));
@@ -1034,7 +1040,7 @@ pub fn WildcardsPage() -> impl IntoView {
                 .unwrap_or_default()
         })
     };
-    let search = move || query.with(|q| q.get("q").map(|v| v.clone()).filter(|v| !v.is_empty()));
+    let search = move || query.with(|q| q.get("q").filter(|v| !v.is_empty()));
     let sort = move || query.with(|q| q.get("sort").unwrap_or_else(|| "score".to_string()));
     let sort_dir = move || query.with(|q| q.get("sort_dir").unwrap_or_else(|| "desc".to_string()));
     let gstr = move || {
@@ -1079,10 +1085,11 @@ pub fn WildcardsPage() -> impl IntoView {
         let s = search();
         let sf = sort();
         let sd = sort_dir();
+        let wq = watch.with(watch_query);
         set_loading.set(true);
         set_error.set(None);
         spawn_local(async move {
-            match api::fetch_wildcards(p, PER_PAGE, y, g, s, Some(sf), Some(sd)).await {
+            match api::fetch_wildcards(p, PER_PAGE, y, g, s, Some(sf), Some(sd), wq).await {
                 Ok(r) => {
                     set_movies.set(r.data);
                     set_total.set(r.total);
@@ -1237,6 +1244,7 @@ pub fn WildcardsPage() -> impl IntoView {
                 on_genres=on_genres_cb on_year=on_year_cb on_search=on_search_cb
                 sort=Signal::derive(sort) sort_dir=Signal::derive(sort_dir) on_sort=on_sort_cb
             />
+            <WatchFilterPanel />
             {move || render_movie_grid(loading.get(), error.get(), movies.get(), on_clear_cb, on_retry_cb)}
             {move || {
                 let tp = total_pages(); let p = page();
@@ -1416,6 +1424,7 @@ pub fn MovieDetail() -> impl IntoView {
     let auth = use_context::<RwSignal<Option<AuthState>>>().unwrap_or_else(|| RwSignal::new(None));
     let lang = use_lang();
     let d = move || dict(lang.get());
+    let watch = use_watch();
 
     let movie_id = move || params.with_untracked(|p| p.get("id").map(|v| v.to_string()));
     let (retry, set_retry) = signal(0u32);
@@ -1528,11 +1537,6 @@ pub fn MovieDetail() -> impl IntoView {
                 let gem_rank = m.gem_rank.filter(|r| *r >= 1);
                 let audience_str = m.rt_audience_score.map(|r| format!("{}%", r));
                 let release_day = m.release_date.as_deref().and_then(fmt_release_day);
-                let keywords: Vec<String> = m.keywords.clone().unwrap_or_default()
-                    .split(',')
-                    .map(|k| k.trim().to_string())
-                    .filter(|k| !k.is_empty())
-                    .collect();
                 let first_genre = genre.split(", ").next().unwrap_or("").to_string();
                 let decade = m.year.map(|y| (y / 10) * 10).filter(|d| *d >= 1900);
                 let poster_bg = poster.clone();
@@ -1543,6 +1547,23 @@ pub fn MovieDetail() -> impl IntoView {
                 let jw_url = format!("https://www.justwatch.com/us/search?q={}", urlenc(&title));
                 let imdb_id  = m.imdb_id.clone();
                 let movie_db_id = m.id.unwrap_or(0);
+                // Stremio deep links: IMDb ids are Stremio's movie ids via Cinemeta.
+                // Protocol links no-op silently when Stremio isn't installed, so a small
+                // web link is offered alongside as a detectable fallback.
+                let title_enc = urlenc(&title);
+                let (stremio_app, stremio_web) = match m.imdb_id.clone() {
+                    Some(id) if !id.is_empty() => (
+                        format!("stremio:///detail/movie/{}/{}", id, id),
+                        format!("https://web.stremio.com/#/detail/movie/{}/{}", id, id),
+                    ),
+                    _ => (
+                        format!("stremio:///search?search={}", title_enc),
+                        format!("https://web.stremio.com/#/search?search={}", title_enc),
+                    ),
+                };
+                // Streaming availability grouped per region (Phase 10).
+                let providers_data = m.watch_providers.clone().unwrap_or_default();
+                let jw_fallback = jw_url.clone();
 
                 view!{
                     <div class="mt-6 relative isolate">
@@ -1605,14 +1626,10 @@ pub fn MovieDetail() -> impl IntoView {
                                         let g = g.to_string();
                                         view!{ <span class="px-2 py-1 bg-sc-card border border-sc-border rounded text-xs text-stone-300">{g}</span> }.into_any()
                                     }).collect();
-                                    let ktags: Vec<_> = keywords.iter().map(|k| {
-                                        view!{ <span class="px-2 py-1 border border-sc-border rounded text-xs text-stone-500">{k.clone()}</span> }.into_any()
-                                    }).collect();
-                                    let all: Vec<_> = gtags.into_iter().chain(ktags).collect();
-                                    if all.is_empty() {
+                                    if gtags.is_empty() {
                                         view!{ <div /> }.into_any()
                                     } else {
-                                        view!{ <div class="flex flex-wrap gap-2 mb-4">{all}</div> }.into_any()
+                                        view!{ <div class="flex flex-wrap gap-2 mb-4">{gtags}</div> }.into_any()
                                     }
                                 }}
                                 {if !overview.is_empty() {
@@ -1636,7 +1653,83 @@ pub fn MovieDetail() -> impl IntoView {
                                         class="text-sm text-stone-300 hover:text-stone-100 border border-sc-border hover:border-stone-600 rounded px-3 py-1.5">
                                         {move || d().detail_where_watch}
                                     </a>
+                                    <a href=stremio_app
+                                        class="text-sm text-purple-300 hover:text-purple-200 border border-purple-800 hover:border-purple-600 rounded px-3 py-1.5">
+                                        {move || d().detail_open_stremio}
+                                    </a>
+                                    <a href=stremio_web
+                                        target="_blank" rel="noopener noreferrer"
+                                        class="text-sm text-stone-400 hover:text-stone-200 border border-sc-border hover:border-stone-600 rounded px-3 py-1.5">
+                                        {move || d().detail_stremio_web}
+                                    </a>
                                 </div>
+
+                                // ── Streaming availability (Phase 10) ─────────────────────────────
+                                {
+                                    let providers_data = providers_data.clone();
+                                    let jw_fallback = jw_fallback.clone();
+                                    move || {
+                                        let region = watch.with(|w| w.region.clone());
+                                        let rp = providers_data.iter().find(|r| r.region == region).cloned();
+                                        match rp {
+                                            Some(rp) if !rp.providers.is_empty() => {
+                                                let group = |accesses: &[&str]| -> Vec<gem_finder_shared::types::MovieProvider> {
+                                                    rp.providers.iter()
+                                                        .filter(|p| accesses.contains(&p.access.as_str()))
+                                                        .cloned().collect()
+                                                };
+                                                let included = group(&["flatrate"]);
+                                                let free_ads = group(&["free", "ads"]);
+                                                let rent_buy = group(&["rent", "buy"]);
+                                                let tmdb_link = rp.tmdb_link.clone().unwrap_or_default();
+                                                let render_group = |label: String, items: Vec<gem_finder_shared::types::MovieProvider>, link: String| {
+                                                    if items.is_empty() { return view!{ <div /> }.into_any(); }
+                                                    view!{
+                                                        <div class="mb-3">
+                                                            <p class="text-[0.65rem] uppercase tracking-wide text-stone-500 font-semibold mb-1.5">{label}</p>
+                                                            <div class="flex flex-wrap gap-2">
+                                                                {items.into_iter().map(|p| {
+                                                                    let logo = p.logo_path.as_deref().map(|x| format!("https://image.tmdb.org/t/p/w45{}", x)).unwrap_or_default();
+                                                                    let has_logo = !logo.is_empty();
+                                                                    let name = p.provider_name.clone();
+                                                                    let link = link.clone();
+                                                                    view!{
+                                                                        <a href=link target="_blank" rel="noopener noreferrer"
+                                                                            class="flex items-center gap-1.5 px-2 py-1 bg-sc-card border border-sc-border rounded text-xs text-stone-300 hover:border-stone-600">
+                                                                            {has_logo.then(|| view!{ <img src=logo alt=name.clone() loading="lazy" class="w-4 h-4 rounded-sm" /> })}
+                                                                            <span>{p.provider_name.clone()}</span>
+                                                                        </a>
+                                                                    }
+                                                                }).collect::<Vec<_>>()}
+                                                            </div>
+                                                        </div>
+                                                    }.into_any()
+                                                };
+                                                view!{
+                                                    <div class="mt-6 pt-6 border-t border-sc-border">
+                                                        {render_group(d().providers_included_with.to_string(), included, tmdb_link.clone())}
+                                                        {render_group(d().providers_free_ads.to_string(), free_ads, tmdb_link.clone())}
+                                                        {render_group(d().providers_rent_buy.to_string(), rent_buy, tmdb_link.clone())}
+                                                        <p class="text-[0.6rem] text-stone-600 mt-2">{move || d().providers_attribution}</p>
+                                                    </div>
+                                                }.into_any()
+                                            }
+                                            _ => {
+                                                // No synced data for this region — fall back to a JustWatch search.
+                                                let jw = jw_fallback.clone();
+                                                view!{
+                                                    <div class="mt-6 pt-6 border-t border-sc-border">
+                                                        <a href=jw target="_blank" rel="noopener noreferrer"
+                                                            class="text-sm text-stone-300 hover:text-stone-100 border border-sc-border hover:border-stone-600 rounded px-3 py-1.5">
+                                                            {move || d().detail_where_watch}
+                                                        </a>
+                                                        <p class="text-[0.6rem] text-stone-600 mt-2">{move || d().providers_attribution}</p>
+                                                    </div>
+                                                }.into_any()
+                                            }
+                                        }
+                                    }
+                                }
 
                                 // ── Watchlist ─────────────────────────────────────────────────────
                                 <div class="mt-6 pt-6 border-t border-sc-border">
@@ -1783,6 +1876,163 @@ pub fn MovieDetail() -> impl IntoView {
 }
 
 // ── Shared movie grid renderer ────────────────────────────────────────────────
+/// Build the active `WatchQuery` from prefs, or `None` when no filter is applied.
+fn watch_query(w: &WatchPrefs) -> Option<api::WatchQuery> {
+    if w.active() {
+        Some(api::WatchQuery {
+            region: w.region.clone(),
+            providers: w.selected_csv(),
+            rentals: w.rentals,
+        })
+    } else {
+        None
+    }
+}
+
+// ── "What can I watch?" filter panel (Phase 10) ─────────────────────────────
+/// Self-contained provider picker. Reads/writes the app-wide `WatchPrefs`
+/// context; list pages refetch reactively when it changes.
+#[component]
+fn WatchFilterPanel() -> impl IntoView {
+    let watch = use_watch();
+    let lang = use_lang();
+    let d = move || dict(lang.get());
+    let (open, set_open) = signal(false);
+    let (providers, set_providers) = signal(Vec::<ProviderInfo>::new());
+
+    // Refetch the picker whenever the region changes (only — not on every toggle).
+    let region = Memo::new(move |_| watch.with(|w| w.region.clone()));
+    Effect::new(move |_| {
+        let r = region.get();
+        spawn_local(async move {
+            match api::fetch_providers(&r).await {
+                Ok(list) => set_providers.set(list),
+                Err(_) => set_providers.set(Vec::new()),
+            }
+        });
+    });
+
+    let active_count =
+        move || watch.with(|w| w.selected().len() as i32 + if w.rentals { 1 } else { 0 });
+    let rentals_on = move || watch.with(|w| w.rentals);
+
+    // Changing the watch filter resets to page 1 (mirrors genre/year/search) so a
+    // shrunk result set never strands the user on a now-empty page.
+    let navigate = use_navigate();
+    let query = use_query_map();
+    let location = use_location();
+    let reset_page = Callback::new(move |_: ()| {
+        let path = location.pathname.get_untracked();
+        let params = query.get_untracked();
+        let mut url = format!("{}?page=1", path);
+        for k in ["genres", "year", "q", "sort", "sort_dir"] {
+            if let Some(v) = params.get(k).filter(|v| !v.is_empty()) {
+                url.push_str(&format!("&{}={}", k, v));
+            }
+        }
+        navigate(
+            &url,
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        );
+    });
+
+    let btn_class = move || {
+        let base = "flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border transition-colors cursor-pointer";
+        if open.get() || active_count() > 0 {
+            format!("{} border-sc-accent text-sc-accent bg-sc-accent-deep", base)
+        } else {
+            format!("{} border-sc-border text-stone-400 bg-sc-card hover:border-stone-600 hover:text-stone-200", base)
+        }
+    };
+    let seg = |active: bool| -> &'static str {
+        if active {
+            "px-3 py-1 text-xs rounded border border-sc-accent text-sc-accent bg-sc-accent-deep font-medium cursor-pointer"
+        } else {
+            "px-3 py-1 text-xs rounded border border-sc-border text-stone-400 bg-sc-card hover:border-stone-600 hover:text-stone-200 cursor-pointer"
+        }
+    };
+
+    view! {
+        <div class="relative mb-4">
+            {move || open.get().then(|| view! {
+                <div style="position:fixed;inset:0;z-index:40" on:click=move |_| set_open.set(false) />
+            })}
+
+            <div class="flex items-center gap-2 flex-wrap">
+                <button class=btn_class on:click=move |_| set_open.update(|v| *v = !*v)>
+                    <span>{move || d().filter_watchable}</span>
+                    {move || (active_count() > 0).then(|| view! {
+                        <span class="ml-1 px-1.5 rounded-full bg-sc-accent text-stone-900 text-[10px] font-bold">{move || active_count()}</span>
+                    })}
+                </button>
+                {move || (active_count() > 0).then(|| {
+                    let chip = d().filter_active_chip.replace("{}", &active_count().to_string());
+                    view! {
+                        <span class="flex items-center gap-1.5 px-2 py-1 text-xs rounded-full bg-sc-accent-deep text-sc-accent border border-sc-accent">
+                            <span>{chip}</span>
+                            <button class="hover:text-stone-100 font-bold" on:click=move |_| { watch.update(|w| w.clear()); reset_page.run(()); }>"×"</button>
+                        </span>
+                    }
+                })}
+            </div>
+
+            {move || open.get().then(|| view! {
+                <div style="position:absolute;top:calc(100% + 6px);left:0;min-width:300px;max-width:360px;background-color:var(--sc-panel,#17100a);border:1px solid var(--sc-border);border-radius:10px;box-shadow:0 24px 48px rgba(0,0,0,0.7);padding:14px;z-index:200">
+                    <p class="text-[0.65rem] uppercase tracking-wide text-sc-accent-border font-semibold mb-2">{move || d().filter_region}</p>
+                    <div class="flex gap-2 mb-3">
+                        <button class=move || seg(watch.with(|w| w.region == "US")) on:click=move |_| { watch.update(|w| w.region = "US".to_string()); reset_page.run(()); }>"US"</button>
+                        <button class=move || seg(watch.with(|w| w.region == "BR")) on:click=move |_| { watch.update(|w| w.region = "BR".to_string()); reset_page.run(()); }>"BR"</button>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-1.5 max-h-60 overflow-y-auto mb-3">
+                        {move || {
+                            let sel: Vec<i32> = watch.with(|w| w.selected().clone());
+                            providers.get().into_iter().map(|p| {
+                                let id = p.provider_id;
+                                let is_sel = sel.contains(&id);
+                                let logo = p.logo_path.as_deref()
+                                    .map(|x| format!("https://image.tmdb.org/t/p/w45{}", x))
+                                    .unwrap_or_default();
+                                let has_logo = !logo.is_empty();
+                                let name = p.name.clone();
+                                let cls = if is_sel {
+                                    "flex items-center gap-1.5 px-2 py-1 text-xs rounded border border-sc-accent text-sc-accent bg-sc-accent-deep cursor-pointer"
+                                } else {
+                                    "flex items-center gap-1.5 px-2 py-1 text-xs rounded border border-sc-border text-stone-300 bg-sc-card hover:border-stone-600 cursor-pointer"
+                                };
+                                view! {
+                                    <button class=cls on:click=move |_| { watch.update(|w| w.toggle(id)); reset_page.run(()); }>
+                                        {has_logo.then(|| view! { <img src=logo alt=name.clone() loading="lazy" class="w-4 h-4 rounded-sm flex-shrink-0" /> })}
+                                        <span class="truncate">{p.name.clone()}</span>
+                                    </button>
+                                }
+                            }).collect::<Vec<_>>()
+                        }}
+                    </div>
+                    {move || providers.get().is_empty().then(|| view! {
+                        <p class="text-xs text-stone-500 mb-3">{move || d().filter_empty_hint}</p>
+                    })}
+
+                    <label class="flex items-start gap-2 mb-3 cursor-pointer">
+                        <input type="checkbox" class="mt-0.5" prop:checked=rentals_on
+                            on:change=move |_| { watch.update(|w| w.rentals = !w.rentals); reset_page.run(()); } />
+                        <span>
+                            <span class="text-xs text-stone-200 block">{move || d().filter_include_rentals}</span>
+                            <span class="text-[0.65rem] text-stone-500 block">{move || d().filter_rentals_hint}</span>
+                        </span>
+                    </label>
+
+                    <button class="text-xs text-stone-400 hover:text-stone-200" on:click=move |_| { watch.update(|w| w.clear()); reset_page.run(()); }>{move || d().filter_clear}</button>
+                    <p class="text-[0.6rem] text-stone-600 mt-3 pt-2 border-t border-sc-border">{move || d().providers_attribution}</p>
+                </div>
+            })}
+        </div>
+    }
+}
+
 fn render_movie_grid(
     loading: bool,
     error: Option<String>,
@@ -1807,13 +2057,26 @@ fn render_movie_grid(
             >{move || d().grid_try_again}</button>
         </div> }.into_any()
     } else if movies.is_empty() {
-        view! { <div class="py-16 text-center">
-            <p class="text-stone-500 mb-6">{move || d().grid_no_gems}</p>
-            <button
-                class="text-sm text-stone-300 hover:text-stone-100 border border-sc-border hover:border-stone-600 rounded px-4 py-2"
-                on:click=move |_| on_clear.run(())
-            >{move || d().grid_clear_filters}</button>
-        </div> }.into_any()
+        // When a watch filter is what emptied the list, explain that and offer to
+        // clear it directly (the generic "clear filters" only clears URL filters).
+        let watch = use_watch();
+        if watch.with(|w| w.active()) {
+            view! { <div class="py-16 text-center">
+                <p class="text-stone-500 mb-6">{move || d().grid_no_watch_matches}</p>
+                <button
+                    class="text-sm text-stone-300 hover:text-stone-100 border border-sc-border hover:border-stone-600 rounded px-4 py-2"
+                    on:click=move |_| watch.update(|w| w.clear())
+                >{move || d().filter_clear}</button>
+            </div> }.into_any()
+        } else {
+            view! { <div class="py-16 text-center">
+                <p class="text-stone-500 mb-6">{move || d().grid_no_gems}</p>
+                <button
+                    class="text-sm text-stone-300 hover:text-stone-100 border border-sc-border hover:border-stone-600 rounded px-4 py-2"
+                    on:click=move |_| on_clear.run(())
+                >{move || d().grid_clear_filters}</button>
+            </div> }.into_any()
+        }
     } else {
         view! { <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4" style="isolation:isolate">
             {movies.into_iter().map(|m| view!{ <MovieCard movie=m /> }).collect::<Vec<_>>()}
@@ -1856,6 +2119,7 @@ fn MovieCard(movie: MovieSummary) -> impl IntoView {
     let director = movie.director.clone().unwrap_or_default();
     let imdb = movie.imdb_rating.map(|r| format!("{:.1}", r));
     let rt = movie.rt_critic_score.map(|r| r.to_string());
+    let watch_badge = movie.watch_badge.clone();
 
     view! {
         <a
@@ -1899,6 +2163,33 @@ fn MovieCard(movie: MovieSummary) -> impl IntoView {
                 {if !director.is_empty() {
                     view!{ <p class="text-xs text-stone-500 mt-0.5 truncate">{director}</p> }.into_any()
                 } else { view!{ <span /> }.into_any() }}
+                {watch_badge.map(|b| {
+                    let logo = b.logo_path.as_deref()
+                        .map(|p| format!("https://image.tmdb.org/t/p/w45{}", p))
+                        .unwrap_or_default();
+                    let has_logo = !logo.is_empty();
+                    let included = b.tier == WatchTier::Included;
+                    let name = b.provider_name.clone();
+                    let name_title = name.clone();
+                    view!{
+                        <div class="flex items-center gap-1 mt-1.5">
+                            {has_logo.then(|| view!{
+                                <img src=logo alt=name.clone() loading="lazy"
+                                    class="w-4 h-4 rounded-sm flex-shrink-0" />
+                            })}
+                            <span
+                                class=if included {
+                                    "text-[10px] font-medium truncate text-emerald-400"
+                                } else {
+                                    "text-[10px] font-medium truncate text-stone-400"
+                                }
+                                title=name_title
+                            >
+                                {move || if included { d().badge_included } else { d().badge_rent }}
+                            </span>
+                        </div>
+                    }
+                })}
             </div>
         </a>
     }
@@ -1974,7 +2265,7 @@ pub fn AdminPage() -> impl IntoView {
 
     // Redirect non-admins immediately
     Effect::new(move |_| {
-        if auth.get().map_or(true, |a| !a.is_admin) {
+        if auth.get().is_none_or(|a| !a.is_admin) {
             navigate("/", NavigateOptions::default());
         }
     });
@@ -1989,6 +2280,7 @@ pub fn AdminPage() -> impl IntoView {
     let (sync_state, set_sync_state) = signal(ActionState::Idle);
     let (enrich_state, set_enrich_state) = signal(ActionState::Idle);
     let (score_state, set_score_state) = signal(ActionState::Idle);
+    let (provider_state, set_provider_state) = signal(ActionState::Idle);
     let (enrich_limit, set_enrich_limit) = signal(10_000i64);
     let (logs, set_logs) = signal(Vec::<serde_json::Value>::new());
     let (logs_loading, set_logs_loading) = signal(false);
@@ -2078,6 +2370,16 @@ pub fn AdminPage() -> impl IntoView {
             match api::admin_score(&tok).await {
                 Ok(_) => set_score_state.set(ActionState::Done(d().admin_started.into())),
                 Err(e) => set_score_state.set(ActionState::Failed(e)),
+            }
+        });
+    };
+    let run_provider = move |_| {
+        let tok = get_token();
+        set_provider_state.set(ActionState::Running);
+        spawn_local(async move {
+            match api::admin_provider_sync(i64::MAX, &tok).await {
+                Ok(_) => set_provider_state.set(ActionState::Done(d().admin_started.into())),
+                Err(e) => set_provider_state.set(ActionState::Failed(e)),
             }
         });
     };
@@ -2189,6 +2491,21 @@ pub fn AdminPage() -> impl IntoView {
                         <button class="px-3 py-1.5 bg-sc-accent-bg hover:bg-sc-accent-bg-hover text-stone-100 text-xs rounded disabled:opacity-50"
                             disabled=move || score_state.get() == ActionState::Running
                             on:click=run_score>{move || d().admin_score_btn}</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-8 p-4 bg-sc-panel rounded border border-sc-border">
+                <div class="flex items-start justify-between gap-4">
+                    <div class="flex-1 min-w-0">
+                        <p class="text-stone-200 font-semibold text-sm">{move || d().admin_providers_title}</p>
+                        <p class="text-xs text-stone-400 mt-0.5">{move || d().admin_providers_desc}</p>
+                    </div>
+                    <div class="flex items-center gap-3 flex-shrink-0">
+                        <AdminStatus state=provider_state.into() />
+                        <button class="px-3 py-1.5 bg-sc-accent-bg hover:bg-sc-accent-bg-hover text-stone-100 text-xs rounded disabled:opacity-50"
+                            disabled=move || provider_state.get() == ActionState::Running
+                            on:click=run_provider>{move || d().admin_providers_btn}</button>
                     </div>
                 </div>
             </div>
@@ -2637,18 +2954,18 @@ pub fn ChangelogPage() -> impl IntoView {
     let nodes: Vec<_> = RAW
         .lines()
         .map(|line| {
-            if line.starts_with("## ") {
-                let text = changelog_clean_header(&line[3..]);
+            if let Some(rest) = line.strip_prefix("## ") {
+                let text = changelog_clean_header(rest);
                 view! {
                     <h2 class="text-lg font-bold text-stone-100 mt-8 mb-2 border-b border-sc-border pb-1">
                         {text}
                     </h2>
                 }
                 .into_any()
-            } else if line.starts_with("### ") {
+            } else if let Some(rest) = line.strip_prefix("### ") {
                 view! {
                     <h3 class="text-xs font-semibold text-sc-accent uppercase tracking-widest mt-4 mb-1">
-                        {line[4..].to_string()}
+                        {rest.to_string()}
                     </h3>
                 }
                 .into_any()

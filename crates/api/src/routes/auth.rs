@@ -2,7 +2,7 @@ use crate::middleware::auth::{create_jwt, AuthUser};
 use crate::AppState;
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     Json,
 };
 use chrono::{Duration, Utc};
@@ -67,8 +67,13 @@ fn is_valid_email(email: &str) -> bool {
 /// and sends the link by email. Always returns 200 (avoids email enumeration).
 pub async fn magic_link_request(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<MagicLinkRequest>,
 ) -> (StatusCode, Json<Value>) {
+    let origin = headers
+        .get(axum::http::header::ORIGIN)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
     let email = body.email.trim().to_lowercase();
     if !is_valid_email(&email) {
         return (
@@ -129,8 +134,13 @@ pub async fn magic_link_request(
 
     let next = body.next.clone();
     tokio::spawn(async move {
-        if let Err(e) =
-            crate::services::email::send_magic_link(&email, &token, next.as_deref()).await
+        if let Err(e) = crate::services::email::send_magic_link(
+            &email,
+            &token,
+            next.as_deref(),
+            origin.as_deref(),
+        )
+        .await
         {
             tracing::warn!("magic link email failed to send: {}", e);
         }
