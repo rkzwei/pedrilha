@@ -1,9 +1,10 @@
 use anyhow::Result;
 use gem_finder_shared::types::{
-    Movie, MovieProvider, MovieSummary, ProviderInfo, RegionProviders, RunLogEntry, User,
-    WatchState, WatchlistEntry,
+    FriendInfo, Movie, MovieProvider, MovieSummary, ProviderInfo, ReceivedRec, RecPublic,
+    RegionProviders, RunLogEntry, SentRec, User, WatchState, WatchlistEntry,
 };
 use std::collections::HashMap;
+use turso::transaction::TransactionBehavior;
 use turso::{params, Connection, Value};
 
 /// Helper to extract an Option<String> from a Value.
@@ -1332,4 +1333,322 @@ pub async fn replace_user_providers(
         .await?;
     }
     Ok(())
+}
+
+// ──────────────────────────────────────────────
+// Phase 11: Friend recommendations (Ethos C1)
+// ──────────────────────────────────────────────
+
+/// Canonical friendship pair: (smaller, larger) so UNIQUE(user_a, user_b)
+/// covers both directions.
+fn canonical_pair<'a>(u1: &'a str, u2: &'a str) -> (&'a str, &'a str) {
+    if u1 < u2 {
+        (u1, u2)
+    } else {
+        (u2, u1)
+    }
+}
+
+/// SELECT fragment shared by every rec query that returns a MovieSummary.
+/// Column order matches `row_to_movie_summary` below.
+const REC_MOVIE_COLS: &str = "m.id, m.title, m.year, m.genre, m.director,
+                    m.poster_url, m.imdb_rating, m.rt_critic_score,
+                    m.gem_score, m.gem_rank, m.keywords";
+
+fn row_to_movie_summary(row: &turso::Row) -> Result<MovieSummary> {
+    Ok(MovieSummary {
+        id: value_to_opt_i64(row.get_value(0)?).unwrap_or(0),
+        title: value_to_opt_string(row.get_value(1)?).unwrap_or_default(),
+        year: value_to_opt_i32(row.get_value(2)?),
+        genre: value_to_opt_string(row.get_value(3)?),
+        director: value_to_opt_string(row.get_value(4)?),
+        poster_url: value_to_opt_string(row.get_value(5)?),
+        imdb_rating: value_to_opt_f64(row.get_value(6)?),
+        rt_critic_score: value_to_opt_i32(row.get_value(7)?),
+        gem_score: value_to_opt_f64(row.get_value(8)?),
+        gem_rank: value_to_opt_i64(row.get_value(9)?),
+        keywords: value_to_opt_string(row.get_value(10)?),
+        watch_badge: None,
+    })
+}
+
+pub async fn get_username(conn: &Connection, user_id: &str) -> Result<Option<String>> {
+    let mut rows = conn
+        .query(
+            "SELECT username FROM users WHERE id = ?1",
+            params![user_id],
+        )
+        .await?;
+    match rows.next().await? {
+        Some(row) => Ok(value_to_opt_string(row.get_value(0)?)),
+        None => Ok(None),
+    }
+}
+
+pub async fn get_user_id_by_username(conn: &Connection, username: &str) -> Result<Option<String>> {
+    let mut rows = conn
+        .query(
+            "SELECT id FROM users WHERE username = ?1",
+            params![username],
+        )
+        .await?;
+    match rows.next().await? {
+        Some(row) => Ok(value_to_opt_string(row.get_value(0)?)),
+        None => Ok(None),
+    }
+}
+
+/// Create a share-link rec (no recipient yet). Single INSERT — no tx needed.
+pub async fn create_share_rec(
+    conn: &Connection,
+    sender_id: &str,
+    movie_id: i64,
+    note: Option<&str>,
+    token: &str,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO recommendations (token, sender_id, movie_id, note) VALUES (?1, ?2, ?3, ?4)",
+        params![token, sender_id, movie_id, note],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Create an in-app rec to an existing friend: rec + receipt atomically.
+pub async fn create_direct_rec(
+    conn: &mut Connection,
+    sender_id: &str,
+    recipient_id: &str,
+    movie_id: i64,
+    note: Option<&str>,
+    token: &str,
+) -> Result<()> {
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .await?;
+    tx.execute(
+        "INSERT INTO recommendations (token, sender_id, movie_id, note) VALUES (?1, ?2, ?3, ?4)",
+        params![token, sender_id, movie_id, note],
+    )
+    .await?;
+    tx.execute(
+        "INSERT INTO rec_receipts (rec_id, recipient_id)
+         SELECT id, ?2 FROM recommendations WHERE token = ?1",
+        params![token, recipient_id],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Public token lookup: movie summary + sender username + note.
+/// Returns None for unknown tokens (route maps to the uniform 404).
+pub async fn get_rec_public(conn: &Connection, token: &str) -> Result<Option<RecPublic>> {
+    let sql = format!(
+        "SELECT {REC_MOVIE_COLS}, u.username, r.note
+         FROM recommendations r
+         JOIN movies m ON m.id = r.movie_id
+         JOIN users u ON u.id = r.sender_id
+         WHERE r.token = ?1"
+    );
+    let mut rows = conn.query(&sql, params![token]).await?;
+    match rows.next().await? {
+        Some(row) => Ok(Some(RecPublic {
+            movie: row_to_movie_summary(&row)?,
+            sender_username: value_to_opt_string(row.get_value(11)?)
+                .unwrap_or_else(|| "?".to_string()),
+            note: value_to_opt_string(row.get_value(12)?),
+        })),
+        None => Ok(None),
+    }
+}
+
+/// Claim a rec: receipt + friendship in one IMMEDIATE transaction.
+/// Self-claim is a successful no-op. Ok(false) = token unknown.
+pub async fn claim_rec(conn: &mut Connection, token: &str, recipient_id: &str) -> Result<bool> {
+    // Read sender first (also validates token).
+    let sender_id = {
+        let mut rows = conn
+            .query(
+                "SELECT sender_id FROM recommendations WHERE token = ?1",
+                params![token],
+            )
+            .await?;
+        match rows.next().await? {
+            Some(row) => value_to_opt_string(row.get_value(0)?).unwrap_or_default(),
+            None => return Ok(false),
+        }
+    };
+    if sender_id == recipient_id {
+        return Ok(true); // self-claim: no-op success
+    }
+    let (a, b) = canonical_pair(&sender_id, recipient_id);
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .await?;
+    tx.execute(
+        "INSERT OR IGNORE INTO rec_receipts (rec_id, recipient_id)
+         SELECT id, ?2 FROM recommendations WHERE token = ?1",
+        params![token, recipient_id],
+    )
+    .await?;
+    tx.execute(
+        "INSERT OR IGNORE INTO friendships (user_a, user_b, origin) VALUES (?1, ?2, 'rec')",
+        params![a, b],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(true)
+}
+
+/// Revoke a rec (sender only): explicit deletes in one IMMEDIATE transaction.
+/// We deliberately do NOT rely on FK ON DELETE actions (turso pre-release
+/// enforcement unverified). Friendship is NOT touched — retracting a movie
+/// is not unfriending. Ok(false) = token unknown or caller is not the sender
+/// (indistinguishable to the API by design — no existence oracle).
+pub async fn revoke_rec(conn: &mut Connection, token: &str, sender_id: &str) -> Result<bool> {
+    let rec_id = {
+        let mut rows = conn
+            .query(
+                "SELECT id FROM recommendations WHERE token = ?1 AND sender_id = ?2",
+                params![token, sender_id],
+            )
+            .await?;
+        match rows.next().await? {
+            Some(row) => value_to_opt_i64(row.get_value(0)?).unwrap_or(0),
+            None => return Ok(false),
+        }
+    };
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .await?;
+    tx.execute(
+        "DELETE FROM rec_receipts WHERE rec_id = ?1",
+        params![rec_id],
+    )
+    .await?;
+    tx.execute(
+        "UPDATE watchlist SET via_rec_id = NULL WHERE via_rec_id = ?1",
+        params![rec_id],
+    )
+    .await?;
+    tx.execute(
+        "DELETE FROM recommendations WHERE id = ?1",
+        params![rec_id],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(true)
+}
+
+/// Inbox: recs received by this user, newest first. Grouping per friend
+/// happens client-side (list is human-scale).
+pub async fn get_received_recs(conn: &Connection, user_id: &str) -> Result<Vec<ReceivedRec>> {
+    let sql = format!(
+        "SELECT {REC_MOVIE_COLS}, u.username, r.note, r.token, rr.read_at, rr.created_at
+         FROM rec_receipts rr
+         JOIN recommendations r ON r.id = rr.rec_id
+         JOIN movies m ON m.id = r.movie_id
+         JOIN users u ON u.id = r.sender_id
+         WHERE rr.recipient_id = ?1
+         ORDER BY rr.created_at DESC"
+    );
+    let mut rows = conn.query(&sql, params![user_id]).await?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next().await? {
+        out.push(ReceivedRec {
+            movie: row_to_movie_summary(&row)?,
+            sender_username: value_to_opt_string(row.get_value(11)?)
+                .unwrap_or_else(|| "?".to_string()),
+            note: value_to_opt_string(row.get_value(12)?),
+            token: value_to_opt_string(row.get_value(13)?).unwrap_or_default(),
+            read: value_to_opt_string(row.get_value(14)?).is_some(),
+            created_at: value_to_opt_string(row.get_value(15)?).unwrap_or_default(),
+        });
+    }
+    Ok(out)
+}
+
+/// Sent recs with claim counts — the revocation surface.
+pub async fn get_sent_recs(conn: &Connection, user_id: &str) -> Result<Vec<SentRec>> {
+    let sql = format!(
+        "SELECT {REC_MOVIE_COLS}, r.note, r.token, r.created_at,
+                (SELECT COUNT(*) FROM rec_receipts rr WHERE rr.rec_id = r.id) AS claim_count
+         FROM recommendations r
+         JOIN movies m ON m.id = r.movie_id
+         WHERE r.sender_id = ?1
+         ORDER BY r.created_at DESC"
+    );
+    let mut rows = conn.query(&sql, params![user_id]).await?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next().await? {
+        out.push(SentRec {
+            movie: row_to_movie_summary(&row)?,
+            note: value_to_opt_string(row.get_value(11)?),
+            token: value_to_opt_string(row.get_value(12)?).unwrap_or_default(),
+            created_at: value_to_opt_string(row.get_value(13)?).unwrap_or_default(),
+            claim_count: value_to_opt_i64(row.get_value(14)?).unwrap_or(0),
+        });
+    }
+    Ok(out)
+}
+
+/// Mark one received rec read. Ownership enforced in the WHERE clause.
+pub async fn mark_rec_read(conn: &Connection, token: &str, recipient_id: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE rec_receipts SET read_at = datetime('now')
+         WHERE recipient_id = ?2 AND read_at IS NULL
+           AND rec_id = (SELECT id FROM recommendations WHERE token = ?1)",
+        params![token, recipient_id],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Nav badge count. Covered by idx_receipts_recipient.
+pub async fn unread_rec_count(conn: &Connection, user_id: &str) -> Result<i64> {
+    let mut rows = conn
+        .query(
+            "SELECT COUNT(*) FROM rec_receipts WHERE recipient_id = ?1 AND read_at IS NULL",
+            params![user_id],
+        )
+        .await?;
+    match rows.next().await? {
+        Some(row) => Ok(value_to_opt_i64(row.get_value(0)?).unwrap_or(0)),
+        None => Ok(0),
+    }
+}
+
+/// This user's friends (username + since). Users without a username set are
+/// skipped — they cannot be addressed for direct sends yet.
+pub async fn get_friends(conn: &Connection, user_id: &str) -> Result<Vec<FriendInfo>> {
+    let mut rows = conn
+        .query(
+            "SELECT u.username, f.created_at
+             FROM friendships f
+             JOIN users u ON u.id = CASE WHEN f.user_a = ?1 THEN f.user_b ELSE f.user_a END
+             WHERE (f.user_a = ?1 OR f.user_b = ?1) AND u.username IS NOT NULL
+             ORDER BY f.created_at DESC",
+            params![user_id],
+        )
+        .await?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next().await? {
+        out.push(FriendInfo {
+            username: value_to_opt_string(row.get_value(0)?).unwrap_or_default(),
+            since: value_to_opt_string(row.get_value(1)?).unwrap_or_default(),
+        });
+    }
+    Ok(out)
+}
+
+pub async fn are_friends(conn: &Connection, user1: &str, user2: &str) -> Result<bool> {
+    let (a, b) = canonical_pair(user1, user2);
+    let mut rows = conn
+        .query(
+            "SELECT 1 FROM friendships WHERE user_a = ?1 AND user_b = ?2",
+            params![a, b],
+        )
+        .await?;
+    Ok(rows.next().await?.is_some())
 }

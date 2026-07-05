@@ -117,10 +117,21 @@ impl Database {
 
     /// Get a connection to execute queries.
     pub async fn connect(&self) -> Result<turso::Connection> {
-        match &self.inner {
-            InnerDb::Local(db) => Ok(db.connect()?),
-            InnerDb::Remote(db) => Ok(db.connect().await?),
+        let conn = match &self.inner {
+            InnerDb::Local(db) => db.connect()?,
+            InnerDb::Remote(db) => db.connect().await?,
+        };
+        // Concurrent writers (claim/revoke transactions) queue up to 5s
+        // instead of failing immediately with a busy error. `PRAGMA
+        // busy_timeout` set in apply_local_pragmas() is connection-scoped in
+        // SQLite and does not carry over to connections opened later — it
+        // only ever applied to the one throwaway connection used to set WAL
+        // mode at startup. This call is what actually takes effect per
+        // request/test connection.
+        if let Err(e) = conn.busy_timeout(std::time::Duration::from_secs(5)) {
+            tracing::warn!("busy_timeout setup failed (non-fatal): {}", e);
         }
+        Ok(conn)
     }
 
     /// Push local changes to remote (only for synced databases).
