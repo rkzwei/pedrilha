@@ -1425,6 +1425,7 @@ pub fn MovieDetail() -> impl IntoView {
     let auth = use_context::<RwSignal<Option<AuthState>>>().unwrap_or_else(|| RwSignal::new(None));
     let lang = use_lang();
     let d = move || dict(lang.get());
+    let watch = use_watch();
 
     let movie_id = move || params.with_untracked(|p| p.get("id").map(|v| v.to_string()));
     let (retry, set_retry) = signal(0u32);
@@ -1552,6 +1553,23 @@ pub fn MovieDetail() -> impl IntoView {
                 let jw_url = format!("https://www.justwatch.com/us/search?q={}", urlenc(&title));
                 let imdb_id  = m.imdb_id.clone();
                 let movie_db_id = m.id.unwrap_or(0);
+                // Stremio deep links: IMDb ids are Stremio's movie ids via Cinemeta.
+                // Protocol links no-op silently when Stremio isn't installed, so a small
+                // web link is offered alongside as a detectable fallback.
+                let title_enc = urlenc(&title);
+                let (stremio_app, stremio_web) = match m.imdb_id.clone() {
+                    Some(id) if !id.is_empty() => (
+                        format!("stremio:///detail/movie/{}/{}", id, id),
+                        format!("https://web.stremio.com/#/detail/movie/{}/{}", id, id),
+                    ),
+                    _ => (
+                        format!("stremio:///search?search={}", title_enc),
+                        format!("https://web.stremio.com/#/search?search={}", title_enc),
+                    ),
+                };
+                // Streaming availability grouped per region (Phase 10).
+                let providers_data = m.watch_providers.clone().unwrap_or_default();
+                let jw_fallback = jw_url.clone();
 
                 view!{
                     <div class="mt-6 relative isolate">
@@ -1645,7 +1663,83 @@ pub fn MovieDetail() -> impl IntoView {
                                         class="text-sm text-stone-300 hover:text-stone-100 border border-sc-border hover:border-stone-600 rounded px-3 py-1.5">
                                         {move || d().detail_where_watch}
                                     </a>
+                                    <a href=stremio_app
+                                        class="text-sm text-purple-300 hover:text-purple-200 border border-purple-800 hover:border-purple-600 rounded px-3 py-1.5">
+                                        {move || d().detail_open_stremio}
+                                    </a>
+                                    <a href=stremio_web
+                                        target="_blank" rel="noopener noreferrer"
+                                        class="text-sm text-stone-400 hover:text-stone-200 border border-sc-border hover:border-stone-600 rounded px-3 py-1.5">
+                                        {move || d().detail_stremio_web}
+                                    </a>
                                 </div>
+
+                                // ── Streaming availability (Phase 10) ─────────────────────────────
+                                {
+                                    let providers_data = providers_data.clone();
+                                    let jw_fallback = jw_fallback.clone();
+                                    move || {
+                                        let region = watch.with(|w| w.region.clone());
+                                        let rp = providers_data.iter().find(|r| r.region == region).cloned();
+                                        match rp {
+                                            Some(rp) if !rp.providers.is_empty() => {
+                                                let group = |accesses: &[&str]| -> Vec<gem_finder_shared::types::MovieProvider> {
+                                                    rp.providers.iter()
+                                                        .filter(|p| accesses.contains(&p.access.as_str()))
+                                                        .cloned().collect()
+                                                };
+                                                let included = group(&["flatrate"]);
+                                                let free_ads = group(&["free", "ads"]);
+                                                let rent_buy = group(&["rent", "buy"]);
+                                                let tmdb_link = rp.tmdb_link.clone().unwrap_or_default();
+                                                let render_group = |label: String, items: Vec<gem_finder_shared::types::MovieProvider>, link: String| {
+                                                    if items.is_empty() { return view!{ <div /> }.into_any(); }
+                                                    view!{
+                                                        <div class="mb-3">
+                                                            <p class="text-[0.65rem] uppercase tracking-wide text-stone-500 font-semibold mb-1.5">{label}</p>
+                                                            <div class="flex flex-wrap gap-2">
+                                                                {items.into_iter().map(|p| {
+                                                                    let logo = p.logo_path.as_deref().map(|x| format!("https://image.tmdb.org/t/p/w45{}", x)).unwrap_or_default();
+                                                                    let has_logo = !logo.is_empty();
+                                                                    let name = p.provider_name.clone();
+                                                                    let link = link.clone();
+                                                                    view!{
+                                                                        <a href=link target="_blank" rel="noopener noreferrer"
+                                                                            class="flex items-center gap-1.5 px-2 py-1 bg-sc-card border border-sc-border rounded text-xs text-stone-300 hover:border-stone-600">
+                                                                            {has_logo.then(|| view!{ <img src=logo alt=name.clone() loading="lazy" class="w-4 h-4 rounded-sm" /> })}
+                                                                            <span>{p.provider_name.clone()}</span>
+                                                                        </a>
+                                                                    }
+                                                                }).collect::<Vec<_>>()}
+                                                            </div>
+                                                        </div>
+                                                    }.into_any()
+                                                };
+                                                view!{
+                                                    <div class="mt-6 pt-6 border-t border-sc-border">
+                                                        {render_group(d().providers_included_with.to_string(), included, tmdb_link.clone())}
+                                                        {render_group(d().providers_free_ads.to_string(), free_ads, tmdb_link.clone())}
+                                                        {render_group(d().providers_rent_buy.to_string(), rent_buy, tmdb_link.clone())}
+                                                        <p class="text-[0.6rem] text-stone-600 mt-2">{move || d().providers_attribution}</p>
+                                                    </div>
+                                                }.into_any()
+                                            }
+                                            _ => {
+                                                // No synced data for this region — fall back to a JustWatch search.
+                                                let jw = jw_fallback.clone();
+                                                view!{
+                                                    <div class="mt-6 pt-6 border-t border-sc-border">
+                                                        <a href=jw target="_blank" rel="noopener noreferrer"
+                                                            class="text-sm text-stone-300 hover:text-stone-100 border border-sc-border hover:border-stone-600 rounded px-3 py-1.5">
+                                                            {move || d().detail_where_watch}
+                                                        </a>
+                                                        <p class="text-[0.6rem] text-stone-600 mt-2">{move || d().providers_attribution}</p>
+                                                    </div>
+                                                }.into_any()
+                                            }
+                                        }
+                                    }
+                                }
 
                                 // ── Watchlist ─────────────────────────────────────────────────────
                                 <div class="mt-6 pt-6 border-t border-sc-border">
