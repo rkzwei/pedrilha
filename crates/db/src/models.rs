@@ -380,6 +380,23 @@ pub async fn get_big_hit_dates(conn: &Connection) -> Result<Vec<String>> {
     Ok(dates)
 }
 
+/// Enrichment/resync status for a movie by TMDB id.
+/// `None` = not in DB; `Some(true)` = present with a non-empty imdb_id;
+/// `Some(false)` = present but imdb_id is NULL/empty (a stub needing detail resync).
+pub async fn get_movie_imdb_status(conn: &Connection, tmdb_id: i64) -> Result<Option<bool>> {
+    let mut stmt = conn
+        .prepare("SELECT imdb_id FROM movies WHERE tmdb_id = ?1")
+        .await?;
+    let mut rows = stmt.query(params![tmdb_id]).await?;
+    match rows.next().await? {
+        None => Ok(None),
+        Some(row) => {
+            let imdb_id = value_to_opt_string(row.get_value(0)?).unwrap_or_default();
+            Ok(Some(!imdb_id.trim().is_empty()))
+        }
+    }
+}
+
 // ──────────────────────────────────────────────
 // Run Log Functions
 // ──────────────────────────────────────────────

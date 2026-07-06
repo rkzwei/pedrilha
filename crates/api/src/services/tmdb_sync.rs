@@ -27,6 +27,16 @@ impl TmdbSyncService {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn new_with_base_url(api_key: String, base_url: String) -> Self {
+        Self {
+            client: Client::new(),
+            api_key,
+            base_url,
+            image_base_url: None,
+        }
+    }
+
     pub async fn init_config(&mut self) -> Result<()> {
         let url = format!("{}/configuration?api_key={}", self.base_url, self.api_key);
         let config: TmdbConfig = self.client.get(&url).send().await?.json().await?;
@@ -204,56 +214,22 @@ impl TmdbSyncService {
                     .and_then(|d| d.split('-').next())
                     .and_then(|y| y.parse::<i32>().ok())
                     .unwrap_or(0);
-
-                // For the obscured-by-big-hit signal we only need the release date.
-                // Avoid 2 extra API calls (detail + credits) per blockbuster by stub-upserting
-                // directly from the discover response. COALESCE in upsert_movie preserves any
-                // richer data already stored for this film.
-                let db_id = match models::get_movie_by_tmdb_id(conn, tmdb_movie.id).await {
-                    Ok(Some(existing_id)) => existing_id,
-                    _ => {
-                        let stub = Movie {
-                            id: None,
-                            tmdb_id: tmdb_movie.id,
-                            imdb_id: None,
-                            title: tmdb_movie.title.clone(),
-                            year: if year > 0 { Some(year) } else { None },
-                            genre: None,
-                            director: None,
-                            overview: tmdb_movie.overview.clone(),
-                            poster_url: None,
-                            tmdb_rating: tmdb_movie.vote_average,
-                            tmdb_vote_count: tmdb_movie.vote_count,
-                            imdb_rating: None,
-                            imdb_vote_count: None,
-                            rt_critic_score: None,
-                            rt_audience_score: None,
-                            gem_score: None,
-                            gem_rank: None,
-                            release_date: tmdb_movie.release_date.clone(),
-                            revenue: None,
-                            collection_id: None,
-                            keywords: None,
-                            created_at: None,
-                            updated_at: None,
-                            watch_providers: None,
-                        };
-                        match models::upsert_movie(conn, &stub).await {
-                            Ok(id) => id,
-                            Err(e) => {
-                                tracing::warn!(
-                                    "Could not upsert blockbuster stub {}: {}",
-                                    tmdb_movie.id,
-                                    e
-                                );
-                                continue;
-                            }
-                        }
-                    }
-                };
-
                 let popularity = tmdb_movie.popularity.unwrap_or(0.0);
-                match models::insert_big_hit(conn, db_id, year, popularity).await {
+
+                // big_hits is a scoring signal keyed by tmdb_id — we do NOT create a
+                // `movies` stub here. A bare stub (no imdb_id) would be un-enrichable
+                // and would block the detail-fetching syncs from ever ingesting the
+                // film properly. Store the release_date so the obscured-by signal keeps
+                // date precision without a JOIN back to movies.
+                match models::insert_big_hit(
+                    conn,
+                    tmdb_movie.id,
+                    year,
+                    tmdb_movie.release_date.as_deref(),
+                    popularity,
+                )
+                .await
+                {
                     Ok(()) => inserted += 1,
                     Err(e) => tracing::warn!(
                         "Could not insert big_hit for tmdb_id {}: {}",
@@ -541,7 +517,7 @@ impl TmdbSyncService {
         let mut skipped = 0usize;
 
         tracing::info!(
-            "Syncing acclaimed candidates: vote_avg ≥ 7.5, vote_count ≥ 10000 (wave pagination)"
+            "Syncing acclaimed candidates: vote_avg ≥ 7.5, vote_count ≥ 5000 (wave pagination)"
         );
 
         loop {
@@ -591,7 +567,10 @@ impl TmdbSyncService {
             );
 
             for tmdb_movie in response.results {
-                if let Ok(Some(_)) = models::get_movie_by_tmdb_id(conn, tmdb_movie.id).await {
+                // Skip only films already present WITH a non-empty imdb_id. A bare
+                // stub (imdb_id NULL — e.g. left by an old blockbuster sync) is
+                // re-fetched with full detail so it can be enriched later.
+                if let Ok(Some(true)) = models::get_movie_imdb_status(conn, tmdb_movie.id).await {
                     skipped += 1;
                     continue;
                 }
@@ -710,5 +689,52 @@ impl TmdbSyncService {
 
         let db_id = models::upsert_movie(conn, &movie).await?;
         Ok(db_id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gem_finder_db::{migrations, models, Database};
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    async fn mem_conn() -> turso::Connection {
+        let db = Database::new_local(":memory:").await.unwrap();
+        let conn = db.connect().await.unwrap();
+        migrations::run(&conn).await.unwrap();
+        conn
+    }
+
+    fn discover_page(results: serde_json::Value) -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "page": 1, "total_pages": 1, "total_results": 1, "results": results
+        }))
+    }
+
+    // MANUAL TRIGGER ONLY (see note on the e2e test). All wiremock/api-crate tests
+    // are `#[ignore]`d so they never run on deploy (`cargo test` without `--ignored`).
+    #[tokio::test]
+    #[ignore = "manual only: cargo test -p gem-finder-api -- --ignored"]
+    async fn blockbuster_sync_writes_big_hit_without_creating_a_movie_stub() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/discover/movie"))
+            .and(query_param("sort_by", "vote_count.desc"))
+            .respond_with(discover_page(serde_json::json!([{
+                "id": 680, "title": "Pulp Fiction", "release_date": "1994-09-10",
+                "vote_average": 8.5, "vote_count": 27000, "popularity": 55.0, "overview": ""
+            }])))
+            .mount(&server)
+            .await;
+
+        let conn = mem_conn().await;
+        let svc = TmdbSyncService::new_with_base_url("k".into(), server.uri());
+        svc.sync_blockbusters(&conn).await.unwrap();
+
+        // big_hit recorded by tmdb_id …
+        assert_eq!(models::get_big_hit_dates(&conn).await.unwrap(), vec!["1994-09-10"]);
+        // … and NO movie stub was created.
+        assert_eq!(models::get_movie_imdb_status(&conn, 680).await.unwrap(), None);
     }
 }

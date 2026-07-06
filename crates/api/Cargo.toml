@@ -28,3 +28,8 @@ uuid = { version = "1", features = ["v4"] }
 webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
 sha2 = "0.10"
 hex = "0.4"
+
+[dev-dependencies]
+# MANUAL-TRIGGER-ONLY integration tests (see #[ignore] tests). Mocks TMDB/OMDb so
+# the sync→enrich→classify path can be exercised without real API calls.
+wiremock = "0.6"
