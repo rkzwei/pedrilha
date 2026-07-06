@@ -5,6 +5,13 @@ Versions follow semver. Pre-1.0, features and fixes bump the **patch** (`0.3.0` 
 the **minor** (`0.4.0`) is reserved for milestones and breaking changes. Cut a milestone
 with a `Release-As: 0.X.0` commit footer.
 
+## [0.4.5](https://github.com/rkzwei/gem-finder/compare/v0.4.4...v0.4.5) (2026-07-06)
+
+
+### Bug Fixes
+
+* recommendation fixes, header improvement ([ccdd765](https://github.com/rkzwei/gem-finder/commit/ccdd765ef797fb3b8a4e17381e68f813421641a5))
+
 ## [0.4.4](https://github.com/rkzwei/gem-finder/compare/v0.4.3...v0.4.4) (2026-07-06)
 
 
