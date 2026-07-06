@@ -737,4 +737,102 @@ mod tests {
         // … and NO movie stub was created.
         assert_eq!(models::get_movie_imdb_status(&conn, 680).await.unwrap(), None);
     }
+
+    fn omdb_body(title: &str, rating: &str, votes: &str, rt: &str) -> serde_json::Value {
+        serde_json::json!({
+            "Title": title, "imdbRating": rating, "imdbVotes": votes,
+            "Ratings": [{"Source": "Rotten Tomatoes", "Value": rt}],
+            "Response": "True"
+        })
+    }
+
+    // MANUAL TRIGGER ONLY. `#[ignore]` keeps this out of the default `cargo test`
+    // that CI (`ci.yml`) and deploy (`deploy.yml`) run — neither passes `--ignored`,
+    // so it never runs on a deploy. Run by hand with:
+    //   cargo test -p gem-finder-api full_pipeline_lands_classics -- --ignored --nocapture
+    // Uses wiremock mock servers — no real TMDB/OMDb calls, no quota.
+    #[tokio::test]
+    #[ignore = "manual only: cargo test -p gem-finder-api -- --ignored full_pipeline_lands_classics"]
+    async fn full_pipeline_lands_classics_in_acclaimed() {
+        use crate::services::omdb_sync::OmdbEnrichmentService;
+        let tmdb = MockServer::start().await;
+        let omdb = MockServer::start().await;
+
+        // /movie/{id} detail (must carry imdb_id) for the acclaimed candidate.
+        Mock::given(method("GET"))
+            .and(path("/movie/680"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": 680, "imdb_id": "tt0110912", "title": "Pulp Fiction",
+                "release_date": "1994-09-10", "vote_average": 8.5, "vote_count": 27000,
+                "overview": "", "genres": [], "revenue": 0, "belongs_to_collection": null,
+                "poster_path": null
+            })))
+            .mount(&tmdb)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/movie/680/credits"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": 680, "crew": [], "cast": []
+            })))
+            .mount(&tmdb)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/movie/680/keywords"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "keywords": []
+            })))
+            .mount(&tmdb)
+            .await;
+        // acclaimed-candidate discover page.
+        Mock::given(method("GET"))
+            .and(path("/discover/movie"))
+            .and(query_param("sort_by", "vote_average.desc"))
+            .respond_with(discover_page(serde_json::json!([{
+                "id": 680, "title": "Pulp Fiction", "release_date": "1994-09-10",
+                "vote_average": 8.5, "vote_count": 27000, "popularity": 55.0, "overview": ""
+            }])))
+            .mount(&tmdb)
+            .await;
+        // OMDb enrichment (RT 92 → passes critic branch).
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(omdb_body(
+                "Pulp Fiction",
+                "8.8",
+                "2,431,656",
+                "92%",
+            )))
+            .mount(&omdb)
+            .await;
+
+        let conn = mem_conn().await;
+        let svc = TmdbSyncService::new_with_base_url("k".into(), tmdb.uri());
+        svc.sync_acclaimed_candidates(&conn).await.unwrap();
+        // movie ingested WITH imdb_id …
+        assert_eq!(
+            models::get_movie_imdb_status(&conn, 680).await.unwrap(),
+            Some(true)
+        );
+
+        let enr = OmdbEnrichmentService::new_with_base_url("k".into(), omdb.uri());
+        enr.enrich_movies(&conn, i64::MAX).await.unwrap();
+
+        let n = models::classify_acclaimed_films(&conn, 2026).await.unwrap();
+        assert!(n >= 1, "classify should promote the enriched classic");
+
+        let mut rows = conn
+            .query(
+                "SELECT COUNT(*) FROM acclaimed a JOIN movies m ON m.id = a.movie_id \
+                 WHERE m.title = 'Pulp Fiction'",
+                turso::params![],
+            )
+            .await
+            .unwrap();
+        let row = rows.next().await.unwrap().unwrap();
+        assert_eq!(
+            row.get::<i64>(0).unwrap(),
+            1,
+            "Pulp Fiction must reach the acclaimed tier end-to-end"
+        );
+    }
 }

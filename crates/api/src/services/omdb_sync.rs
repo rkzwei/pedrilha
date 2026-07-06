@@ -24,6 +24,15 @@ impl OmdbEnrichmentService {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn new_with_base_url(api_key: String, base_url: String) -> Self {
+        Self {
+            client: Client::new(),
+            api_key,
+            base_url,
+        }
+    }
+
     /// Enrich all movies that are missing IMDb ratings or RT scores.
     ///
     /// Iterates over movies with a non-empty `imdb_id` but null `imdb_rating`
