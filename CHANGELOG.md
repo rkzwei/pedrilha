@@ -5,6 +5,38 @@ Versions follow semver. Pre-1.0, features and fixes bump the **patch** (`0.3.0` 
 the **minor** (`0.4.0`) is reserved for milestones and breaking changes. Cut a milestone
 with a `Release-As: 0.X.0` commit footer.
 
+## [0.4.4](https://github.com/rkzwei/gem-finder/compare/v0.4.3...v0.4.4) (2026-07-06)
+
+
+### Features
+
+* **api:** recommendation routes - create/claim/revoke/inbox/friends ([402e9fb](https://github.com/rkzwei/gem-finder/commit/402e9fbb9ec59e425e57f6097df5e891caaf9c95))
+* **db:** migration v8 - recommendations, receipts, friendships (Ethos C1) ([96eb036](https://github.com/rkzwei/gem-finder/commit/96eb036488b00884869e630d8c30bd9d8c74d10c))
+* **db:** recommendation models (claim/revoke tx, friends) + busy_timeout on connect() ([0b618d9](https://github.com/rkzwei/gem-finder/commit/0b618d95143bd4ea27bec9151e13a8eb87e20482))
+* **frontend:** /r/{token} rec landing page with auto-claim + next-redirect ([c18cf05](https://github.com/rkzwei/gem-finder/commit/c18cf054fb12696be2fc3b91df2fb5f276a3f070))
+* **frontend:** recommend button + username gate modal ([6137087](https://github.com/rkzwei/gem-finder/commit/61370870c498b08daea04c514f10562d976352e1))
+* **frontend:** recs api client + username wrappers + PT/EN strings ([913d982](https://github.com/rkzwei/gem-finder/commit/913d982487ed9e25cc91b7b65d3abf15de0f977c))
+* **frontend:** recs inbox, nav badge, watchlist recommended filter ([33ad2e0](https://github.com/rkzwei/gem-finder/commit/33ad2e07f8a72c68ea09ab978c71ae86b6f691ba))
+* **shared:** recommendation DTOs + note validator ([d4ab360](https://github.com/rkzwei/gem-finder/commit/d4ab3600cb1124b9e8d97a763b97901f761a0086))
+* **watchlist:** rec_token in, recommended_by out ([14ac125](https://github.com/rkzwei/gem-finder/commit/14ac12568523824f822edbb82c57d7aa332243e0))
+
+
+### Bug Fixes
+
+* **detail:** hide streaming section entirely when no providers synced ([84b6c78](https://github.com/rkzwei/gem-finder/commit/84b6c7827a03b42291a967f0e7a13c2f922bd6c4))
+* **providers:** include acclaimed + wildcards in provider sync candidates ([f3d9316](https://github.com/rkzwei/gem-finder/commit/f3d9316ff4cdfbb74367ddd29f66e7cf38b975c6))
+* **watch:** keep provider region locked to UI language ([e2b6a3f](https://github.com/rkzwei/gem-finder/commit/e2b6a3f4a50804a627838af6d8a2cbaef199674d))
+
+
+### Documentation
+
+* **architecture:** reference ethos gate ([db7c584](https://github.com/rkzwei/gem-finder/commit/db7c584241eb8382d6bcc78776d2efb94b1a8644))
+* **ethos:** add clause C8, C5 pain-point clarification, diagnostics-not-asserts test rule ([a32d228](https://github.com/rkzwei/gem-finder/commit/a32d2283e98df604ce59259d71e347529750351c))
+* fix staleness across ARCHITECTURE/PHASES/README/FIXES (audit beyond Phase 11 scope) ([aacee3e](https://github.com/rkzwei/gem-finder/commit/aacee3e8cb3d01341756ab82626da7d7744c7566))
+* Phase 11 friend recommendations (Ethos C1, C3, C2) ([6a509ee](https://github.com/rkzwei/gem-finder/commit/6a509ee1ac3e81ec03a9ad88203f9124d2517040))
+* **phases:** cite ethos clauses on all phases; seeded-gem ranks become calibration snapshot ([ce146f7](https://github.com/rkzwei/gem-finder/commit/ce146f749748d94d4bebecf0358866e8a13cc7f6))
+* **readme:** add ethos blurb ([f431950](https://github.com/rkzwei/gem-finder/commit/f43195076aeb01348b82dfa10488d594f0108ab6))
+
 ## [0.4.3](https://github.com/rkzwei/gem-finder/compare/v0.4.2...v0.4.3) (2026-07-05)
 
 
