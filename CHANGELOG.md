@@ -5,6 +5,17 @@ Versions follow semver. Pre-1.0, features and fixes bump the **patch** (`0.3.0` 
 the **minor** (`0.4.0`) is reserved for milestones and breaking changes. Cut a milestone
 with a `Release-As: 0.X.0` commit footer.
 
+## [0.4.6](https://github.com/rkzwei/gem-finder/compare/v0.4.5...v0.4.6) (2026-07-06)
+
+
+### Features
+
+* admit audience-canonized classics to the acclaimed gate ([735bedb](https://github.com/rkzwei/gem-finder/commit/735bedb762abdc64a7262002fe9d7bdb053d8e07))
+* **api:** add /api/admin/sync-acclaimed and fold candidates into full sync ([49764d1](https://github.com/rkzwei/gem-finder/commit/49764d1f2d08129f4edd32e416061ab2c30cbebb))
+* **db:** migrate big_hits to tmdb_id key (v9) ([76d1c91](https://github.com/rkzwei/gem-finder/commit/76d1c91c538c16c779d57294cf712d109ebf4a2e))
+* **db:** read/write big_hits by tmdb_id; exclude scoring by tmdb_id ([42497d7](https://github.com/rkzwei/gem-finder/commit/42497d706b5efc8ec47626350f9e1e5781ac59bd))
+* **sync:** blockbusters write big_hits only; acclaimed sync re-fetches stubs ([532c1a7](https://github.com/rkzwei/gem-finder/commit/532c1a7c3b2421c8d52f209ec751ebf286658c95))
+
 ## [0.4.5](https://github.com/rkzwei/gem-finder/compare/v0.4.4...v0.4.5) (2026-07-06)
 
 
