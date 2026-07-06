@@ -202,7 +202,7 @@ pub async fn get_all_movies_for_scoring(conn: &Connection) -> Result<Vec<Movie>>
              tmdb_rating, tmdb_vote_count, imdb_rating, imdb_vote_count,
              rt_critic_score, rt_audience_score, gem_score, gem_rank, release_date,
              created_at, updated_at, revenue, collection_id, keywords FROM movies
-             WHERE id NOT IN (SELECT movie_id FROM big_hits WHERE movie_id IS NOT NULL)",
+             WHERE tmdb_id NOT IN (SELECT tmdb_id FROM big_hits)",
         )
         .await?;
     let mut rows = stmt.query(turso::params![]).await?;
@@ -343,33 +343,31 @@ pub async fn get_movie_by_tmdb_id(conn: &Connection, tmdb_id: i64) -> Result<Opt
     }
 }
 
-/// Record a movie as a known blockbuster in the big_hits table.
-/// `movie_id` must already exist in the movies table (FK constraint).
+/// Record a blockbuster in `big_hits`, keyed by `tmdb_id` (no `movies` row needed).
 /// Uses INSERT OR IGNORE so re-running a sync is safe.
 pub async fn insert_big_hit(
     conn: &Connection,
-    movie_id: i64,
+    tmdb_id: i64,
     year: i32,
+    release_date: Option<&str>,
     popularity_score: f64,
 ) -> Result<()> {
     conn.execute(
-        "INSERT OR IGNORE INTO big_hits (movie_id, year, popularity_score)
-         VALUES (?1, ?2, ?3)",
-        params![movie_id, year, popularity_score],
+        "INSERT OR IGNORE INTO big_hits (tmdb_id, year, release_date, popularity_score)
+         VALUES (?1, ?2, ?3, ?4)",
+        params![tmdb_id, year, release_date, popularity_score],
     )
     .await?;
     Ok(())
 }
 
-/// Get release dates for all recorded blockbusters (big_hits JOIN movies).
+/// Get release dates for all recorded blockbusters (read directly from big_hits).
 /// Used by the batch scoring pipeline to populate the obscured-by-big-hit signal.
 pub async fn get_big_hit_dates(conn: &Connection) -> Result<Vec<String>> {
     let mut stmt = conn
         .prepare(
-            "SELECT m.release_date
-             FROM big_hits bh
-             JOIN movies m ON m.id = bh.movie_id
-             WHERE m.release_date IS NOT NULL AND m.release_date != ''",
+            "SELECT release_date FROM big_hits
+             WHERE release_date IS NOT NULL AND release_date != ''",
         )
         .await?;
     let mut rows = stmt.query(turso::params![]).await?;
