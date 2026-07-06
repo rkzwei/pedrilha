@@ -40,6 +40,10 @@ pub async fn run(conn: &Connection) -> Result<()> {
         migrate_v8(conn).await?;
         record_version(conn, 8).await?;
     }
+    if !applied.contains(&9) {
+        migrate_v9(conn).await?;
+        record_version(conn, 9).await?;
+    }
 
     Ok(())
 }
@@ -464,5 +468,46 @@ async fn migrate_v8(conn: &Connection) -> Result<()> {
     }
 
     tracing::info!("Applied migration v8: friend recommendations");
+    Ok(())
+}
+
+// ── Migration v9: decouple big_hits from movies (key by tmdb_id) ─────────────
+
+async fn migrate_v9(conn: &Connection) -> Result<()> {
+    // Blockbusters are a scoring signal, not catalog rows. Keying big_hits by
+    // tmdb_id stops the blockbuster sync from creating imdb_id-less `movies`
+    // stubs that can never be enriched (and thus never reach the acclaimed tier).
+    // SQLite/libSQL has no DROP CONSTRAINT, so this is a table recreate.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS big_hits_new (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            tmdb_id          INTEGER NOT NULL,
+            year             INTEGER NOT NULL,
+            release_date     TEXT,
+            popularity_score REAL,
+            UNIQUE(tmdb_id)
+        )",
+        turso::params![],
+    )
+    .await?;
+
+    // Backfill from the old movie-keyed table (skip any orphaned rows).
+    conn.execute(
+        "INSERT OR IGNORE INTO big_hits_new (tmdb_id, year, release_date, popularity_score)
+         SELECT m.tmdb_id, bh.year, m.release_date, bh.popularity_score
+         FROM big_hits bh
+         JOIN movies m ON m.id = bh.movie_id",
+        turso::params![],
+    )
+    .await?;
+
+    conn.execute("DROP TABLE big_hits", turso::params![]).await?;
+    conn.execute(
+        "ALTER TABLE big_hits_new RENAME TO big_hits",
+        turso::params![],
+    )
+    .await?;
+
+    tracing::info!("Applied migration v9: big_hits keyed by tmdb_id");
     Ok(())
 }
