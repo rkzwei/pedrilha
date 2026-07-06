@@ -2279,6 +2279,7 @@ pub fn AdminPage() -> impl IntoView {
     let (sync_state, set_sync_state) = signal(ActionState::Idle);
     let (enrich_state, set_enrich_state) = signal(ActionState::Idle);
     let (score_state, set_score_state) = signal(ActionState::Idle);
+    let (acclaimed_state, set_acclaimed_state) = signal(ActionState::Idle);
     let (provider_state, set_provider_state) = signal(ActionState::Idle);
     let (enrich_limit, set_enrich_limit) = signal(10_000i64);
     let (logs, set_logs) = signal(Vec::<serde_json::Value>::new());
@@ -2369,6 +2370,16 @@ pub fn AdminPage() -> impl IntoView {
             match api::admin_score(&tok).await {
                 Ok(_) => set_score_state.set(ActionState::Done(d().admin_started.into())),
                 Err(e) => set_score_state.set(ActionState::Failed(e)),
+            }
+        });
+    };
+    let run_sync_acclaimed = move |_| {
+        let tok = get_token();
+        set_acclaimed_state.set(ActionState::Running);
+        spawn_local(async move {
+            match api::admin_sync_acclaimed(&tok).await {
+                Ok(_) => set_acclaimed_state.set(ActionState::Done(d().admin_started.into())),
+                Err(e) => set_acclaimed_state.set(ActionState::Failed(e)),
             }
         });
     };
@@ -2490,6 +2501,21 @@ pub fn AdminPage() -> impl IntoView {
                         <button class="px-3 py-1.5 bg-sc-accent-bg hover:bg-sc-accent-bg-hover text-stone-100 text-xs rounded disabled:opacity-50"
                             disabled=move || score_state.get() == ActionState::Running
                             on:click=run_score>{move || d().admin_score_btn}</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-8 p-4 bg-sc-panel rounded border border-sc-border">
+                <div class="flex items-start justify-between gap-4">
+                    <div class="flex-1 min-w-0">
+                        <p class="text-stone-200 font-semibold text-sm">{move || d().admin_sync_acclaimed_title}</p>
+                        <p class="text-xs text-stone-400 mt-0.5">{move || d().admin_sync_acclaimed_desc}</p>
+                    </div>
+                    <div class="flex items-center gap-3 flex-shrink-0">
+                        <AdminStatus state=acclaimed_state.into() />
+                        <button class="px-3 py-1.5 bg-sc-accent-bg hover:bg-sc-accent-bg-hover text-stone-100 text-xs rounded disabled:opacity-50"
+                            disabled=move || acclaimed_state.get() == ActionState::Running
+                            on:click=run_sync_acclaimed>{move || d().admin_sync_acclaimed_btn}</button>
                     </div>
                 </div>
             </div>

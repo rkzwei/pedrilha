@@ -251,6 +251,11 @@ pub async fn admin_score(token: &str) -> Result<serde_json::Value, String> {
     admin_post("/api/admin/score", serde_json::json!({}), token).await
 }
 
+/// POST /api/admin/sync-acclaimed — sync acclaimed candidates → enrich → classify.
+pub async fn admin_sync_acclaimed(token: &str) -> Result<serde_json::Value, String> {
+    admin_post("/api/admin/sync-acclaimed", serde_json::json!({}), token).await
+}
+
 /// POST /api/admin/providers-sync — streaming provider sync in background.
 pub async fn admin_provider_sync(limit: i64, token: &str) -> Result<serde_json::Value, String> {
     admin_post(
