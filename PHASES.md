@@ -464,6 +464,53 @@ Leptos reactivity is fiddly (see FIX-46/47 above) — strongest model here. **De
 
 ---
 
+## Phase 11: Friend Recommendations — "me manda aí o nome desse filme" ✅ COMPLETE
+
+**Goal:** Word-of-mouth movie recommendations — share links, rec-formed friendships, per-friend inbox, watchlist integration — plus the acclaimed/wildcards provider-sync bugfix.
+
+Ethos: C1, C3, C2 (bugfix batch: C8)
+
+- [x] Provider-sync fix: acclaimed + wildcards included in candidates (C8)
+- [x] Migration v8: recommendations / rec_receipts / friendships / watchlist.via_rec_id
+- [x] Rec models with first DB transactions (claim, direct send, revoke)
+- [x] API: create/claim/revoke/read/received/sent/unread_count/friends
+- [x] Username gate (ships the missing username UI on existing backend)
+- [x] /r/{token} landing + auto-claim; friendships form only via claimed recs
+- [x] Recs inbox grouped per friend + Enviadas tab (revocation surface)
+- [x] Watchlist: Recomendados filter + "de {username}" tag
+- [x] Badge-only notification (no email)
+
+Out of scope, foundations reserved: replies/threads (receipt = anchor; needs own
+ethos gate), username-search friendships (origin='search'), email notifications,
+rec counts display (may only ever promote — C5 clarification).
+
+### Notes on execution (deviations from the original plan, all tested before commit)
+
+- The plan sequenced the `busy_timeout` connection fix after the rec-models
+  task; it had to move earlier — the revoke/claim transaction tests
+  deadlocked without it on the in-memory test DB (concurrent IMMEDIATE
+  writers on separate connections). Bundled into the same commit as the
+  models it unblocked.
+- The plan assumed `SignInPage`/`VerifyPage` already forwarded a `next`
+  redirect param end-to-end; only the backend DTO field existed. Built the
+  full round-trip (SignInPage reads `?next=` → `api::send_magic_link` →
+  emailed link → `VerifyPage` reads `?next=` → navigates there) so
+  `/r/{token}` → sign in → back to `/r/{token}` isn't a dead end.
+- Added `api::upsert_watchlist_via_rec` so the `/r/{token}` landing page's
+  "quero ver" action also tags the watchlist row with `rec_token` — the
+  plan's Task 10 spec only called claim + mark-read + navigate, which would
+  have left this primary flow's watchlist adds untagged despite the
+  "de {username}" tag being a named goal of this phase.
+- **Known gap, not fixed:** the note validator's "no control characters"
+  rule is enforced only in the Rust layer (`validate_rec_note`), not in the
+  `recommendations.note` CHECK constraint — the plan's Global Constraints
+  overstated this as DB-enforced. A raw INSERT bypassing the API (future
+  admin tooling, a script) could still write a control character into a
+  note. Left as-is rather than shipping an untested SQL GLOB pattern in a
+  schema-final migration; worth a follow-up if that surface ever opens up.
+
+---
+
 ## Quick Reference: Crate Relationships
 
 ```

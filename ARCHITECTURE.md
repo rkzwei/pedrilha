@@ -80,6 +80,7 @@ Turso/libSQL database layer:
 ### `api`
 Axum backend:
 - Routes: `/health`, `/api/gems`, `/api/acclaimed`, `/api/movies/{id}`, `/api/score`, `/api/admin/sync`, `/api/admin/enrich`, `/api/admin/score`, `/api/admin/logs`
+- Phase 11 (friend recommendations, Ethos C1): `POST /api/recs`, `GET /api/rec/{token}` (public), `POST /api/rec/{token}/claim`, `DELETE /api/rec/{token}` (revoke, sender only), `POST /api/rec/{token}/read`, `GET /api/recs/received`, `GET /api/recs/sent`, `GET /api/recs/unread_count`, `GET /api/friends` — `crates/api/src/routes/recs.rs`
 - Phase 10 (planned): `/api/providers?region=`, watch-availability filter params on the list endpoints (`region`, `providers`, `rentals`), `GET/PUT /api/user/providers`, `POST /api/admin/providers-sync`; new service `services/provider_sync.rs` (TMDB watch-providers, JustWatch data)
 - `AppState` carries `db: Arc<Database>`, `tmdb_api_key: String`, `omdb_api_key: String`
 - API keys read at startup from env; `tracing::warn!` if missing (server still starts)
@@ -92,6 +93,7 @@ Leptos WASM frontend:
 - `pages.rs` — `HomePage` (gem grid + pagination + filters), `MovieDetail`, `AcclaimedPage`, `AdminPage`, `AboutPage`
 - `api.rs` — HTTP client functions: `fetch_gems`, `fetch_movie`, `fetch_acclaimed`, `admin_sync`, `admin_enrich`, `admin_score`, `admin_logs`
 - `components.rs` — Shared components
+- `recs.rs` (Phase 11) — `RecommendButton`, `UsernameModal`, `RecLandingPage` (`/r/:token`), `RecsPage` (`/recs` inbox + sent/revoke)
 - Phase 10 (planned): "What can I watch?" filter panel on list pages (region toggle, provider checkboxes, rentals toggle), provider badges on cards, grouped provider display + Stremio deep link on `MovieDetail`; selections persist in localStorage (`gf_watch_region`, `gf_watch_providers_us`, `gf_watch_providers_br`, `gf_watch_rentals`) and sync to the account when signed in
 
 ## Database Schema
@@ -177,6 +179,42 @@ Signed-in sync of a user's selected streaming services (anonymous users use loca
 | `provider_id` | INTEGER — TMDB provider id |
 
 PK `(user_id, region, provider_id)`.
+
+### `recommendations` (Phase 11 — friend recommendations, Ethos C1)
+One row per "recommend this movie" action. Addressed externally only by `token` (random, uuid v4 simple) — the integer PK never appears in API responses.
+
+| Column | Type |
+|---|---|
+| `id` | INTEGER PK |
+| `token` | TEXT UNIQUE |
+| `sender_id` | FK → users |
+| `movie_id` | FK → movies |
+| `note` | TEXT, ≤140 chars (CHECK) |
+| `created_at` | TEXT |
+
+### `rec_receipts` (Phase 11)
+Who received/claimed a rec. `UNIQUE(rec_id, recipient_id)` makes re-claims idempotent; a link fanning out to a group chat gets one receipt per claimer.
+
+| Column | Type |
+|---|---|
+| `id` | INTEGER PK |
+| `rec_id` | FK → recommendations |
+| `recipient_id` | FK → users |
+| `read_at` | TEXT, NULL = unread (nav badge) |
+| `created_at` | TEXT |
+
+### `friendships` (Phase 11)
+Formed only by a claimed rec in v1 (`origin='rec'`); `origin='search'` is reserved for a future username-search flow. Stored canonically (`user_a < user_b`, `CHECK`) so the pair is unique regardless of direction.
+
+| Column | Type |
+|---|---|
+| `id` | INTEGER PK |
+| `user_a` | FK → users |
+| `user_b` | FK → users |
+| `origin` | TEXT — `rec` \| `search` |
+| `created_at` | TEXT |
+
+`watchlist` also gains `via_rec_id` (nullable FK → `recommendations`, Phase 11): tags a watchlist row with the rec that brought it in for the "de {username}" UI tag. Revocation NULLs it explicitly rather than relying on FK cascade behavior (unverified on the pre-release `turso` crate).
 
 ## Hidden Gem Algorithm
 

@@ -1042,7 +1042,7 @@ mod db_tests {
                 );
             }
         }
-        eprintln!("");
+        eprintln!();
 
         // Component breakdown for known gems
         eprintln!("--- Known Gem Component Breakdown ---");
