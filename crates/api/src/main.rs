@@ -606,6 +606,10 @@ async fn main() {
         .route("/api/admin/enrich", post(routes::admin::trigger_enrich))
         .route("/api/admin/score", post(routes::admin::trigger_score))
         .route(
+            "/api/admin/sync-acclaimed",
+            post(routes::admin::sync_acclaimed),
+        )
+        .route(
             "/api/admin/providers-sync",
             post(routes::admin::trigger_provider_sync),
         )

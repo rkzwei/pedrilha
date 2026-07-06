@@ -181,6 +181,21 @@ pub async fn trigger_sync(
             Err(e) => log("error", "sync_failed", format!("known gems: {}", e)).await,
         }
 
+        // Acclaimed candidates (vote_avg ≥ 7.5, no upper cap) — the only path that
+        // ingests audience-canonized classics with full detail (incl. imdb_id).
+        let t3 = std::time::Instant::now();
+        match svc.sync_acclaimed_candidates(&conn).await {
+            Ok(n) => {
+                log(
+                    "info",
+                    "sync_acclaimed_candidates_complete",
+                    format!("{} acclaimed candidates in {:?}", n, t3.elapsed()),
+                )
+                .await
+            }
+            Err(e) => log("error", "sync_failed", format!("acclaimed candidates: {}", e)).await,
+        }
+
         // Sync added new movies — movie list cache is stale.
         cache.write().await.invalidate();
         tracing::info!("movie list cache invalidated after sync");
@@ -574,4 +589,134 @@ pub async fn get_run_logs(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(serde_json::json!({ "logs": logs })))
+}
+
+/// POST /api/admin/sync-acclaimed
+///
+/// Targeted ingestion for audience-canonized classics: sync acclaimed candidates
+/// (full detail incl. imdb_id) → OMDb enrich → classify acclaimed. Cheaper on TMDB
+/// quota than a full sync. Spawns a background task and returns immediately.
+pub async fn sync_acclaimed(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    check_admin_token(&headers, &state.jwt_secret)?;
+    if state.tmdb_api_key.is_empty() {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+    let guard = acquire_busy(&state.admin_busy)?;
+    let db = state.db.clone();
+    let tmdb_key = state.tmdb_api_key.clone();
+    let omdb_key = state.omdb_api_key.clone();
+    let cache = state.movie_cache.clone();
+
+    tokio::spawn(async move {
+        let _guard = guard;
+        let conn = match db.connect().await {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("sync_acclaimed: db connect failed: {}", e);
+                return;
+            }
+        };
+        let _ = models::insert_run_log(
+            &conn,
+            "info",
+            "sync_acclaimed_started",
+            "Acclaimed ingestion starting",
+        )
+        .await;
+
+        let mut svc = TmdbSyncService::new(tmdb_key);
+        if let Err(e) = svc.init_config().await {
+            let _ = models::insert_run_log(
+                &conn,
+                "error",
+                "sync_acclaimed_failed",
+                &format!("init_config: {}", e),
+            )
+            .await;
+            return;
+        }
+        match svc.sync_acclaimed_candidates(&conn).await {
+            Ok(n) => {
+                let _ = models::insert_run_log(
+                    &conn,
+                    "info",
+                    "sync_acclaimed_synced",
+                    &format!("{} candidates synced", n),
+                )
+                .await;
+            }
+            Err(e) => {
+                let _ = models::insert_run_log(
+                    &conn,
+                    "error",
+                    "sync_acclaimed_failed",
+                    &format!("candidates: {}", e),
+                )
+                .await;
+                return;
+            }
+        }
+
+        if !omdb_key.is_empty() {
+            let omdb = OmdbEnrichmentService::new(omdb_key);
+            match omdb.enrich_movies(&conn, i64::MAX).await {
+                Ok((enriched, total, _)) => {
+                    let _ = models::insert_run_log(
+                        &conn,
+                        "info",
+                        "sync_acclaimed_enriched",
+                        &format!("enriched {}/{}", enriched, total),
+                    )
+                    .await;
+                }
+                Err(e) => tracing::warn!("sync_acclaimed: enrich failed: {}", e),
+            }
+        } else {
+            let _ = models::insert_run_log(
+                &conn,
+                "warn",
+                "sync_acclaimed_enrich_skipped",
+                "OMDB_API_KEY not set",
+            )
+            .await;
+        }
+
+        match models::classify_acclaimed_films(&conn, chrono::Utc::now().year()).await {
+            Ok(n) => {
+                let _ = models::insert_run_log(
+                    &conn,
+                    "info",
+                    "acclaimed_classified",
+                    &format!("{} acclaimed films", n),
+                )
+                .await;
+            }
+            Err(e) => tracing::warn!("sync_acclaimed: classify failed: {}", e),
+        }
+
+        cache.write().await.invalidate();
+    });
+
+    Ok(Json(serde_json::json!({
+        "status": "started",
+        "message": "Acclaimed ingestion started in background — watch logs for progress",
+    })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderMap;
+
+    #[test]
+    fn sync_acclaimed_rejects_missing_token() {
+        let headers = HeaderMap::new();
+        assert_eq!(
+            check_admin_token(&headers, "secret"),
+            Err(StatusCode::UNAUTHORIZED)
+        );
+    }
 }
