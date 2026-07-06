@@ -176,7 +176,7 @@ Auth variables (`JWT_SECRET`, `SMTP_*`, `WEBAUTHN_*`) are all optional. Leave un
 
 | | |
 |---|---|
-| Frontend | Leptos 0.7 (Rust → WASM, CSR mode) |
+| Frontend | Leptos 0.8 (Rust → WASM, CSR mode) |
 | Backend | Axum 0.8 (Tokio async) |
 | Database | libSQL / Turso (local SQLite) |
 | Styling | Tailwind CSS 3.4 |

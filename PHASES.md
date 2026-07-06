@@ -261,10 +261,15 @@ William Friedkin's *Sorcerer* (1977) — warm amber headlights in rain, 35mm gra
 
 **Ethos:** C1, C7 — word of mouth mechanics (public ratings, sharing-ready accounts) and delight (style picker).
 
-> **Status (2026-07-05):** Auth (magic link + JWT + WebAuthn passkeys), `users`/
-> `magic_tokens`/`watchlist` tables, watchlist CRUD + UI all shipped. The only
-> unshipped item is the **CSS-var style picker (8d)** — deferred in favour of the
-> Pedrilha rebrand + PT/EN bilingual work. The CSS-var refactor prerequisite is done.
+> **Status (2026-07-05, corrected):** Auth (magic link + JWT + WebAuthn passkeys),
+> `users`/`magic_tokens`/`watchlist` tables, watchlist CRUD + UI all shipped. Two
+> items remain unshipped, not one as previously stated here: the **CSS-var style
+> picker (8d)** — deferred in favour of the Pedrilha rebrand + PT/EN bilingual
+> work (CSS-var refactor prerequisite is done) — and the **public
+> `avg_user_rating`/`rating_count` aggregate on movie API responses (8c)**,
+> which does not exist anywhere in the codebase despite being named a Phase 8c
+> decision. Per-user ratings are stored (`watchlist.user_rating`); only the
+> public aggregate was never built.
 
 ### Architectural Decisions (confirmed 2026-06-23)
 
@@ -294,24 +299,24 @@ Format: `/movie/mv16` — `mv` prefix + base36 integer (e.g. ID 42 → `mv16`).
 ### Implementation Order
 1. [x] CSS variable refactor (foundation — blocks all UI work)
 2. [x] Opaque prefixed ID routing (`mv` prefix + base36 in router + all link hrefs)
-3. [ ] DB migrations: `users`, `magic_tokens`, `watchlist` tables
-4. [ ] API: magic link send/verify endpoints, JWT session middleware
-5. [ ] API: `GET/POST /api/watchlist`, `GET /api/movies/:id` with `avg_user_rating`
-6. [ ] Frontend: auth flow (email input → magic link sent → token verify → session)
-7. [ ] Frontend: watchlist toggle on MovieCard + WatchlistPage
-8. [ ] Frontend: style picker component (CSS var swap + localStorage persistence)
+3. [x] DB migrations: `users`, `magic_tokens`, `watchlist` tables
+4. [x] API: magic link send/verify endpoints, JWT session middleware
+5. [x] API: `GET/POST /api/watchlist`, `GET /api/movies/:id` with `avg_user_rating`
+6. [x] Frontend: auth flow (email input → magic link sent → token verify → session)
+7. [x] Frontend: watchlist toggle on MovieCard + WatchlistPage
+8. [ ] Frontend: style picker component (CSS var swap + localStorage persistence) — only unshipped item, see Status note above
 
 ### Deliverables
-- [ ] `users` table — id (UUID), email, created_at, last_login
-- [ ] `magic_tokens` table — token (UUID), user_id FK, expires_at, used_at
-- [ ] `watchlist` table — user_id FK, movie_id FK, state, user_rating (1–10 nullable), created_at, updated_at
-- [ ] `avg_user_rating` + `rating_count` on movie API responses
-- [ ] Auth middleware (JWT Bearer token, 30-day session)
-- [ ] `POST /api/auth/magic` — send magic link
-- [ ] `GET /api/auth/verify?token=` — verify token, return JWT
-- [ ] `GET/POST/DELETE /api/watchlist`
-- [ ] Frontend auth flow + watchlist UI
+- [x] `users` table — id (UUID), email, created_at, last_login (also gained `username`, see Phase 11)
+- [x] `magic_tokens` table — token (UUID), user_id FK, expires_at, used_at
+- [x] `watchlist` table — user_id FK, movie_id FK, state, user_rating (1–10 nullable), created_at, updated_at (also gained `via_rec_id`, see Phase 11)
+- [x] Auth middleware (JWT Bearer token) — also gained WebAuthn passkey support, beyond original scope
+- [x] `POST /api/auth/magic` — send magic link
+- [x] `GET /api/auth/verify?token=` — verify token, return JWT
+- [x] `GET/POST/DELETE /api/watchlist`
+- [x] Frontend auth flow + watchlist UI
 - [ ] Style picker with CSS var switching
+- [ ] `avg_user_rating` + `rating_count` on movie API responses — confirmed NOT shipped (no match anywhere in `crates/` as of 2026-07-05). Per-user `user_rating` (1–10, in `watchlist`) exists and is stored, but the public aggregate described in 8c was never surfaced on `Movie`/`MovieSummary`. Gap, not done — the Phase 8 Status note above overstates completeness on this point.
 
 ---
 
@@ -331,7 +336,7 @@ Format: `/movie/mv16` — `mv` prefix + base36 integer (e.g. ID 42 → `mv16`).
 | TMDB watch-providers (JustWatch data) | Streaming availability source (Phase 10) | Same trait-style boundary. **JustWatch attribution is a hard ToS requirement** — visible "Streaming data by JustWatch" wherever the data renders, or API access is revoked. No per-title deep links available; link to the TMDB watch page. |
 | Hostinger SMTP | Email sending | `SMTP_HOST/PORT/USER/PASS` in env — any provider works |
 | Turso/libSQL | Database | Intentional — accepted |
-| Leptos 0.7 | Frontend framework | No abstraction needed — it's Rust, not a SaaS |
+| Leptos 0.8 | Frontend framework | No abstraction needed — it's Rust, not a SaaS |
 | Axum 0.8 | HTTP server | No abstraction needed |
 
 ### Rule for Future Features
@@ -363,21 +368,26 @@ Until a second source is actually needed, keep the concrete implementations — 
 
 **Ethos:** C2, C8 — trust holds under load: the site stays great when a friend's friend shows up.
 
-> **Status (2026-07-05):** Rate limiting, CORS, log rotation, JWT CVE patch, GitHub
-> Actions deploy workflow + self-hosted Docker runners, and the Docker build fix all
-> shipped. Remaining: structured error responses, `/api/v1` versioning, health-check
-> DB probe, HTTPS/reverse-proxy docs, and a multi-arch (amd64+arm64) build.
+> **Status (2026-07-05, corrected):** Rate limiting, CORS, log rotation, JWT CVE
+> patch, GitHub Actions deploy workflow + self-hosted runners, and the Docker
+> build fix all shipped. Auth is live in the public/VPS deployment path (Phase
+> 8). HTTPS/reverse-proxy is also done, not remaining as previously stated
+> here: `deploy/install.sh` provisions Caddy with automatic TLS, documented in
+> [README.md](README.md#deploy-to-vps) — the item below just hadn't been
+> checked off when that shipped. Actually remaining: structured error
+> responses, `/api/v1` versioning, health-check DB probe, and a multi-arch
+> (amd64+arm64) build.
 
 ### Deliverables
-- [ ] Rate limiting on API endpoints (tower middleware)
+- [x] Rate limiting on API endpoints (tower middleware)
 - [ ] Multi-arch Docker build (amd64 + arm64 for Raspberry Pi)
-- [ ] GitHub Actions deploy workflow
-- [ ] Fix Docker build: trunk "root package not found" (Task #25)
-- [ ] Authentication in public deployment
+- [x] GitHub Actions deploy workflow
+- [x] Fix Docker build: trunk "root package not found" (Task #25)
+- [x] Authentication in public deployment
+- [x] HTTPS termination for reverse-proxy setup — Caddy with auto TLS, via `deploy/install.sh`
 - [ ] Structured error responses (replace ad-hoc StatusCode returns)
 - [ ] API versioning (`/api/v1/...`)
 - [ ] Health check improvements (DB connectivity probe)
-- [ ] HTTPS termination guidance for reverse-proxy setup (nginx/Caddy)
 
 ---
 
@@ -407,7 +417,7 @@ Until a second source is actually needed, keep the concrete implementations — 
 
 #### Batch 1 — Schema + types · model: **Sonnet 5** ✅ DONE
 Mechanical, pattern-following (existing migrations/models are templates), but schema-final — review the DDL before merging.
-- [ ] Migration (next version in `crates/db/src/migrations.rs`):
+- [x] Migration (`crates/db/src/migrations.rs`, v7):
 ```sql
 CREATE TABLE movie_providers (
     movie_id INTEGER NOT NULL REFERENCES movies(id),
@@ -422,44 +432,44 @@ CREATE INDEX idx_mp_filter ON movie_providers(region, provider_id, access);
 CREATE TABLE provider_sync (movie_id INTEGER PRIMARY KEY REFERENCES movies(id), fetched_at TEXT NOT NULL, tmdb_link TEXT);
 CREATE TABLE user_providers (user_id INTEGER NOT NULL REFERENCES users(id), region TEXT NOT NULL, provider_id INTEGER NOT NULL, PRIMARY KEY (user_id, region, provider_id));
 ```
-- [ ] CRUD in `crates/db/src/models.rs`: replace-per-movie provider insert, distinct-providers query, filter join helper
-- [ ] `WatchBadge` + provider types in `crates/shared/src/types.rs`
+- [x] CRUD in `crates/db/src/models.rs`: replace-per-movie provider insert, distinct-providers query, filter join helper
+- [x] `WatchBadge` + provider types in `crates/shared/src/types.rs`
 - **Acceptance:** `cargo test --workspace` passes; migration idempotent on an existing DB.
 
 #### Batch 2 — Provider sync service · model: **Sonnet 5** ✅ DONE
 Close copy of `OmdbEnrichmentService` (chunking, progress logs) + `tmdb_sync.rs` client/rate-limit patterns.
-- [ ] `crates/api/src/services/provider_sync.rs` — `GET /movie/{tmdb_id}/watch/providers`, keep `results.US`/`results.BR`, replace that movie's rows, upsert `provider_sync.fetched_at`; skip movies fetched < 7 days ago
-- [ ] Hook into the 24h scheduled sync + `POST /api/admin/providers-sync` (202, `tokio::spawn`, `admin_busy`/`BusyGuard`, run_logs) + admin page button
+- [x] `crates/api/src/services/provider_sync.rs` — `GET /movie/{tmdb_id}/watch/providers`, keep `results.US`/`results.BR`, replace that movie's rows, upsert `provider_sync.fetched_at`; skip movies fetched < 7 days ago
+- [x] Hook into the 24h scheduled sync + `POST /api/admin/providers-sync` (202, `tokio::spawn`, `admin_busy`/`BusyGuard`, run_logs) + admin page button
 - **Acceptance:** run against live DB; `movie_providers` populated for both regions; spot-check 2 movies against themoviedb.org watch pages.
 
 #### Batch 3 — Filter API · model: **Opus 4.8 (or Fable 5)** ✅ DONE (in-memory, not SQL — see note)
 Correctness-critical: SQL filter semantics across three endpoints + response shape change.
-- [ ] `GET /api/providers?region=` — distinct providers with `access IN ('flatrate','free','ads')`, name/logo/count, ordered by count desc
-- [ ] Extend `/api/gems`, `/api/acclaimed`, `/api/wildcards` (shared query layer) with `region`, `providers=` (csv TMDB ids), `rentals=1`. Match rule: (`access IN ('flatrate','free','ads')` AND provider selected) OR (`rentals=1` AND `access IN ('rent','buy')`, any provider)
-- [ ] Filter active ⇒ each `MovieSummary` carries `watch_badge` (best match, included preferred over rent)
-- [ ] Extend `GET /api/movies/{id}` with both regions' providers grouped by tier + `tmdb_link`
+- [x] `GET /api/providers?region=` — distinct providers with `access IN ('flatrate','free','ads')`, name/logo/count, ordered by count desc
+- [x] Extend `/api/gems`, `/api/acclaimed`, `/api/wildcards` with `region`, `providers=` (csv TMDB ids), `rentals=1`. **Implemented as fetch-then-filter in `crates/api/src/main.rs` (`WatchFilter::resolve`/`.passes()`/`.badge()`), not as a SQL WHERE/join against `movie_providers`** — the provider map for the region is loaded once per request (cached) and matched in-memory against already-queried rows, before pagination is applied. Functionally correct (verified against the match-rule semantics and confirmed pagination totals are computed post-filter) but doesn't push the filter down to SQL as the batch originally specified — worth revisiting if catalog size makes the per-request full-table fetch expensive.
+- [x] Filter active ⇒ each `MovieSummary` carries `watch_badge` (best match, included preferred over rent)
+- [x] Extend `GET /api/movies/{id}` with both regions' providers grouped by tier + `tmdb_link`
 - **Acceptance:** integration test per semantics rule — selected-service flatrate ✓, unselected flatrate ✗, rental without toggle ✗, rental with toggle ✓ regardless of selection; pagination counts correct under filter.
 
 #### Batch 4 — Filter UI · model: **Opus 4.8 (or Fable 5)** ✅ DONE
 Leptos reactivity is fiddly (see FIX-46/47 above) — strongest model here. **Depends on Batch 2 having run** (picker data).
-- [ ] "What can I watch?" panel on list pages: region toggle (default PT→BR, EN→US), provider logo grid from `/api/providers` (`https://image.tmdb.org/t/p/w45{logo_path}`), "+ include rentals" toggle with explainer, clear-all, JustWatch attribution line
-- [ ] localStorage persistence (`gf_watch_region`, `gf_watch_providers_us`, `gf_watch_providers_br`, `gf_watch_rentals`), following the `gf_lang` pattern
-- [ ] Card badges from `watch_badge`; always-visible active-filter chip (count + clear); helpful empty state
-- [ ] i18n (Dict + EN + PT): `filter_watchable`, `filter_region`, `filter_include_rentals`, `filter_rentals_hint`, `filter_clear`, `filter_active_chip` (`{}` count), `filter_empty_hint`, `badge_included`, `badge_rent`, `providers_attribution`
+- [x] "What can I watch?" panel on list pages: region toggle (default PT→BR, EN→US), provider logo grid from `/api/providers` (`https://image.tmdb.org/t/p/w45{logo_path}`), "+ include rentals" toggle with explainer, clear-all, JustWatch attribution line
+- [x] localStorage persistence (`gf_watch_region`, `gf_watch_providers_us`, `gf_watch_providers_br`, `gf_watch_rentals`), following the `gf_lang` pattern
+- [x] Card badges from `watch_badge`; always-visible active-filter chip (count + clear); helpful empty state
+- [x] i18n (Dict + EN + PT): `filter_watchable`, `filter_region`, `filter_include_rentals`, `filter_rentals_hint`, `filter_clear`, `filter_active_chip` (`{}` count), `filter_empty_hint`, `badge_included`, `badge_rent`, `providers_attribution`
 - **Acceptance:** anonymous flow works end-to-end; selections survive reload; language switch flips region default and labels.
 
 #### Batch 5 — Detail page + Stremio · model: **Sonnet 5** ✅ DONE
-- [ ] Detail page: providers grouped "Included with" / "Free with ads" / "Rent or buy" for the active region, linking to `tmdb_link`; JustWatch attribution; fallback to the existing JustWatch search link when no data
-- [ ] "Open in Stremio" button in the external-links row (frontend-only):
+- [x] Detail page: providers grouped "Included with" / "Free with ads" / "Rent or buy" for the active region, linking to `tmdb_link`; JustWatch attribution; fallback to the existing JustWatch search link when no data
+- [x] "Open in Stremio" button in the external-links row (frontend-only):
   - with `imdb_id`: `stremio:///detail/movie/{imdb_id}/{imdb_id}` (Stremio's movie ids are IMDb ids via Cinemeta)
   - without `imdb_id`: `stremio:///search?search={title}`
   - protocol links no-op silently when Stremio isn't installed (handlers undetectable from JS) — small secondary "web" link to `https://web.stremio.com/#/detail/movie/{imdb_id}` (or `#/search?search={title}`)
-- [ ] i18n: `providers_included_with`, `providers_free_ads`, `providers_rent_buy`, `detail_open_stremio` ("Open in Stremio" / "Abrir no Stremio"), `detail_stremio_web`
+- [x] i18n: `providers_included_with`, `providers_free_ads`, `providers_rent_buy`, `detail_open_stremio` ("Open in Stremio" / "Abrir no Stremio"), `detail_stremio_web`
 - **Acceptance:** a title flatrate on one service and rentable on another appears in both groups; attribution visible; Stremio deep link opens the correct title in the installed app; search fallback used when `imdb_id` is missing.
 
 #### Batch 6 — Signed-in sync · model: **Sonnet 5** ✅ DONE
-- [ ] `GET/PUT /api/user/providers` (JWT middleware, same as watchlist; PUT replaces)
-- [ ] Frontend: push on change when signed in; hydrate from server when localStorage is empty; last-write-wins; zero sign-in nudges for anonymous users
+- [x] `GET/PUT /api/user/providers` (JWT middleware, same as watchlist; PUT replaces)
+- [x] Frontend: push on change when signed in; hydrate from server when localStorage is empty; last-write-wins; zero sign-in nudges for anonymous users
 - **Acceptance:** two-browser test — selections made signed-in on one browser hydrate on the other.
 
 ---
@@ -524,7 +534,7 @@ shared (types + constants)
 
 | Crate | Version | Notes |
 |---|---|---|
-| leptos | 0.7.x | CSR mode |
+| leptos | 0.8.x | CSR mode |
 | axum | 0.8.x | Tokio-native |
 | turso | 0.7.0-pre.10 | SQLite + sync |
 | tokio | 1.x | Async runtime |

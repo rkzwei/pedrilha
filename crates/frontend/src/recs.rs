@@ -463,7 +463,7 @@ pub fn RecLandingPage() -> impl IntoView {
                                     <button
                                         class="px-4 py-2.5 rounded text-sm bg-sc-accent-bg text-stone-100 border border-sc-accent-border disabled:opacity-50"
                                         prop:disabled=move || claiming.get()
-                                        on:click=want_to_watch.clone()
+                                        on:click=want_to_watch
                                     >{move || d().rec_want_to_watch}</button>
                                 }.into_any(),
                                 None => view! {
