@@ -193,7 +193,14 @@ pub async fn trigger_sync(
                 )
                 .await
             }
-            Err(e) => log("error", "sync_failed", format!("acclaimed candidates: {}", e)).await,
+            Err(e) => {
+                log(
+                    "error",
+                    "sync_failed",
+                    format!("acclaimed candidates: {}", e),
+                )
+                .await
+            }
         }
 
         // Sync added new movies — movie list cache is stale.

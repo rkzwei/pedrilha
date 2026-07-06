@@ -501,7 +501,8 @@ async fn migrate_v9(conn: &Connection) -> Result<()> {
     )
     .await?;
 
-    conn.execute("DROP TABLE big_hits", turso::params![]).await?;
+    conn.execute("DROP TABLE big_hits", turso::params![])
+        .await?;
     conn.execute(
         "ALTER TABLE big_hits_new RENAME TO big_hits",
         turso::params![],

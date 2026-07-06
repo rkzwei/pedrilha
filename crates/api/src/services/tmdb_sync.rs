@@ -733,9 +733,15 @@ mod tests {
         svc.sync_blockbusters(&conn).await.unwrap();
 
         // big_hit recorded by tmdb_id …
-        assert_eq!(models::get_big_hit_dates(&conn).await.unwrap(), vec!["1994-09-10"]);
+        assert_eq!(
+            models::get_big_hit_dates(&conn).await.unwrap(),
+            vec!["1994-09-10"]
+        );
         // … and NO movie stub was created.
-        assert_eq!(models::get_movie_imdb_status(&conn, 680).await.unwrap(), None);
+        assert_eq!(
+            models::get_movie_imdb_status(&conn, 680).await.unwrap(),
+            None
+        );
     }
 
     fn omdb_body(title: &str, rating: &str, votes: &str, rt: &str) -> serde_json::Value {
