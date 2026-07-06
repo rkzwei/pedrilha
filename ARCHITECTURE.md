@@ -215,7 +215,7 @@ Tracks applied migration versions (`v1`–`v8` currently). `version INTEGER PK`,
 | `popularity_score` | REAL |
 
 ### `acclaimed`
-Films with IMDb ≥ 8.0 AND RT critic ≥ 80%. Populated by `classify_acclaimed_films()` after OMDb enrichment. Browsable separately from hidden gems.
+Films with IMDb ≥ 8.0 AND (RT critic ≥ 80% OR audience-canonized: ≥ 500k IMDb votes and ≥ 20 years old). The audience branch admits critic-snubbed monuments like Forrest Gump (RT 71%). Populated by `classify_acclaimed_films()` after OMDb enrichment. Browsable separately from hidden gems.
 
 | Column | Type |
 |---|---|

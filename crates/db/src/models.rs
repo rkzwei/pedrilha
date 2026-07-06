@@ -456,12 +456,20 @@ pub async fn get_movies_needing_enrichment(
 // ──────────────────────────────────────────────
 
 /// Populate the `acclaimed` table from movies that meet the quality threshold:
-/// IMDb ≥ 8.0 AND RT critic ≥ 80.
+/// IMDb ≥ 8.0 AND (RT critic ≥ 80 OR audience-canonized: ≥ 500k votes and ≥ 20
+/// years old). The audience branch admits critic-snubbed monuments like
+/// Forrest Gump (RT 71%) without lowering the RT bar for everything else.
 ///
 /// INSERT OR IGNORE is idempotent — safe to call repeatedly.
 /// Returns the number of rows newly inserted.
-pub async fn classify_acclaimed_films(conn: &Connection) -> Result<i64> {
-    use gem_finder_shared::constants::{ACCLAIMED_MIN_IMDB, ACCLAIMED_MIN_RT};
+pub async fn classify_acclaimed_films(conn: &Connection, current_year: i32) -> Result<i64> {
+    use gem_finder_shared::constants::{
+        ACCLAIMED_MIN_IMDB, ACCLAIMED_MIN_RT, CLASSIC_MIN_AGE_YEARS, CLASSIC_MIN_VOTES,
+    };
+
+    // A film qualifies for the audience branch only if it has survived
+    // CLASSIC_MIN_AGE_YEARS of audience judgment.
+    let classic_cutoff_year = current_year - CLASSIC_MIN_AGE_YEARS;
 
     // Franchise/MCU keyword exclusions.
     // Spider-Verse is kept via the carve-out (NOT LIKE '%spider-verse%').
@@ -477,6 +485,15 @@ pub async fn classify_acclaimed_films(conn: &Connection) -> Result<i64> {
       AND COALESCE(keywords, '') NOT LIKE '%walt disney animation%'
       AND COALESCE(keywords, '') NOT LIKE '%dreamworks animation%'";
 
+    // Shared quality gate: critic branch (RT ≥ threshold) OR audience branch
+    // (massive vote count + survived CLASSIC_MIN_AGE_YEARS).
+    let gate = format!(
+        "imdb_rating >= {}
+           AND (rt_critic_score >= {}
+                OR (imdb_vote_count >= {} AND year <= {}))",
+        ACCLAIMED_MIN_IMDB, ACCLAIMED_MIN_RT, CLASSIC_MIN_VOTES, classic_cutoff_year
+    );
+
     // Remove stale entries: scores dropped below threshold, or keywords now match
     // the franchise exclusion list.
     conn.execute(
@@ -484,11 +501,10 @@ pub async fn classify_acclaimed_films(conn: &Connection) -> Result<i64> {
             "DELETE FROM acclaimed
              WHERE movie_id NOT IN (
                  SELECT id FROM movies
-                 WHERE imdb_rating >= {}
-                   AND rt_critic_score >= {}
+                 WHERE {}
                    {}
              )",
-            ACCLAIMED_MIN_IMDB, ACCLAIMED_MIN_RT, kw
+            gate, kw
         ),
         turso::params![],
     )
@@ -498,10 +514,9 @@ pub async fn classify_acclaimed_films(conn: &Connection) -> Result<i64> {
         &format!(
             "INSERT OR IGNORE INTO acclaimed (movie_id)
              SELECT id FROM movies
-             WHERE imdb_rating >= {}
-               AND rt_critic_score >= {}
+             WHERE {}
                {}",
-            ACCLAIMED_MIN_IMDB, ACCLAIMED_MIN_RT, kw
+            gate, kw
         ),
         turso::params![],
     )

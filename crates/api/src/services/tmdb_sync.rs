@@ -530,8 +530,9 @@ impl TmdbSyncService {
     /// Sync acclaimed candidates: highly-rated movies that may qualify for the acclaimed table.
     ///
     /// Targets films with TMDB vote_average ≥ 7.5 and vote_count ≥ 5,000.
-    /// After this sync, `classify_acclaimed_films` applies the IMDb ≥ 8.0 / RT ≥ 80
-    /// threshold to populate the acclaimed table itself.
+    /// After this sync, `classify_acclaimed_films` applies the acclaimed gate —
+    /// IMDb ≥ 8.0 AND (RT ≥ 80 OR audience-canonized: ≥ 500k votes, ≥ 20 years
+    /// old) — to populate the acclaimed table itself.
     ///
     /// Exhausts all available pages using wave-based rate limiting (same as `sync_movies`).
     pub async fn sync_acclaimed_candidates(&self, conn: &Connection) -> Result<usize> {

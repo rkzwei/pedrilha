@@ -8,6 +8,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     Json,
 };
+use chrono::Datelike;
 use gem_finder_db::models;
 use serde::Deserialize;
 use std::env;
@@ -305,7 +306,7 @@ pub async fn trigger_score(
         }
 
         // Classify acclaimed after scoring
-        match models::classify_acclaimed_films(&conn).await {
+        match models::classify_acclaimed_films(&conn, chrono::Utc::now().year()).await {
             Ok(n) => {
                 let _ = models::insert_run_log(
                     &conn,

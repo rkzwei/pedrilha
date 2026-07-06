@@ -7,6 +7,7 @@ use axum::{
 mod middleware;
 mod routes;
 mod services;
+use chrono::Datelike;
 use gem_finder_db::{migrations, models, Database};
 use gem_finder_shared::types::{
     HealthResponse, Movie, MovieProvider, MovieSummary, PaginatedResponse, ProviderInfo,
@@ -721,7 +722,12 @@ async fn main() {
                     if let Err(e) = crate::services::gem_score::run_batch_scoring(&conn).await {
                         tracing::warn!("scheduled_sync: scoring failed: {}", e);
                     }
-                    if let Err(e) = gem_finder_db::models::classify_acclaimed_films(&conn).await {
+                    if let Err(e) = gem_finder_db::models::classify_acclaimed_films(
+                        &conn,
+                        chrono::Utc::now().year(),
+                    )
+                    .await
+                    {
                         tracing::warn!("scheduled_sync: classify acclaimed failed: {}", e);
                     }
                     if let Err(e) = gem_finder_db::models::classify_wildcards(&conn).await {
@@ -995,7 +1001,7 @@ async fn run_seed_test_data() {
 
     // Step 5b: Classify acclaimed films (populate acclaimed table from enriched movies)
     tracing::info!("Classifying acclaimed films...");
-    match models::classify_acclaimed_films(&conn).await {
+    match models::classify_acclaimed_films(&conn, chrono::Utc::now().year()).await {
         Ok(count) => {
             println!("--- Acclaimed Classification ---");
             println!("  {} films in acclaimed table\n", count);

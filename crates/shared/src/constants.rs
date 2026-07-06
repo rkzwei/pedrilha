@@ -38,6 +38,17 @@ pub const ACCLAIMED_MIN_IMDB: f64 = 8.0;
 /// films like The Godfather, Schindler's List, Parasite, etc.
 pub const ACCLAIMED_MIN_RT: i32 = 80;
 
+/// Audience-canonization branch of the "acclaimed" gate: films that critics
+/// under-rated (RT < ACCLAIMED_MIN_RT) but audiences canonized over decades —
+/// Forrest Gump (IMDb 8.8, RT 71%), Fight Club (8.8, 79%). Requires a massive
+/// vote count so only true audience monuments qualify.
+pub const CLASSIC_MIN_VOTES: i64 = 500_000;
+
+/// Minimum age (in years) for the audience-canonization branch. A film must
+/// survive 20 years of audience judgment to count as a classic — this keeps
+/// recency-hyped blockbusters out no matter how many votes they have.
+pub const CLASSIC_MIN_AGE_YEARS: i32 = 20;
+
 /// Minimum IMDb rating for RT-endorsed films (RT ≥ RT_ENDORSEMENT_THRESHOLD).
 ///
 /// Films with strong critic backing can score even if their crowd rating falls below
