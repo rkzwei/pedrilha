@@ -283,6 +283,7 @@ pub struct Dict {
 
     // ── Recommendations (Ethos C1) ─────────────────────────────────────────
     pub nav_recs: &'static str,
+    pub rec_signin_cta: &'static str,
     pub rec_button: &'static str,
     pub rec_modal_title: &'static str,
     pub rec_note_placeholder: &'static str,
@@ -526,7 +527,8 @@ pub const EN: Dict = Dict {
     changelog_h1: "Changelog",
     changelog_desc: "Notable changes to Pedrilha.",
 
-    nav_recs: "Recommendations",
+    nav_recs: "RECOMMENDATIONS",
+    rec_signin_cta: "Sign in to recommend",
     rec_button: "Recommend to a friend",
     rec_modal_title: "Recommend this movie",
     rec_note_placeholder: "Add a note (optional) — \"you have to see this\"",
@@ -770,7 +772,8 @@ pub const PT: Dict = Dict {
     changelog_h1: "Novidades",
     changelog_desc: "Mudanças importantes no Pedrilha.",
 
-    nav_recs: "Recomendações",
+    nav_recs: "RECOMENDAÇÕES",
+    rec_signin_cta: "Entre para recomendar",
     rec_button: "Recomendar para um amigo",
     rec_modal_title: "Recomendar esse filme",
     rec_note_placeholder: "Deixe um recado (opcional) — \"você precisa ver isso\"",

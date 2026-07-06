@@ -265,12 +265,20 @@ pub fn RecommendButton(movie_id: i64) -> impl IntoView {
 
     view! {
         <div>
-            {move || auth.get().is_some().then(|| view! {
-                <button
-                    class="px-3 py-1.5 rounded text-sm text-stone-400 border border-sc-border hover:border-sc-accent-border hover:text-stone-200"
-                    on:click=open
-                >{move || d().rec_button}</button>
-            })}
+            {move || match auth.get() {
+                Some(_) => view! {
+                    <button
+                        class="px-3 py-1.5 rounded text-sm text-stone-400 border border-sc-border hover:border-sc-accent-border hover:text-stone-200"
+                        on:click=open
+                    >{move || d().rec_button}</button>
+                }.into_any(),
+                None => view! {
+                    <A
+                        href="/signin"
+                        attr:class="inline-block px-3 py-1.5 rounded text-sm text-stone-400 border border-sc-border hover:border-sc-accent-border hover:text-stone-200"
+                    >{move || d().rec_signin_cta}</A>
+                }.into_any(),
+            }}
 
             {move || match flow.get() {
                 RecFlow::Closed => view! { <span /> }.into_any(),

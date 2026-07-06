@@ -1589,6 +1589,10 @@ pub fn MovieDetail() -> impl IntoView {
                                 } else {
                                     view!{ <img src=poster alt=d().detail_poster_alt.replace("{}", &title) class="w-full rounded shadow-xl" /> }.into_any()
                                 }}
+                                // ── Recommend to a friend (Ethos C1) — sits under the poster ──
+                                <div class="mt-3">
+                                    <crate::recs::RecommendButton movie_id=movie_db_id />
+                                </div>
                             </div>
                             <div class="flex-1 min-w-0">
                                 <div class="flex flex-wrap gap-3 mb-6">
@@ -1835,11 +1839,6 @@ pub fn MovieDetail() -> impl IntoView {
                                             }.into_any()
                                         }
                                     }}
-                                </div>
-
-                                // ── Recommend to a friend (Ethos C1) ──────────────────
-                                <div class="mt-4">
-                                    <crate::recs::RecommendButton movie_id=movie_db_id />
                                 </div>
 
                                 // ── More like this — pure filter links ────────────────

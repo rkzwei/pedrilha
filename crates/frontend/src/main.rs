@@ -364,25 +364,50 @@ fn App() -> impl IntoView {
                                         .unwrap_or_else(|| {
                                             a.email.split('@').next().unwrap_or("user").to_string()
                                         });
+                                    // Account menu — declutters the header by tucking
+                                    // Recommendations / Watchlist / Sign out behind the
+                                    // username. Unread-rec badge surfaces on the trigger
+                                    // so notifications stay visible while collapsed.
+                                    let menu_open = RwSignal::new(false);
+                                    let close_menu = move |_: web_sys::MouseEvent| menu_open.set(false);
                                     view! {
-                                        <A href="/recs" attr:class="relative text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide aria-[current=page]:text-sc-accent aria-[current=page]:border-b-2 aria-[current=page]:border-sc-accent">
-                                            {move || d().nav_recs}
-                                            {move || (unread_recs.get() > 0).then(|| view! {
-                                                <span class="ml-1 px-1.5 rounded-full bg-sc-accent text-stone-900 text-[10px] font-bold align-top">
-                                                    {move || unread_recs.get()}
-                                                </span>
+                                        <div class="relative">
+                                            <button
+                                                class="flex items-center gap-1 text-stone-300 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide"
+                                                on:click=move |_| menu_open.update(|o| *o = !*o)
+                                            >
+                                                <span>{display}</span>
+                                                {move || (unread_recs.get() > 0).then(|| view! {
+                                                    <span class="px-1.5 rounded-full bg-sc-accent text-stone-900 text-[10px] font-bold">
+                                                        {move || unread_recs.get()}
+                                                    </span>
+                                                })}
+                                                <span class="text-stone-500 text-[10px]" aria-hidden="true">"▾"</span>
+                                            </button>
+                                            {move || menu_open.get().then(|| view! {
+                                                // Click-outside catcher — closes the menu.
+                                                <div class="fixed inset-0 z-[65]" on:click=close_menu></div>
+                                                <div class="absolute right-0 mt-2 py-1 min-w-[190px] bg-sc-panel border border-sc-border rounded shadow-xl z-[70] flex flex-col">
+                                                    <A href="/recs" on:click=close_menu attr:class="flex items-center justify-between px-4 py-2 text-stone-300 hover:text-stone-100 hover:bg-sc-card transition-colors text-xs sm:text-sm tracking-wide">
+                                                        <span>{move || d().nav_recs}</span>
+                                                        {move || (unread_recs.get() > 0).then(|| view! {
+                                                            <span class="ml-2 px-1.5 rounded-full bg-sc-accent text-stone-900 text-[10px] font-bold">
+                                                                {move || unread_recs.get()}
+                                                            </span>
+                                                        })}
+                                                    </A>
+                                                    <A href="/watchlist" on:click=close_menu attr:class="px-4 py-2 text-stone-300 hover:text-stone-100 hover:bg-sc-card transition-colors text-xs sm:text-sm tracking-wide">
+                                                        {move || d().nav_watchlist}
+                                                    </A>
+                                                    <button
+                                                        class="text-left px-4 py-2 text-stone-400 hover:text-stone-100 hover:bg-sc-card transition-colors text-xs sm:text-sm tracking-wide"
+                                                        on:click=move |_| { menu_open.set(false); logout(auth); }
+                                                    >
+                                                        {move || d().nav_signout}
+                                                    </button>
+                                                </div>
                                             })}
-                                        </A>
-                                        <A href="/watchlist" attr:class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide aria-[current=page]:text-sc-accent aria-[current=page]:border-b-2 aria-[current=page]:border-sc-accent">
-                                            {move || d().nav_watchlist}
-                                        </A>
-                                        <span class="hidden md:inline text-stone-500 text-xs sm:text-sm">{display}</span>
-                                        <button
-                                            class="text-stone-400 hover:text-stone-100 transition-colors text-xs sm:text-sm tracking-wide"
-                                            on:click=move |_| logout(auth)
-                                        >
-                                            {move || d().nav_signout}
-                                        </button>
+                                        </div>
                                     }.into_any()
                                 }
                                 None => {
