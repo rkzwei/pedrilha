@@ -43,7 +43,9 @@ async fn claim_creates_receipt_and_canonical_friendship() {
         .unwrap();
 
     let mut claim_conn = db.connect().await.unwrap();
-    let claimed = models::claim_rec(&mut claim_conn, "tok1", "user-aaa").await.unwrap();
+    let claimed = models::claim_rec(&mut claim_conn, "tok1", "user-aaa")
+        .await
+        .unwrap();
     assert!(claimed);
 
     // Friendship stored canonically: 'user-aaa' < 'user-bbb'
@@ -65,7 +67,10 @@ async fn claim_creates_receipt_and_canonical_friendship() {
     assert_eq!(received[0].sender_username, "bob");
     assert_eq!(received[0].note.as_deref(), Some("said it was great"));
     assert!(!received[0].read);
-    assert_eq!(models::unread_rec_count(&conn, "user-aaa").await.unwrap(), 1);
+    assert_eq!(
+        models::unread_rec_count(&conn, "user-aaa").await.unwrap(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -76,9 +81,13 @@ async fn double_claim_is_idempotent() {
         .await
         .unwrap();
     let mut c1 = db.connect().await.unwrap();
-    assert!(models::claim_rec(&mut c1, "tok2", "user-aaa").await.unwrap());
+    assert!(models::claim_rec(&mut c1, "tok2", "user-aaa")
+        .await
+        .unwrap());
     let mut c2 = db.connect().await.unwrap();
-    assert!(models::claim_rec(&mut c2, "tok2", "user-aaa").await.unwrap());
+    assert!(models::claim_rec(&mut c2, "tok2", "user-aaa")
+        .await
+        .unwrap());
     let received = models::get_received_recs(&conn, "user-aaa").await.unwrap();
     assert_eq!(received.len(), 1, "second claim must not duplicate");
 }
@@ -113,9 +122,13 @@ async fn multi_claim_fans_out() {
         .await
         .unwrap();
     let mut c1 = db.connect().await.unwrap();
-    models::claim_rec(&mut c1, "tok4", "user-aaa").await.unwrap();
+    models::claim_rec(&mut c1, "tok4", "user-aaa")
+        .await
+        .unwrap();
     let mut c2 = db.connect().await.unwrap();
-    models::claim_rec(&mut c2, "tok4", "user-ccc").await.unwrap();
+    models::claim_rec(&mut c2, "tok4", "user-ccc")
+        .await
+        .unwrap();
 
     let mut rows = conn
         .query("SELECT COUNT(*) FROM friendships", turso::params![])
@@ -162,15 +175,24 @@ async fn revoke_removes_receipts_keeps_friendship_and_watchlist() {
 
     // Non-sender cannot revoke
     let mut c2 = db.connect().await.unwrap();
-    assert!(!models::revoke_rec(&mut c2, "tok5", "user-aaa").await.unwrap());
+    assert!(!models::revoke_rec(&mut c2, "tok5", "user-aaa")
+        .await
+        .unwrap());
 
     // Sender revokes
     let mut c3 = db.connect().await.unwrap();
-    assert!(models::revoke_rec(&mut c3, "tok5", "user-bbb").await.unwrap());
+    assert!(models::revoke_rec(&mut c3, "tok5", "user-bbb")
+        .await
+        .unwrap());
 
     // Receipts gone, friendship persists, watchlist row persists untagged
-    assert!(models::get_received_recs(&conn, "user-aaa").await.unwrap().is_empty());
-    assert!(models::are_friends(&conn, "user-aaa", "user-bbb").await.unwrap());
+    assert!(models::get_received_recs(&conn, "user-aaa")
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(models::are_friends(&conn, "user-aaa", "user-bbb")
+        .await
+        .unwrap());
     let mut rows = conn
         .query(
             "SELECT via_rec_id FROM watchlist WHERE user_id='user-aaa'",
@@ -178,13 +200,20 @@ async fn revoke_removes_receipts_keeps_friendship_and_watchlist() {
         )
         .await
         .unwrap();
-    let row = rows.next().await.unwrap().expect("watchlist row must survive revoke");
+    let row = rows
+        .next()
+        .await
+        .unwrap()
+        .expect("watchlist row must survive revoke");
     assert!(
         matches!(row.get_value(0).unwrap(), turso::Value::Null),
         "via_rec_id must be NULL after revoke"
     );
     // Token now dead
-    assert!(models::get_rec_public(&conn, "tok5").await.unwrap().is_none());
+    assert!(models::get_rec_public(&conn, "tok5")
+        .await
+        .unwrap()
+        .is_none());
 }
 
 #[tokio::test]
@@ -192,7 +221,9 @@ async fn direct_rec_requires_no_link_and_marks_read_works() {
     let (db, conn) = setup().await;
     let mid = movie_id(&conn).await;
     // alice & bob become friends first (via a claimed rec)
-    models::create_share_rec(&conn, "user-bbb", mid, None, "tok6").await.unwrap();
+    models::create_share_rec(&conn, "user-bbb", mid, None, "tok6")
+        .await
+        .unwrap();
     let mut c = db.connect().await.unwrap();
     models::claim_rec(&mut c, "tok6", "user-aaa").await.unwrap();
 
@@ -201,10 +232,18 @@ async fn direct_rec_requires_no_link_and_marks_read_works() {
     models::create_direct_rec(&mut c2, "user-bbb", "user-aaa", mid, None, "tok7")
         .await
         .unwrap();
-    assert_eq!(models::unread_rec_count(&conn, "user-aaa").await.unwrap(), 2);
+    assert_eq!(
+        models::unread_rec_count(&conn, "user-aaa").await.unwrap(),
+        2
+    );
 
-    models::mark_rec_read(&conn, "tok7", "user-aaa").await.unwrap();
-    assert_eq!(models::unread_rec_count(&conn, "user-aaa").await.unwrap(), 1);
+    models::mark_rec_read(&conn, "tok7", "user-aaa")
+        .await
+        .unwrap();
+    assert_eq!(
+        models::unread_rec_count(&conn, "user-aaa").await.unwrap(),
+        1
+    );
 
     // sent list shows both with claim counts
     let sent = models::get_sent_recs(&conn, "user-bbb").await.unwrap();
@@ -222,16 +261,24 @@ async fn direct_rec_requires_no_link_and_marks_read_works() {
 async fn username_lookups() {
     let (_db, conn) = setup().await;
     assert_eq!(
-        models::get_username(&conn, "user-aaa").await.unwrap().as_deref(),
+        models::get_username(&conn, "user-aaa")
+            .await
+            .unwrap()
+            .as_deref(),
         Some("alice")
     );
     assert_eq!(models::get_username(&conn, "user-ccc").await.unwrap(), None);
     assert_eq!(
-        models::get_user_id_by_username(&conn, "bob").await.unwrap().as_deref(),
+        models::get_user_id_by_username(&conn, "bob")
+            .await
+            .unwrap()
+            .as_deref(),
         Some("user-bbb")
     );
     assert_eq!(
-        models::get_user_id_by_username(&conn, "nobody").await.unwrap(),
+        models::get_user_id_by_username(&conn, "nobody")
+            .await
+            .unwrap(),
         None
     );
 }
@@ -240,7 +287,9 @@ async fn username_lookups() {
 async fn watchlist_via_rec_token_exposes_recommended_by() {
     let (db, conn) = setup().await;
     let mid = movie_id(&conn).await;
-    models::create_share_rec(&conn, "user-bbb", mid, None, "tok8").await.unwrap();
+    models::create_share_rec(&conn, "user-bbb", mid, None, "tok8")
+        .await
+        .unwrap();
     let mut c = db.connect().await.unwrap();
     models::claim_rec(&mut c, "tok8", "user-aaa").await.unwrap();
 

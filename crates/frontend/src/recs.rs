@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use gem_finder_shared::id_encode::encode_movie_id;
-use gem_finder_shared::types::{FriendInfo, ReceivedRec, RecPublic, SentRec, WatchState};
+use gem_finder_shared::types::{FriendInfo, RecPublic, ReceivedRec, SentRec, WatchState};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_meta::Title;
@@ -35,7 +35,10 @@ fn window_origin() -> String {
 /// Modal backdrop + centered panel, shared by every non-Closed flow state.
 /// Clicking the backdrop (not the panel) closes; the panel stops propagation
 /// so clicks inside it don't bubble to the backdrop's close handler.
-fn modal_shell(on_close: impl Fn() + Copy + 'static, children: impl IntoView + 'static) -> impl IntoView {
+fn modal_shell(
+    on_close: impl Fn() + Copy + 'static,
+    children: impl IntoView + 'static,
+) -> impl IntoView {
     view! {
         <div
             style="position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.65);display:flex;align-items:center;justify-content:center;padding:16px"
@@ -421,7 +424,10 @@ pub fn RecLandingPage() -> impl IntoView {
             )
             .await;
             navigate.with_value(|nav| {
-                nav(&format!("/movie/{}", encode_movie_id(r.movie.id)), NavigateOptions::default())
+                nav(
+                    &format!("/movie/{}", encode_movie_id(r.movie.id)),
+                    NavigateOptions::default(),
+                )
             });
         });
     };
@@ -551,7 +557,10 @@ pub fn RecsPage() -> impl IntoView {
             let _ = api::mark_rec_read(&a.token, &token).await;
         });
         navigate.with_value(|nav| {
-            nav(&format!("/movie/{}", encode_movie_id(movie_id)), NavigateOptions::default())
+            nav(
+                &format!("/movie/{}", encode_movie_id(movie_id)),
+                NavigateOptions::default(),
+            )
         });
     };
 
@@ -585,7 +594,10 @@ pub fn RecsPage() -> impl IntoView {
             return;
         };
         if !web_sys::window()
-            .map(|w| w.confirm_with_message(d().rec_revoke_confirm).unwrap_or(false))
+            .map(|w| {
+                w.confirm_with_message(d().rec_revoke_confirm)
+                    .unwrap_or(false)
+            })
             .unwrap_or(false)
         {
             return;

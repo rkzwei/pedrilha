@@ -15,7 +15,10 @@ async fn insert_movie(conn: &turso::Connection, tmdb_id: i64, gem_score: Option<
     .await
     .unwrap();
     let mut rows = conn
-        .query("SELECT id FROM movies WHERE tmdb_id = ?1", turso::params![tmdb_id])
+        .query(
+            "SELECT id FROM movies WHERE tmdb_id = ?1",
+            turso::params![tmdb_id],
+        )
         .await
         .unwrap();
     let row = rows.next().await.unwrap().unwrap();
@@ -50,11 +53,23 @@ async fn acclaimed_and_wildcards_are_provider_sync_candidates() {
     let ids: Vec<i64> = candidates.iter().map(|(id, _)| *id).collect();
 
     assert!(ids.contains(&scored), "scored movie must be a candidate");
-    assert!(ids.contains(&acclaimed), "acclaimed movie must be a candidate");
-    assert!(ids.contains(&wildcard), "wildcard movie must be a candidate");
-    assert!(!ids.contains(&neither), "unscored non-acclaimed non-wildcard must NOT be a candidate");
+    assert!(
+        ids.contains(&acclaimed),
+        "acclaimed movie must be a candidate"
+    );
+    assert!(
+        ids.contains(&wildcard),
+        "wildcard movie must be a candidate"
+    );
+    assert!(
+        !ids.contains(&neither),
+        "unscored non-acclaimed non-wildcard must NOT be a candidate"
+    );
     // Scored movies come first (sync priority).
-    assert_eq!(ids[0], scored, "scored movies sort before acclaimed/wildcards");
+    assert_eq!(
+        ids[0], scored,
+        "scored movies sort before acclaimed/wildcards"
+    );
 }
 
 #[tokio::test]
@@ -77,5 +92,8 @@ async fn fresh_sync_excludes_candidate() {
     let candidates = models::get_movies_needing_provider_sync(&conn, 100)
         .await
         .unwrap();
-    assert!(candidates.is_empty(), "freshly synced movie must be skipped");
+    assert!(
+        candidates.is_empty(),
+        "freshly synced movie must be skipped"
+    );
 }

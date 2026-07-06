@@ -11,7 +11,7 @@ use axum::{
 };
 use gem_finder_db::models;
 use gem_finder_shared::types::{
-    validate_rec_note, FriendInfo, ReceivedRec, RecCreate, RecCreated, RecPublic, SentRec,
+    validate_rec_note, FriendInfo, RecCreate, RecCreated, RecPublic, ReceivedRec, SentRec,
 };
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -77,8 +77,12 @@ pub async fn create_rec(
         ));
     }
 
-    let note = clean_note(body.note)
-        .map_err(|msg| (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": msg }))))?;
+    let note = clean_note(body.note).map_err(|msg| {
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({ "error": msg })),
+        )
+    })?;
 
     let mut conn = state.db.connect().await.map_err(|_| internal())?;
 
@@ -110,7 +114,10 @@ pub async fn create_rec(
                 .await
                 .map_err(|_| internal())?
                 .ok_or_else(|| {
-                    (StatusCode::FORBIDDEN, Json(json!({ "error": "not_friends" })))
+                    (
+                        StatusCode::FORBIDDEN,
+                        Json(json!({ "error": "not_friends" })),
+                    )
                 })?;
             let friends = models::are_friends(&conn, &auth.0.sub, &recipient_id)
                 .await
@@ -118,7 +125,10 @@ pub async fn create_rec(
             if !friends {
                 // Same error for "no such user" and "not a friend" — no
                 // username-existence oracle beyond the public checker.
-                return Err((StatusCode::FORBIDDEN, Json(json!({ "error": "not_friends" }))));
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    Json(json!({ "error": "not_friends" })),
+                ));
             }
             models::create_direct_rec(
                 &mut conn,

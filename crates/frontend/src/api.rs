@@ -1,7 +1,7 @@
 use gem_finder_shared::types::{
     AuthResponse, FriendInfo, Movie, MovieSummary, PaginatedResponse, ProviderInfo, RecCreate,
-    RecCreated, RecPublic, ReceivedRec, SentRec, UsernameAvailability, UsernameUpdate,
-    UserProvidersPayload, WatchState, WatchlistEntry, WatchlistUpsert,
+    RecCreated, RecPublic, ReceivedRec, SentRec, UserProvidersPayload, UsernameAvailability,
+    UsernameUpdate, WatchState, WatchlistEntry, WatchlistUpsert,
 };
 use serde::Serialize;
 
@@ -584,7 +584,10 @@ pub async fn revoke_rec(token: &str, rec_token: &str) -> Result<(), String> {
     }
 }
 
-async fn get_authed<T: serde::de::DeserializeOwned>(token: &str, path: String) -> Result<T, String> {
+async fn get_authed<T: serde::de::DeserializeOwned>(
+    token: &str,
+    path: String,
+) -> Result<T, String> {
     reqwest::Client::new()
         .get(path)
         .header("Authorization", format!("Bearer {}", token))

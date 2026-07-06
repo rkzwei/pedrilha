@@ -1,6 +1,6 @@
 use anyhow::Result;
 use gem_finder_shared::types::{
-    FriendInfo, Movie, MovieProvider, MovieSummary, ProviderInfo, ReceivedRec, RecPublic,
+    FriendInfo, Movie, MovieProvider, MovieSummary, ProviderInfo, RecPublic, ReceivedRec,
     RegionProviders, RunLogEntry, SentRec, User, WatchState, WatchlistEntry,
 };
 use std::collections::HashMap;
@@ -1405,10 +1405,7 @@ fn row_to_movie_summary(row: &turso::Row) -> Result<MovieSummary> {
 
 pub async fn get_username(conn: &Connection, user_id: &str) -> Result<Option<String>> {
     let mut rows = conn
-        .query(
-            "SELECT username FROM users WHERE id = ?1",
-            params![user_id],
-        )
+        .query("SELECT username FROM users WHERE id = ?1", params![user_id])
         .await?;
     match rows.next().await? {
         Some(row) => Ok(value_to_opt_string(row.get_value(0)?)),
@@ -1563,11 +1560,8 @@ pub async fn revoke_rec(conn: &mut Connection, token: &str, sender_id: &str) -> 
         params![rec_id],
     )
     .await?;
-    tx.execute(
-        "DELETE FROM recommendations WHERE id = ?1",
-        params![rec_id],
-    )
-    .await?;
+    tx.execute("DELETE FROM recommendations WHERE id = ?1", params![rec_id])
+        .await?;
     tx.commit().await?;
     Ok(true)
 }

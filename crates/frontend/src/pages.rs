@@ -2230,7 +2230,10 @@ pub fn VerifyPage() -> impl IntoView {
                         username: None,
                         is_admin,
                     }));
-                    navigate(&next_val.unwrap_or_else(|| "/".to_string()), NavigateOptions::default());
+                    navigate(
+                        &next_val.unwrap_or_else(|| "/".to_string()),
+                        NavigateOptions::default(),
+                    );
                 }
                 Err(_) => {
                     set_status.set(d().verify_invalid.to_string());
@@ -2617,10 +2620,13 @@ pub fn WatchlistPage() -> impl IntoView {
                                 let state = entry.state.clone();
                                 let recommended_by = entry.recommended_by.clone();
                                 async move {
-                                    api::fetch_movie(&encoded)
-                                        .await
-                                        .ok()
-                                        .map(|movie| WatchlistItem { movie, state, recommended_by })
+                                    api::fetch_movie(&encoded).await.ok().map(|movie| {
+                                        WatchlistItem {
+                                            movie,
+                                            state,
+                                            recommended_by,
+                                        }
+                                    })
                                 }
                             })
                             .collect::<Vec<_>>();
