@@ -186,4 +186,10 @@ Auth variables (`JWT_SECRET`, `SMTP_*`, `WEBAUTHN_*`) are all optional. Leave un
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
+
+The MIT license covers this source code only. It does not grant any rights to the third-party data the app consumes. If you deploy your own instance, you are bound directly by those providers' terms:
+
+- **TMDB** — requires your own API key and adherence to the [TMDB API terms](https://www.themoviedb.org/api-terms-of-use). This product uses the TMDB API but is not endorsed or certified by TMDB.
+- **OMDb** — requires your own API key under the [OMDb terms](https://www.omdbapi.com/legal.htm).
+- **JustWatch** (streaming availability, served via the TMDB watch-providers endpoint) — a visible `Streaming data by JustWatch` attribution is mandatory wherever the data renders. Removing it is grounds for revoked access.

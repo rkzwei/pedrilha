@@ -341,7 +341,7 @@ Separate browsable category at `/api/acclaimed`. Not hidden gems — films every
 |---|---|---|
 | `TMDB_API_KEY` | Yes | Movie discovery |
 | `OMDB_API_KEY` | Yes | Ratings + critic scores |
-| `ADMIN_TOKEN` | Production | Bearer token for `/api/admin/*`; unprotected if unset |
+| `ADMIN_TOKEN` | Production | Bearer token for `/api/admin/*`. Admin routes always require credentials — with no valid admin JWT and no `ADMIN_TOKEN` set, requests are rejected, never allowed through |
 | `APP_URL` | Production | Public base URL, used in magic-link emails |
 | `CORS_ORIGINS` | Production | Comma-separated allowed origins; empty = permissive (dev only) |
 | `SERVE_FRONTEND` | Production | Set to `1` to serve compiled WASM from `dist/` |

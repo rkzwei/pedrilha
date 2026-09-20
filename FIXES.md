@@ -169,7 +169,7 @@ integration for `/` and `/movie/{id}` routes.
 | FIX-10 | gem_score display misleading | ✅ done — `pages.rs` shows "GEM 80%" format |
 | FIX-11 | Leptos version mismatch in docs | ✅ done — `ARCHITECTURE.md` corrected to 0.7.x |
 | FIX-12 | SEEDED_GEMS never seeded | ✅ done — `seed_known_gems` in `tmdb_sync.rs` uses TMDB `/find` by IMDb ID; called as Phase C of admin sync |
-| FIX-13 | Admin sync unauthenticated | ✅ done — `check_admin_token` in `admin.rs` reads `ADMIN_TOKEN` env var; open in dev if unset |
+| FIX-13 | Admin sync unauthenticated | ✅ done — `check_admin_token` in `admin.rs` accepts an `is_admin` JWT, else falls back to the `ADMIN_TOKEN` env var. Fails closed: missing header → 401, non-admin JWT → 403, unset `ADMIN_TOKEN` with no valid JWT → 500. Never open. |
 | FIX-14 | No static file serving in API | ✅ done — added `ServeDir` + `ServeFile` fallback in `main.rs` gated on `SERVE_FRONTEND` env var; `tower-http` `fs` feature added to `Cargo.toml`. `dist/index.html` served as SPA fallback for all unmatched paths. |
 | FIX-15 | `tailwind.css` not built in CI | ✅ done — split CI into `backend` and `frontend` jobs; `frontend` job installs `wasm32-unknown-unknown` target via `dtolnay/rust-toolchain`, `trunk` via `jetli/trunk-action`, runs `trunk build --release`. CSS step is conditional on `package.json`. Backend job uses `--test-threads=1`. |
 | FIX-16 | Leptos router not wired | ✅ done — `main.rs` wrapped in `<Router>`, `<Routes>` added with `/` → `HomePage`, `/acclaimed` → `AcclaimedPage`, `/movie/:id` → `MovieDetail`. `MovieDetail` reads `:id` param via `use_params_map`, fetches full `Movie`, shows poster/scores/genre tags/overview/IMDb link. |
