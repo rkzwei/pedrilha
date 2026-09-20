@@ -5,6 +5,18 @@ Versions follow semver. Pre-1.0, features and fixes bump the **patch** (`0.3.0` 
 the **minor** (`0.4.0`) is reserved for milestones and breaking changes. Cut a milestone
 with a `Release-As: 0.X.0` commit footer.
 
+## [0.4.7](https://github.com/rkzwei/gem-finder/compare/v0.4.6...v0.4.7) (2026-09-20)
+
+
+### Features
+
+* **frontend:** add Sync Acclaimed button to admin panel ([3969917](https://github.com/rkzwei/gem-finder/commit/396991754770cc96e2761eaa8a474a5f79ba197e))
+
+
+### Documentation
+
+* add MIT LICENSE file, third-party data terms, correct admin-auth docs ([76e0211](https://github.com/rkzwei/gem-finder/commit/76e021189e56b93d674f03d82dd4729fd5d87f8b))
+
 ## [0.4.6](https://github.com/rkzwei/gem-finder/compare/v0.4.5...v0.4.6) (2026-07-06)
 
 
