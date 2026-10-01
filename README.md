@@ -46,7 +46,7 @@ cd gem-finder
 
 ```bash
 cp SECRETS.env.example SECRETS.env
-nano SECRETS.env
+${EDITOR:-nano} SECRETS.env
 ```
 
 Minimum required values:
