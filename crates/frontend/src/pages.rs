@@ -84,6 +84,22 @@ fn urlenc(s: &str) -> String {
     String::from(js_sys::encode_uri_component(s))
 }
 
+/// True when the browser says there is a previous history entry.
+fn can_go_back() -> bool {
+    let Some(win) = web_sys::window() else {
+        return false;
+    };
+    let nav =
+        js_sys::Reflect::get(&win, &JsValue::from_str("navigation")).unwrap_or(JsValue::UNDEFINED);
+    if nav.is_undefined() || nav.is_null() {
+        return true;
+    }
+    js_sys::Reflect::get(&nav, &JsValue::from_str("canGoBack"))
+        .ok()
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true)
+}
+
 // ── URL builder ───────────────────────────────────────────────────────────────
 fn build_url(
     path: &str,
@@ -1502,15 +1518,18 @@ pub fn MovieDetail() -> impl IntoView {
                 }
             }).unwrap_or_else(|| "Pedrilha".to_string())
         } />
+
         <div class="max-w-4xl mx-auto px-4 py-8">
-            <button
-                class="text-sc-accent hover:text-sc-accent-hover text-sm mb-6 inline-block bg-transparent border-none cursor-pointer p-0"
-                on:click=|_| {
-                    if let Some(w) = web_sys::window() {
-                        if let Ok(h) = w.history() { let _ = h.back(); }
+            {move || can_go_back().then(|| view! {
+                <button
+                    class="text-sc-accent hover:text-sc-accent-hover text-sm mb-6 inline-block bg-transparent border-none cursor-pointer p-0"
+                    on:click=|_| {
+                        if let Some(h) = web_sys::window().and_then(|w| w.history().ok()) {
+                            let _ = h.back();
+                        }
                     }
-                }
-            >{move || d().detail_back}</button>
+                >{move || d().detail_back}</button>
+            })}
 
             {move || if loading.get() {
                 view!{ <div class="animate-pulse mt-6 space-y-4">
