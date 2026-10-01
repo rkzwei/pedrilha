@@ -30,7 +30,7 @@ fi
 
 if [[ ! -f "SECRETS.env" ]]; then
     echo "Error: SECRETS.env not found."
-    echo "  cp SECRETS.env.example SECRETS.env && nano SECRETS.env"
+    echo "  cp SECRETS.env.example SECRETS.env && ${EDITOR:-nano} SECRETS.env"
     exit 1
 fi
 
