@@ -5,6 +5,25 @@ Versions follow semver. Pre-1.0, features and fixes bump the **patch** (`0.3.0` 
 the **minor** (`0.4.0`) is reserved for milestones and breaking changes. Cut a milestone
 with a `Release-As: 0.X.0` commit footer.
 
+## [0.4.7](https://github.com/rkzwei/pedrilha/compare/v0.4.6...v0.4.7) (2026-10-23)
+
+
+### Features
+
+* **frontend:** add Sync Acclaimed button to admin panel ([3969917](https://github.com/rkzwei/pedrilha/commit/396991754770cc96e2761eaa8a474a5f79ba197e))
+
+
+### Bug Fixes
+
+* show "← Back" button only when a previous page exists ([a5461d9](https://github.com/rkzwei/pedrilha/commit/a5461d9b77388c58855595a436aecb1234b8cfe0))
+* show "← Back" button only when a previous page exists. ([7308965](https://github.com/rkzwei/pedrilha/commit/73089657a8a4a2cd869a71ebb6792d7c554c4970))
+* use $EDITOR with nano as fallback on *NIX ([d022002](https://github.com/rkzwei/pedrilha/commit/d022002d1f1fb80ece05a44ea7405e68f1ef48e2))
+
+
+### Documentation
+
+* add MIT LICENSE file, third-party data terms, correct admin-auth docs ([76e0211](https://github.com/rkzwei/pedrilha/commit/76e021189e56b93d674f03d82dd4729fd5d87f8b))
+
 ## [0.4.6](https://github.com/rkzwei/gem-finder/compare/v0.4.5...v0.4.6) (2026-07-06)
 
 
