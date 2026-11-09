@@ -6,6 +6,6 @@
     "watch:css": "npx tailwindcss -i ./assets/input.css -o ./assets/tailwind.css --watch"
   },
   "devDependencies": {
-    "tailwindcss": "^3.4"
+    "tailwindcss": "^4.3"
   }
 }
